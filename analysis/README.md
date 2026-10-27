@@ -48,6 +48,16 @@ Không chứa raw dataset, audio hay weights.
   có ID nào vượt — nên chưa cần renderer phức tạp hơn cho phạm vi gold
   replay. Giới hạn ghi rõ: chưa bao phủ observation do model gọi sai
   hoặc lặp. Phép đo e79f9722 giữ nguyên làm đối chứng.
+- `runtime/V7_V6_FAILURE_LEDGER_2026-10-28.md` — Phân loại lỗi v6/v7
+  theo bằng chứng đầu vào (đọc theo `runtime/README.md` tại main
+  800c34f; giải thích bằng code nhánh a2e832b cho v7 và a9d48d2 cho
+  v6, không dùng code inference trên main). Ledger xếp hạng: intent/
+  entity/nhánh > ASR > thiếu observation > termination > format >
+  proxy mismatch, kèm bảng v6→v7 trên 5 mẫu chung và 6 thí nghiệm nhỏ
+  (E0 paired gold-current cho agent mới; E1 native tool-calling;
+  E2 ví dụ condition-before-write; E3 small-vs-medium ASR; E4 guard/
+  completion; E5 disambiguation nhắc-vs-gọi). Không sửa code, không
+  chạy model, không held-out.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
