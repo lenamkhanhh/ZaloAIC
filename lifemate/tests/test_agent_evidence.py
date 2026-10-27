@@ -150,6 +150,19 @@ class EvidenceRegressions(unittest.TestCase):
             lambda p, t: {"name": "phone.call", "arguments": {"contact_id": "Jo"}})
         self.assertEqual(env.calls, [])
 
+    def test_amount_in_request_is_not_an_explicit_reference_id(self):
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Transfer 50000 for Jo", env,
+            lambda p, t: {"name": "phone.call", "arguments": {"contact_id": "50000"}})
+        self.assertEqual(env.calls, [])
+
+    def test_context_explicit_reference_parameter_is_supported(self):
+        self.sample.context["selected_contact"] = {"contact_id": "context_person"}
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call the selected contact", env,
+            lambda p, t: None if env.calls else {"name": "phone.call", "arguments": {"contact_id": "context_person"}})
+        self.assertEqual(len(env.calls), 1)
+
     def test_plain_explicit_id_with_parameter_label_is_supported(self):
         env = Env()
         AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call contact_id=opaque", env,
