@@ -547,3 +547,44 @@ anthology ID khi cần đối chiếu.
   tính vào F1 không; xem danh sách đầy đủ Q-L1..Q-L6 trong
   [../gaps.md](../gaps.md). Không gửi câu hỏi cho ban tổ chức trong đợt
   này.
+
+---
+
+## Cập nhật đợt 3 (2026-10-27) — sửa code, đã kiểm chứng bằng test
+
+Các thay đổi trong `02-asr-grounding-lifemate.py`:
+
+- **Bỏ rule "digits only" chung cho slot nhạy cảm.** Trước đây
+  `ground_slot()` so mọi slot nhạy cảm bằng cách bỏ hết ký tự không
+  phải chữ số, nên `1,5` khớp `15` và `-100` khớp `100`. Giờ mỗi loại
+  có chuẩn hóa riêng: tiền giữ dấu, giá trị thập phân và đơn vị
+  (`1,5 triệu` = `1500000`, `1.500` không đơn vị là mơ hồ → UNKNOWN);
+  ngày parse theo ngữ nghĩa lịch (`31/02/2025` → UNKNOWN, `15/7`
+  khớp `2025-07-15`); ID chỉ bỏ dấu phân cách (space/`-`/`.`) và giữ
+  nguyên số 0 đầu cùng chữ cái (`090 123 4567` = `0901234567`).
+  Fuzzy vẫn bị cấm với cả ba loại.
+- **Guard phủ định viết lại theo mệnh đề.** Lỗi cũ: kiểm tra từ đơn
+  trong set nên cụm hai từ `thanh toán` không bao giờ khớp, vì vậy
+  `Không thanh toán hóa đơn` cho phép pay. Giờ guard kiểm tra cụm từ
+  nguyên vẹn với word boundary, và xét theo từng mệnh đề: mệnh đề phủ
+  định chặn write khi động từ khớp action VÀ target được nhắc trong
+  cùng mệnh đề, HOẶC target không được nhắc ở mệnh đề nào (phủ định
+  chung, fail-closed). Target chỉ xuất hiện ở mệnh đề khác không bị
+  phủ định thì không bị chặn (`Không bật đèn phòng khách, bật đèn
+  phòng ngủ` → chặn phòng khách, cho phòng ngủ qua). Contrast
+  `không phải A mà là B` chặn đúng phía A. `chưa` vẫn không chặn.
+  Giới hạn ghi trong code: phủ định kép, đại từ (`cái đó`, `nó`),
+  ellipsis chưa được giải quyết đáng tin — guard fail-closed khi
+  target không khớp mệnh đề nào, nhưng đại từ trỏ tới action bị phủ
+  định vẫn có thể lọt, nên prompt assertion vẫn là lớp thứ hai.
+- **Fuzzy backend được ghi trong evidence:** score RapidFuzz và
+  difflib không cùng thang, nên evidence giờ ghi rõ backend nào đã
+  chấm; score từ difflib-fallback không được báo như score RapidFuzz.
+- **Liên hệ đợt research 3:** chính sách "không chắc thì hỏi" và tách
+  khác thanh theo có/không đối thủ, grounding trả (id, string), và
+  thứ tự thử (sửa có kiểm chứng + acoustic rescoring trước, contextual
+  decoding sau) nằm trong `../research/round3-p1-asr-repair-vs-ask.md`
+  và tóm tắt ở `research-updates-2026-10-27.md` §1 — tài liệu này
+  không viết lại chúng, và code hiện tại chưa triển khai acoustic
+  rescoring hay Epitran/Panphon (đó là bước thí nghiệm tiếp theo, cần
+  đo trên train held-out).
