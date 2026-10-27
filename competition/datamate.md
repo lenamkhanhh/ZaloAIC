@@ -58,7 +58,14 @@ Xem phân tích đầy đủ ở [../plans/datamate.md](../plans/datamate.md).
 - Public test: https://dl-challenge.zalo.ai/2026/datamate_dkewxftdzo/public_test.zip
 - Mỗi split: `data/<business_id>/` (file `.csv`/`.xlsx`/`.sqlite` + `README.md`),
   `rulebook.md` riêng từng split, `calendar.csv` lịch âm–dương, `questions.jsonl`,
-  `answers.jsonl` chỉ có ở train (có thêm trường `alias`).
+  `answers.jsonl` chỉ có ở train (có thêm trường `alias`; câu unanswerable có
+  answer null — theo ghi nhận 2026-10-26).
+- **Bước xác minh đầu tiên khi có dữ liệu (bắt buộc, trước mọi code đo):**
+  giải nén zip thật và liệt kê file thực tế của từng split. Ghi nhận 2026-10-26
+  nói public test không có `answers.jsonl`; nếu zip thật có đáp án thì toàn bộ
+  giao thức đo trong repo này (học ngưỡng trên train_cal, public test chỉ đo
+  format/latency) phải viết lại theo thực tế đó — không được giả định nhãn
+  public tồn tại, cũng không được giả định là 'chắc chắn không có'.
 - Loại hình: tạp hóa, cà phê/trà sữa, nhà hàng, nhà thuốc, vật liệu xây dựng, tiệm
   sửa xe máy, cửa hàng mẹ và bé, và nhiều loại khác. Mỗi doanh nghiệp bao phủ
   12–30 tháng, vài trăm đến ~300.000 dòng, có tính mùa vụ (Tết, Trung Thu, lễ, ngày

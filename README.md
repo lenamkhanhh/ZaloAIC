@@ -2,7 +2,7 @@
 
 > **Trạng thái:** Tài liệu nghiên cứu, chưa phải code thi đấu. Chưa có thực nghiệm nào
 > chạy trên dữ liệu ZAIC 2026 trong bộ tài liệu này — mọi phương pháp dưới đây là
-> **giả thuyết chuyển giao** cho tới khi được đo trên train/public test chính thức.
+> **giả thuyết chuyển giao** cho tới khi được đo trên train held-out chính thức (public test không có đáp án kèm theo theo ghi nhận 2026-10-26 — xem competition/datamate.md và gaps.md).
 > Đọc `gaps.md` trước khi chốt bất kỳ quyết định nộp bài nào.
 
 ## Cuộc thi là gì
@@ -27,10 +27,12 @@ Hồ sơ từng track: [competition/lifemate.md](competition/lifemate.md),
 
 ### LifeMate — final state là tất cả, JSON đẹp không cứu được hash sai
 
-1. **Validator + read-before-write là nâng cấp rẻ nhất và bắt buộc.** Ép JSON schema lúc
-   decode, kiểm tra tên tool/tham số/`x-ref`/`x-one-of`/`installed_apps` bằng code, đọc
-   state bằng tool read trước mọi write, kiểm tra precondition. Lỗi format hoặc một
-   write thừa đều có thể làm lệch `state_hash` về 0.
+1. **Validator + selective reads là nâng cấp rẻ nhất và bắt buộc.** Ép JSON schema lúc
+   decode, kiểm tra tên tool/tham số/`x-ref`/`x-one-of`/`installed_apps` bằng code; chỉ
+   đọc khi cần xác lập precondition chưa biết hoặc ground thực thể (cache kết quả),
+   không đọc lại sau write theo mặc định — xem research/lifemate/deep-profiles.md §0.1
+   (ASSUMPTION: evaluator chưa truy cập được, F1 có thể tính cả read thừa). Lỗi format
+   hoặc một write thừa đều có thể làm lệch `state_hash` về 0.
    *Mức bằng chứng: giả thuyết chuyển giao, từ bài học AppWorld và τ-bench — xem
    [research/lifemate/solutions-papers.md](research/lifemate/solutions-papers.md).*
 2. **ASR phải đo bằng slot-error, không phải WER tổng.** Lỗi ở tên, số tiền, ngày giờ,
@@ -66,9 +68,10 @@ Hồ sơ từng track: [competition/lifemate.md](competition/lifemate.md),
    *Mức bằng chứng: giả thuyết chuyển giao tổng hợp từ BIRD, DABstep, SpreadsheetBench.*
 3. **Private test có loại hình doanh nghiệp chưa xuất hiện ở train/public.**
    Thí nghiệm leave-one-business-type-out là bắt buộc trước khi fine-tune; nếu PA giảm
-   > 0,15 khi giấu một loại hình thì ưu tiên exploration/profiling trước.
-   *Mức bằng chứng: portal chính thức (2026-10-26); ngưỡng 0,15 là tiêu chí đề xuất,
-   không phải con số của ban tổ chức.*
+   nhiều khi giấu một loại hình thì ưu tiên exploration/profiling trước.
+   *Mức bằng chứng: portal chính thức (2026-10-26); mọi ngưỡng số trong repo này
+   (ví dụ PA giảm 0,15) chỉ là tiêu chí đề xuất, không phải kết luận thực nghiệm
+   hay điều kiện cứng — phải báo kèm số câu hỏi từng nhóm.*
 4. **Rulebook của đúng split thắng mọi thứ khác.** Doanh thu, đơn hủy/trả, voucher,
    VAT, tuần Mon–Sun, "tháng này" tới as-of, chi phí bình quân gia quyền, cửa sổ Tết
    23 Chạp–mùng 10 — viết thành helper có unit test, không để LLM "nhớ" rule trong
@@ -89,11 +92,15 @@ Hồ sơ từng track: [competition/lifemate.md](competition/lifemate.md),
 ## Bắt đầu từ đâu
 
 - **LifeMate:** [plans/lifemate.md](plans/lifemate.md) — baseline PhoWhisper-small →
-  LLM ≤ 4B instruct (chưa fine-tune) + constrained JSON + validator → `zaic_tools`,
-  đo theo 6 nhóm lỗi trước khi fine-tune bất cứ thứ gì.
+  LLM ≤ 4B instruct (chưa fine-tune) + constrained JSON + validator + selective reads
+  → `zaic_tools`, đo bằng điểm chính thức mean(hash đúng ? tool F1 : 0) trên train
+  held-out (không đo trên public test, không chọn bằng tỉ lệ hash đúng một mình)
+  trước khi fine-tune bất cứ thứ gì.
 - **DataMate:** [plans/datamate.md](plans/datamate.md) — profiler + helper từ rulebook +
-  formatter có test → LLM ≤ 14B + 1 chương trình thực thi + ngưỡng abstain khởi đầu
-  0,5, rồi mới hiệu chuẩn, kiểm tra chéo và multi-candidate.
+  formatter có test → Qwen2.5-Coder-7B (7,61B) + 1 chương trình thực thi + ngưỡng
+  abstain khởi đầu 0,5 (lý thuyết), rồi hiệu chuẩn mọi ngưỡng trên train_cal tách
+  theo business, khóa ngưỡng và đo một lần trên train_holdout — không học/chọn
+  ngưỡng trên public test, không dùng điểm leaderboard public để sửa ngưỡng.
 - **So sánh và shortlist:** [research/comparison.md](research/comparison.md).
 - **Những gì chưa biết:** [gaps.md](gaps.md) — đọc trước khi nộp bài.
 
@@ -101,8 +108,9 @@ Hồ sơ từng track: [competition/lifemate.md](competition/lifemate.md),
 
 ```
 competition/   luật, lịch trình, hồ sơ từng track, metric và submission
-research/lifemate/   cuộc thi/benchmark, solutions/papers, ghi chú code
-research/datamate/   cuộc thi/benchmark, solutions/papers, ghi chú code
+research/lifemate/   cuộc thi/benchmark, solutions/papers, ghi chú code, deep-profiles (round 2)
+research/datamate/   cuộc thi/benchmark, solutions/papers, ghi chú code, deep-profiles (round 2)
+research/search-log.md   nhật ký tìm kiếm round 2
 research/comparison.md   bảng so sánh + shortlist từng track
 plans/   lộ trình baseline, nâng cấp và thử nghiệm từng track
 sources.md   danh mục nguồn đã hợp nhất, kèm trạng thái xác minh
