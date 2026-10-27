@@ -692,13 +692,21 @@ class ToolAgent:
         text = outputs[0].outputs[0].text
         return parse_tool_call(text, self.tools, self.allowed_refs)
 
-    def _replan_prompt(self, prompt: str, executed: list[ToolCall]) -> str:
+    def _observation_prompt(
+        self, prompt: str, executed: list[ToolCall], replan: bool = False
+    ) -> str:
         """Rebuild the prompt from OBSERVED results, not just call names.
 
-        The previous version listed only tool names, so a replan could
-        not use anything a read had returned. Each step is now rendered
-        as ``name(args) -> ok/error/output`` (output truncated), so the
+        This is called after EVERY execution, not only when the loop
+        guard triggers a replan: the generation right after a read must
+        already see what the read returned (a contact id, a balance, an
+        error), otherwise the agent cannot use observation at all on a
+        normal "continue" path. Each step is rendered as
+        ``name(args) -> ok/error/output`` (output truncated), so the
         next generation can use a contact id it did not start with.
+        ``replan=True`` adds the "choose a different action" instruction
+        used after a guard-triggered replan; on a plain continue the
+        observations are appended without that instruction.
         """
         lines = []
         for call, result in zip(executed, self.last_results):
@@ -707,12 +715,18 @@ class ToolAgent:
             if len(output) > 300:
                 output = output[:300] + "..."
             lines.append(f"- {call.name}({call.arguments}) -> {outcome}; output={output}")
-        return (
+        text = (
             f"{prompt}\n\nPrevious calls and their OBSERVED results "
             "(use these, do not repeat failed calls, do not guess new ids):\n"
             + "\n".join(lines)
-            + "\nChoose a different, evidence-backed action or stop."
         )
+        if replan:
+            text += "\nChoose a different, evidence-backed action or stop."
+        return text
+
+    def _replan_prompt(self, prompt: str, executed: list[ToolCall]) -> str:
+        """Backward-compatible alias for ``_observation_prompt(..., replan=True)``."""
+        return self._observation_prompt(prompt, executed, replan=True)
 
     def run(
         self,
@@ -736,7 +750,7 @@ class ToolAgent:
                 if self.guard._replanned:
                     return executed
                 self.guard.mark_replanned()
-                current_prompt = self._replan_prompt(prompt, executed)
+                current_prompt = self._observation_prompt(prompt, executed, replan=True)
                 continue
             result = _normalize_execution(self.execute(call))
             executed.append(call)
@@ -762,10 +776,13 @@ class ToolAgent:
                 return executed
             action = self.guard.record(call, state_progress=result.state_progress)
             if action == "continue":
+                # Observation goes into the prompt for the NEXT generation
+                # immediately, not only on a guard-triggered replan.
+                current_prompt = self._observation_prompt(prompt, executed)
                 continue
             if action == "replan_once":
                 self.guard.mark_replanned()
-                current_prompt = self._replan_prompt(prompt, executed)
+                current_prompt = self._observation_prompt(prompt, executed, replan=True)
                 continue
             return executed  # "stop": finish the trace as-is
 

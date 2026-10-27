@@ -346,3 +346,19 @@ không chỉ mô tả ở đây):
 
 Chưa kiểm chứng: vLLM/XGrammar trên A30; mọi số latency trong báo cáo
 gốc vẫn là ước tính.
+
+---
+
+## Cập nhật đợt LifeMate (2026-10-27) — observation sau MỌI call
+
+Code `01-constrained-decoding-lifemate.py` đã sửa theo review: `run()`
+giờ rebuild prompt bằng `_observation_prompt()` sau MỖI lần thực thi
+trên đường "continue", không chỉ khi loop guard kích hoạt replan.
+Trước đây đường "continue" giữ nguyên prompt gốc, nên một kết quả read
+không bao giờ tới được lượt sinh tiếp theo trong luồng bình thường —
+đó là lỗi, không phải thiết kế. Test mới
+`test_read_result_feeds_next_call_via_prompt` bắt generator PHẢI đọc
+ID từ prompt (regex, không hardcode ID) mới tạo được call kế tiếp;
+nếu agent không đưa observation vào prompt thì test fail. Bản triển
+khai pipeline dùng cùng semantics này nằm ở `lifemate/agent.py`
+(`AgentLoop` + `render_observation_prompt`).
