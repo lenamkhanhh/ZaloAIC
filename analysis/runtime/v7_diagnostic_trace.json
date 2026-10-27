@@ -1,0 +1,922 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "note": "No gold calls, reference transcripts, full prompts, context/state dumps, audio or weights. Resolve references independently from train labels using IDs.",
+  "summary": {
+    "status": "SMOKE_COMPLETED",
+    "evidence": "GPU_SMOKE_NOT_BENCHMARK",
+    "source_commit": "a2e832b9bdbef63d6d7b5d1573a8d303a48f2664",
+    "sample_plan": [
+      {
+        "id": "train_0019",
+        "group": "empty"
+      },
+      {
+        "id": "train_0116",
+        "group": "ask_only"
+      },
+      {
+        "id": "train_0025",
+        "group": "ask_after"
+      },
+      {
+        "id": "train_0003",
+        "group": "multi_step"
+      },
+      {
+        "id": "train_0008",
+        "group": "history"
+      },
+      {
+        "id": "train_0016",
+        "group": "conditional_positive"
+      },
+      {
+        "id": "train_0049",
+        "group": "balance_fallback"
+      },
+      {
+        "id": "train_0004",
+        "group": "device_grounding"
+      }
+    ],
+    "seed": 42,
+    "history_policy": "ASR for all user audio, including train history",
+    "hardware_is_a30": false,
+    "records": [
+      {
+        "id": "train_0019",
+        "group": "empty",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 4.7728471579999905,
+        "proxy": {
+          "score": 1.0,
+          "hash_correct": true,
+          "f1": 1.0,
+          "n_submitted": 0,
+          "n_gold": 0
+        }
+      },
+      {
+        "id": "train_0116",
+        "group": "ask_only",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 7.859496999999919,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": true,
+          "f1": 0.0,
+          "n_submitted": 1,
+          "n_gold": 1
+        }
+      },
+      {
+        "id": "train_0025",
+        "group": "ask_after",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 6.399721676000013,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 0,
+          "n_gold": 5
+        }
+      },
+      {
+        "id": "train_0003",
+        "group": "multi_step",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 23.460348530000033,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 0,
+          "n_gold": 5
+        }
+      },
+      {
+        "id": "train_0008",
+        "group": "history",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 24.36044326500007,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 2,
+          "n_gold": 1
+        }
+      },
+      {
+        "id": "train_0016",
+        "group": "conditional_positive",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 5.799464114999978,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 0,
+          "n_gold": 5
+        }
+      },
+      {
+        "id": "train_0049",
+        "group": "balance_fallback",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 44.67891696100003,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 5,
+          "n_gold": 4
+        }
+      },
+      {
+        "id": "train_0004",
+        "group": "device_grounding",
+        "arm": "live_asr",
+        "status": "INFERRED",
+        "inference_seconds": 24.25604923100002,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": true,
+          "f1": 0.0,
+          "n_submitted": 3,
+          "n_gold": 2
+        }
+      }
+    ],
+    "elapsed_seconds": 258.948505921,
+    "models": {
+      "asr": "vinai/PhoWhisper-small",
+      "asr_revision": "a86b604c346caf7148c37512eafe783a16420adb",
+      "llm": "Qwen/Qwen3-4B-Instruct-2507",
+      "llm_snapshot": "cdbee75f17c01a7cc42f958dc650907174af0554"
+    },
+    "dataset": {
+      "bytes": 876430231,
+      "sha256": "57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320",
+      "version": "release: v3.2.0\nbuilt: 2026-10-24T23:35:25+0700\ntrain 1545 / public_test 634\n"
+    },
+    "source_archive_sha256": "75dfc6c5a400dcae0a520c95eebf80d9aa37d7ece48f3e3805bfb904784c7000",
+    "split_assignment_sha256": "eefd0faa163285b23d2634bc4cc04f515b58367a2344599e46e85d48818280aa",
+    "proxy_mean": 0.125,
+    "proxy_mean_by_arm": {
+      "live_asr": 0.125
+    },
+    "is_official_score": false,
+    "is_baseline_quality_estimate": false
+  },
+  "traces": [
+    {
+      "id": "train_0003",
+      "arm": "live_asr",
+      "group": "multi_step",
+      "status": "INFERRED",
+      "asr_current": "ê nạn kíp mình năm mươi ngàn tiền điện thoại cho bác ba với chuyển ví cho cô mai số tiền điện thánh là nhé.",
+      "history_asr": {},
+      "seconds": 23.460348530000033,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0003",
+        "tool_calls": [],
+        "state_hash": "2d289c05e6d1d248a83455f3870bf800a9941525db4f301e02c119d19bd7f8c5"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "phone",
+              "amount"
+            ]
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"tool_name\": \"ewallet.transfer\", \"params\": [\"contact_id\", \"phone\", \"amount\"]}",
+          "seconds": 7.49696532300004
+        },
+        {
+          "event": "validation_rejected",
+          "name": "sys.ask_missing_info",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: tool_name, params"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "phone",
+              "amount"
+            ]
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"tool_name\": \"ewallet.transfer\", \"params\": [\"contact_id\", \"phone\", \"amount\"]}",
+          "seconds": 7.662318990000017
+        },
+        {
+          "event": "validation_rejected",
+          "name": "sys.ask_missing_info",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: tool_name, params"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "phone",
+              "amount"
+            ]
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"tool_name\": \"ewallet.transfer\", \"params\": [\"contact_id\", \"phone\", \"amount\"]}",
+          "seconds": 7.67731427199999
+        },
+        {
+          "event": "validation_rejected",
+          "name": "sys.ask_missing_info",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: tool_name, params"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0004",
+      "arm": "live_asr",
+      "group": "device_grounding",
+      "status": "INFERRED",
+      "asr_current": "trợ lý ơi giảm độ sáng đèn phòng ngủ nhỏ xuống còn một nửa nhé.",
+      "history_asr": {},
+      "seconds": 24.25604923100002,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 3,
+        "n_gold": 2
+      },
+      "submitted": {
+        "id": "train_0004",
+        "tool_calls": [
+          {
+            "name": "smart_home.get_status",
+            "arguments": {
+              "room": "phòng ngủ nhỏ"
+            }
+          },
+          {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          },
+          {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          }
+        ],
+        "state_hash": "fb27db99fbbb7964fb66a3e695ddb584304b2b2a2d1bfff13e027916e1719329"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "smart_home.get_status",
+            "arguments": {
+              "room": "phòng ngủ nhỏ"
+            }
+          },
+          "raw_text": "{\"name\": \"smart_home.get_status\", \"arguments\": {\"room\": \"phòng ngủ nhỏ\"}}",
+          "seconds": 5.549690004000013
+        },
+        {
+          "event": "tool",
+          "name": "smart_home.get_status",
+          "arguments": {
+            "room": "phòng ngủ nhỏ"
+          },
+          "result": {
+            "ok": true,
+            "devices": [
+              {
+                "id": "light_bedroom2",
+                "name": "đèn phòng ngủ nhỏ",
+                "type": "light",
+                "room": "phòng ngủ nhỏ",
+                "floor": 2,
+                "state": {
+                  "power": "on",
+                  "brightness": 100
+                }
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          },
+          "raw_text": "{\"name\": \"smart_home.light_set\", \"arguments\": {\"device_id\": \"light_bedroom2\", \"power\": \"on\", \"brightness\": 50}}",
+          "seconds": 6.81494766000003
+        },
+        {
+          "event": "tool",
+          "name": "smart_home.light_set",
+          "arguments": {
+            "device_id": "light_bedroom2",
+            "power": "on",
+            "brightness": 50
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "light_bedroom2",
+              "name": "đèn phòng ngủ nhỏ",
+              "type": "light",
+              "room": "phòng ngủ nhỏ",
+              "floor": 2,
+              "state": {
+                "power": "on",
+                "brightness": 50
+              }
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          },
+          "raw_text": "{\"name\": \"smart_home.light_set\", \"arguments\": {\"device_id\": \"light_bedroom2\", \"power\": \"on\", \"brightness\": 50}}",
+          "seconds": 6.948308728000029
+        },
+        {
+          "event": "tool",
+          "name": "smart_home.light_set",
+          "arguments": {
+            "device_id": "light_bedroom2",
+            "power": "on",
+            "brightness": 50
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "light_bedroom2",
+              "name": "đèn phòng ngủ nhỏ",
+              "type": "light",
+              "room": "phòng ngủ nhỏ",
+              "floor": 2,
+              "state": {
+                "power": "on",
+                "brightness": 50
+              }
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 4.487230604000047
+        }
+      ]
+    },
+    {
+      "id": "train_0008",
+      "arm": "live_asr",
+      "group": "history",
+      "status": "INFERRED",
+      "asr_current": "cái còn lại nếu may mưa thì dời muộn nửa tiếng không mưa rửa hoen.",
+      "history_asr": {
+        "audio/train_0008/train_0008_u1.wav": "mai tôi có những báo thức nào vậy.",
+        "audio/train_0008/train_0008_u2.wav": "sái thái sớm nhất giúp tôi nhé."
+      },
+      "seconds": 24.36044326500007,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0008",
+        "tool_calls": [
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "ed0526f8f31d68e125fcd4eb2ac8aaee30db069f12415d6ca3ed05c38d764087"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\"}}",
+          "seconds": 7.6527426319998995
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\"}}",
+          "seconds": 7.79205692000005
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\"}}",
+          "seconds": 7.942357614999992
+        }
+      ]
+    },
+    {
+      "id": "train_0016",
+      "arm": "live_asr",
+      "group": "conditional_positive",
+      "status": "INFERRED",
+      "asr_current": "nếu mưa thì dò lệch đau bóng song hãy mệt nãy tiếng với nhẫn ét mét cho mẹ lập báo giờ mới hoặc không mưa thì thôi.",
+      "history_asr": {},
+      "seconds": 5.799464114999978,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0016",
+        "tool_calls": [],
+        "state_hash": "09c10688e975d0a2dc2cc1d9cb22fe97b8e49e43b9e964c3f2dbd26d615dd6da"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 5.060844614999951
+        }
+      ]
+    },
+    {
+      "id": "train_0019",
+      "arm": "live_asr",
+      "group": "empty",
+      "status": "INFERRED",
+      "asr_current": "chị hở ạ tôi cần đặt phòng khách sạn ở đà lạt với anh ạ.",
+      "history_asr": {},
+      "seconds": 4.7728471579999905,
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 0,
+        "n_gold": 0
+      },
+      "submitted": {
+        "id": "train_0019",
+        "tool_calls": [],
+        "state_hash": "a16a52c2f7ec4e57bc4cdeafb901ef8547ba66115c501273721efa196d1de72a"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 1.7069984190000014
+        }
+      ]
+    },
+    {
+      "id": "train_0025",
+      "arm": "live_asr",
+      "group": "ask_after",
+      "status": "INFERRED",
+      "asr_current": "nếu may vừa thì nghĩ dịch đá bóng sáy may phơi lợi cho đảng minh nhé còn không vui vì thôi hàng.",
+      "history_asr": {},
+      "seconds": 6.399721676000013,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0025",
+        "tool_calls": [],
+        "state_hash": "6f5fef179501c5dbb4c6d6348cd310f5a875a502898f0d89906d9ccf250efa16"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 5.816448651999963
+        }
+      ]
+    },
+    {
+      "id": "train_0049",
+      "arm": "live_asr",
+      "group": "balance_fallback",
+      "status": "INFERRED",
+      "asr_current": "ờ à chuyện tim mạng thấy hành gia trỗi gà phản hồn nghé nếu tài khoản thanh toán không đủ thì lấy thử tiết kiệm giúp tôi.",
+      "history_asr": {},
+      "seconds": 44.67891696100003,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 5,
+        "n_gold": 4
+      },
+      "submitted": {
+        "id": "train_0049",
+        "tool_calls": [
+          {
+            "name": "bill_payment.list_bills",
+            "arguments": {
+              "type": "phone"
+            }
+          },
+          {
+            "name": "banking.get_balance",
+            "arguments": {
+              "account_id": "acc_001"
+            }
+          },
+          {
+            "name": "bill_payment.pay",
+            "arguments": {
+              "bill_id": "bill_01",
+              "source": "bank"
+            }
+          },
+          {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 200000,
+              "term_months": 6
+            }
+          },
+          {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 200000,
+              "term_months": 6
+            }
+          }
+        ],
+        "state_hash": "8a82c9bc4365c93976045b5a03c7e15c227741832b907971f70986f98ff8d20e"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "bill_payment.list_bills",
+            "arguments": {
+              "type": "phone"
+            }
+          },
+          "raw_text": "{\"name\": \"bill_payment.list_bills\", \"arguments\": {\"type\": \"phone\"}}",
+          "seconds": 5.652184125000076
+        },
+        {
+          "event": "tool",
+          "name": "bill_payment.list_bills",
+          "arguments": {
+            "type": "phone"
+          },
+          "result": {
+            "ok": true,
+            "bills": [
+              {
+                "id": "bill_01",
+                "type": "phone",
+                "provider": "SaoTel",
+                "amount": 200000,
+                "due_date": "2026-11-17",
+                "paid": false
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.get_balance",
+            "arguments": {
+              "account_id": "acc_001"
+            }
+          },
+          "raw_text": "{\"name\": \"banking.get_balance\", \"arguments\": {\"account_id\": \"acc_001\"}}",
+          "seconds": 6.130610251999997
+        },
+        {
+          "event": "tool",
+          "name": "banking.get_balance",
+          "arguments": {
+            "account_id": "acc_001"
+          },
+          "result": {
+            "ok": true,
+            "accounts": [
+              {
+                "id": "acc_01",
+                "name": "Tài khoản thanh toán",
+                "balance": 129450
+              },
+              {
+                "id": "acc_02",
+                "name": "Tài khoản tiết kiệm",
+                "balance": 50000000
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "bill_payment.pay",
+            "arguments": {
+              "bill_id": "bill_01",
+              "source": "bank"
+            }
+          },
+          "raw_text": "{\"name\": \"bill_payment.pay\", \"arguments\": {\"bill_id\": \"bill_01\", \"source\": \"bank\"}}",
+          "seconds": 6.744860255000049
+        },
+        {
+          "event": "tool",
+          "name": "bill_payment.pay",
+          "arguments": {
+            "bill_id": "bill_01",
+            "source": "bank"
+          },
+          "result": {
+            "ok": true,
+            "bill": {
+              "id": "bill_01",
+              "type": "phone",
+              "provider": "SaoTel",
+              "amount": 200000,
+              "due_date": "2026-11-17",
+              "paid": true,
+              "paid_with": "bank"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 200000,
+              "term_months": 6
+            }
+          },
+          "raw_text": "{\"name\": \"banking.open_savings\", \"arguments\": {\"from_account_id\": \"acc_01\", \"amount\": 200000, \"term_months\": 6}}",
+          "seconds": 8.295036371000037
+        },
+        {
+          "event": "tool",
+          "name": "banking.open_savings",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "amount": 200000,
+            "term_months": 6
+          },
+          "result": {
+            "ok": true,
+            "done": false,
+            "message": "số dư không đủ"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 200000,
+              "term_months": 6
+            }
+          },
+          "raw_text": "{\"name\": \"banking.open_savings\", \"arguments\": {\"from_account_id\": \"acc_01\", \"amount\": 200000, \"term_months\": 6}}",
+          "seconds": 8.388845049999986
+        },
+        {
+          "event": "tool",
+          "name": "banking.open_savings",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "amount": 200000,
+            "term_months": 6
+          },
+          "result": {
+            "ok": true,
+            "done": false,
+            "message": "số dư không đủ"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 200000,
+              "term_months": 6
+            }
+          },
+          "raw_text": "{\"name\": \"banking.open_savings\", \"arguments\": {\"from_account_id\": \"acc_01\", \"amount\": 200000, \"term_months\": 6}}",
+          "seconds": 8.599695685000029
+        }
+      ]
+    },
+    {
+      "id": "train_0116",
+      "arm": "live_asr",
+      "group": "ask_only",
+      "status": "INFERRED",
+      "asr_current": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "history_asr": {
+        "audio/train_0116/train_0116_u1.wav": "ví của tôi giờ còn nhiều tiền dễ.",
+        "audio/train_0116/train_0116_u2.wav": "mai có hẹn gì trong lịch không.",
+        "audio/train_0116/train_0116_u3.wav": "mở dùm tôi bài có trách yêu là đây.",
+        "audio/train_0116/train_0116_u4.wav": "chào trợ lý hôm nay thế nào khỏe không.",
+        "audio/train_0116/train_0116_u5.wav": "gần đây quán cơm tấm nào ngon không.",
+        "audio/train_0116/train_0116_u6.wav": "bạn ké chelsea bữa nay nhiêu một lượng rồi."
+      },
+      "seconds": 7.859496999999919,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0116",
+        "tool_calls": [
+          {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "phone.call",
+              "params": [
+                "contact_id"
+              ]
+            }
+          }
+        ],
+        "state_hash": "63a8b1968fc41958e2a36af309e9772553621e0c08029840273cbfa8f589508f"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "phone.call",
+              "params": [
+                "contact_id"
+              ]
+            }
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"arguments\": {\"tool_name\": \"phone.call\", \"params\": [\"contact_id\"]}}",
+          "seconds": 6.116366857999992
+        },
+        {
+          "event": "tool",
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "phone.call",
+            "params": [
+              "contact_id"
+            ]
+          },
+          "result": {
+            "ok": true,
+            "waiting_for_user": true
+          }
+        }
+      ]
+    }
+  ]
+}

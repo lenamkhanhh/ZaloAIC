@@ -1,0 +1,1540 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "note": "No gold calls, reference transcripts, full prompts, context/state dumps, audio or weights. Resolve references independently from train labels using IDs.",
+  "summary": {
+    "status": "SMOKE_COMPLETED",
+    "evidence": "PAIRED_CURRENT_TRANSCRIPT_DIAGNOSTIC_NOT_BENCHMARK",
+    "source_commit": "a9d48d24021cb91efef7d50cbc3d18ad98ed5b89",
+    "sample_plan": [
+      {
+        "id": "train_0019",
+        "group": "empty"
+      },
+      {
+        "id": "train_0116",
+        "group": "ask_only"
+      },
+      {
+        "id": "train_0025",
+        "group": "ask_after"
+      },
+      {
+        "id": "train_0003",
+        "group": "multi_step"
+      },
+      {
+        "id": "train_0008",
+        "group": "history"
+      }
+    ],
+    "seed": 42,
+    "history_policy": "exact cached v3 ASR history in both arms",
+    "hardware_is_a30": false,
+    "records": [
+      {
+        "id": "train_0019",
+        "group": "empty",
+        "arm": "cached_asr",
+        "status": "INFERRED",
+        "inference_seconds": 1.9702980730000377,
+        "proxy": {
+          "score": 1.0,
+          "hash_correct": true,
+          "f1": 1.0,
+          "n_submitted": 0,
+          "n_gold": 0
+        }
+      },
+      {
+        "id": "train_0019",
+        "group": "empty",
+        "arm": "gold_current",
+        "status": "INFERRED",
+        "inference_seconds": 1.3174084650000282,
+        "proxy": {
+          "score": 1.0,
+          "hash_correct": true,
+          "f1": 1.0,
+          "n_submitted": 0,
+          "n_gold": 0
+        }
+      },
+      {
+        "id": "train_0116",
+        "group": "ask_only",
+        "arm": "cached_asr",
+        "status": "INFERRED",
+        "inference_seconds": 29.66597599800002,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 3,
+          "n_gold": 1
+        }
+      },
+      {
+        "id": "train_0116",
+        "group": "ask_only",
+        "arm": "gold_current",
+        "status": "INFERRED",
+        "inference_seconds": 36.25623441399995,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 4,
+          "n_gold": 1
+        }
+      },
+      {
+        "id": "train_0025",
+        "group": "ask_after",
+        "arm": "cached_asr",
+        "status": "INFERRED",
+        "inference_seconds": 6.310086493000028,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 0,
+          "n_gold": 5
+        }
+      },
+      {
+        "id": "train_0025",
+        "group": "ask_after",
+        "arm": "gold_current",
+        "status": "INFERRED",
+        "inference_seconds": 90.71771063400001,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.15384615384615385,
+          "n_submitted": 8,
+          "n_gold": 5
+        }
+      },
+      {
+        "id": "train_0003",
+        "group": "multi_step",
+        "arm": "cached_asr",
+        "status": "INFERRED",
+        "inference_seconds": 24.343537237999954,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 2,
+          "n_gold": 5
+        }
+      },
+      {
+        "id": "train_0003",
+        "group": "multi_step",
+        "arm": "gold_current",
+        "status": "INFERRED",
+        "inference_seconds": 23.34618150900002,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 2,
+          "n_gold": 5
+        }
+      },
+      {
+        "id": "train_0008",
+        "group": "history",
+        "arm": "cached_asr",
+        "status": "INFERRED",
+        "inference_seconds": 36.95234272000005,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 4,
+          "n_gold": 1
+        }
+      },
+      {
+        "id": "train_0008",
+        "group": "history",
+        "arm": "gold_current",
+        "status": "INFERRED",
+        "inference_seconds": 35.362974904,
+        "proxy": {
+          "score": 0.0,
+          "hash_correct": false,
+          "f1": 0.0,
+          "n_submitted": 4,
+          "n_gold": 1
+        }
+      }
+    ],
+    "elapsed_seconds": 415.08385805,
+    "models": {
+      "asr": "vinai/PhoWhisper-small",
+      "asr_revision": "a86b604c346caf7148c37512eafe783a16420adb",
+      "llm": "Qwen/Qwen3-4B-Instruct-2507",
+      "llm_snapshot": "cdbee75f17c01a7cc42f958dc650907174af0554"
+    },
+    "dataset": {
+      "bytes": 876430231,
+      "sha256": "57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320",
+      "version": "release: v3.2.0\nbuilt: 2026-10-24T23:35:25+0700\ntrain 1545 / public_test 634\n"
+    },
+    "source_archive_sha256": "a1591c425486878c8f79d7e9859bfa3dee33636dbbe79b8538ceebcb30bd9cd8",
+    "split_assignment_sha256": "eefd0faa163285b23d2634bc4cc04f515b58367a2344599e46e85d48818280aa",
+    "proxy_mean_by_arm": {
+      "cached_asr": 0.2,
+      "gold_current": 0.2
+    },
+    "is_official_score": false,
+    "is_baseline_quality_estimate": false
+  },
+  "traces": [
+    {
+      "id": "train_0003",
+      "arm": "cached_asr",
+      "group": "multi_step",
+      "status": "INFERRED",
+      "asr_current": "ê nạn kíp mình năm mươi ngàn tiền điện thoại cho bác ba với chuyển ví cho cô mai số tiền điện thánh là nhé.",
+      "history_asr": {},
+      "seconds": 24.343537237999954,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0003",
+        "tool_calls": [
+          {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "contact_001",
+              "amount": 50000,
+              "note": "Tiền điện thoại cho bác ba"
+            }
+          },
+          {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "contact_002",
+              "amount": 50000,
+              "note": "Tiền điện thoại cho cô Mai"
+            }
+          }
+        ],
+        "state_hash": "daac2b07badcc900be2b9f97b7b0d39dd6dadb53906f0283cc7983b73a884fd9"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "contact_001",
+              "amount": 50000,
+              "note": "Tiền điện thoại cho bác ba"
+            }
+          },
+          "raw_text": "{\"name\": \"ewallet.transfer\", \"arguments\": {\"contact_id\": \"contact_001\", \"amount\": 50000, \"note\": \"Tiền điện thoại cho bác ba\"}}",
+          "seconds": 9.300849431000017
+        },
+        {
+          "event": "tool",
+          "name": "ewallet.transfer",
+          "arguments": {
+            "contact_id": "contact_001",
+            "amount": 50000,
+            "note": "Tiền điện thoại cho bác ba"
+          },
+          "result": {
+            "ok": true,
+            "transaction": {
+              "id": "tx_01",
+              "type": "transfer",
+              "to": "contact_001",
+              "amount": -50000,
+              "note": "Tiền điện thoại cho bác ba"
+            },
+            "balance": 4950000
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "contact_002",
+              "amount": 50000,
+              "note": "Tiền điện thoại cho cô Mai"
+            }
+          },
+          "raw_text": "{\"name\": \"ewallet.transfer\", \"arguments\": {\"contact_id\": \"contact_002\", \"amount\": 50000, \"note\": \"Tiền điện thoại cho cô Mai\"}}",
+          "seconds": 9.418469362999986
+        },
+        {
+          "event": "tool",
+          "name": "ewallet.transfer",
+          "arguments": {
+            "contact_id": "contact_002",
+            "amount": 50000,
+            "note": "Tiền điện thoại cho cô Mai"
+          },
+          "result": {
+            "ok": true,
+            "transaction": {
+              "id": "tx_02",
+              "type": "transfer",
+              "to": "contact_002",
+              "amount": -50000,
+              "note": "Tiền điện thoại cho cô Mai"
+            },
+            "balance": 4900000
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 5.514106072999994
+        }
+      ]
+    },
+    {
+      "id": "train_0008",
+      "arm": "cached_asr",
+      "group": "history",
+      "status": "INFERRED",
+      "asr_current": "cái còn lại nếu may mưa thì dời muộn nửa tiếng không mưa rửa hoen.",
+      "history_asr": {
+        "audio/train_0008/train_0008_u1.wav": "mai tôi có những báo thức nào vậy.",
+        "audio/train_0008/train_0008_u2.wav": "sái thái sớm nhất giúp tôi nhé."
+      },
+      "seconds": 36.95234272000005,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 4,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0008",
+        "tool_calls": [
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          {
+            "name": "weather.get_current",
+            "arguments": {
+              "location": "TP.HCM"
+            }
+          },
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "TP.HCM",
+              "date": "2026-11-14"
+            }
+          }
+        ],
+        "state_hash": "ed0526f8f31d68e125fcd4eb2ac8aaee30db069f12415d6ca3ed05c38d764087"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\"}}",
+          "seconds": 7.82921685499997
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_current",
+            "arguments": {
+              "location": "TP.HCM"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_current\", \"arguments\": {\"location\": \"TP.HCM\"}}",
+          "seconds": 5.516929497999968
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_current",
+          "arguments": {
+            "location": "TP.HCM"
+          },
+          "result": {
+            "ok": true,
+            "current": [
+              {
+                "location": "TP.HCM",
+                "temperature_c": 30,
+                "condition": "mưa rào"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\"}}",
+          "seconds": 8.142240886999957
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "TP.HCM",
+              "date": "2026-11-14"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_forecast\", \"arguments\": {\"location\": \"TP.HCM\", \"date\": \"2026-11-14\"}}",
+          "seconds": 7.024931956000046
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_forecast",
+          "arguments": {
+            "location": "TP.HCM",
+            "date": "2026-11-14"
+          },
+          "result": {
+            "ok": true,
+            "forecast": [
+              {
+                "location": "TP.HCM",
+                "date": "2026-11-14",
+                "condition": "có mây",
+                "rain": false,
+                "temp_min": 21,
+                "temp_max": 30
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\"}}",
+          "seconds": 8.38056983499996
+        }
+      ]
+    },
+    {
+      "id": "train_0019",
+      "arm": "cached_asr",
+      "group": "empty",
+      "status": "INFERRED",
+      "asr_current": "chị hở ạ tôi cần đặt phòng khách sạn ở đà lạt với anh ạ.",
+      "history_asr": {},
+      "seconds": 1.9702980730000377,
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 0,
+        "n_gold": 0
+      },
+      "submitted": {
+        "id": "train_0019",
+        "tool_calls": [],
+        "state_hash": "a16a52c2f7ec4e57bc4cdeafb901ef8547ba66115c501273721efa196d1de72a"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 1.9696414050000044
+        }
+      ]
+    },
+    {
+      "id": "train_0025",
+      "arm": "cached_asr",
+      "group": "ask_after",
+      "status": "INFERRED",
+      "asr_current": "nếu may vừa thì nghĩ dịch đá bóng sáy may phơi lợi cho đảng minh nhé còn không vui vì thôi hàng.",
+      "history_asr": {},
+      "seconds": 6.310086493000028,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0025",
+        "tool_calls": [],
+        "state_hash": "6f5fef179501c5dbb4c6d6348cd310f5a875a502898f0d89906d9ccf250efa16"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 6.243647666000015
+        }
+      ]
+    },
+    {
+      "id": "train_0116",
+      "arm": "cached_asr",
+      "group": "ask_only",
+      "status": "INFERRED",
+      "asr_current": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "history_asr": {
+        "audio/train_0116/train_0116_u1.wav": "ví của tôi giờ còn nhiều tiền dễ.",
+        "audio/train_0116/train_0116_u2.wav": "mai có hẹn gì trong lịch không.",
+        "audio/train_0116/train_0116_u3.wav": "mở dùm tôi bài có trách yêu là đây.",
+        "audio/train_0116/train_0116_u4.wav": "chào trợ lý hôm nay thế nào khỏe không.",
+        "audio/train_0116/train_0116_u5.wav": "gần đây quán cơm tấm nào ngon không.",
+        "audio/train_0116/train_0116_u6.wav": "bạn ké chelsea bữa nay nhiêu một lượng rồi."
+      },
+      "seconds": 29.66597599800002,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 3,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0116",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "e799fba9744408756ecd7858db0d15c6e672d36faa9ff9b7f10f84a45720124e"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"time\": \"2026-11-19T11:00:00+07:00\"}}",
+          "seconds": 7.726885160999984
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gọi điện cho mẹ",
+            "time": "2026-11-19T11:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.complete\", \"arguments\": {\"reminder_id\": \"rem_01\"}}",
+          "seconds": 5.445090789000005
+        },
+        {
+          "event": "tool",
+          "name": "reminders.complete",
+          "arguments": {
+            "reminder_id": "rem_01"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": true,
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"time\": \"2026-11-19T11:00:00+07:00\"}}",
+          "seconds": 8.129400341000007
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gọi điện cho mẹ",
+            "time": "2026-11-19T11:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_02",
+            "item": {
+              "id": "rem_02",
+              "repeat": "once",
+              "done": false,
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"time\": \"2026-11-19T11:00:00+07:00\"}}",
+          "seconds": 8.338938503999998
+        }
+      ]
+    },
+    {
+      "id": "train_0003",
+      "arm": "gold_current",
+      "group": "multi_step",
+      "status": "INFERRED",
+      "asr_current": "ê nạn kíp mình năm mươi ngàn tiền điện thoại cho bác ba với chuyển ví cho cô mai số tiền điện thánh là nhé.",
+      "history_asr": {},
+      "seconds": 23.34618150900002,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0003",
+        "tool_calls": [
+          {
+            "name": "ewallet.topup_mobile",
+            "arguments": {
+              "phone": "0901234567",
+              "amount": 50000
+            }
+          },
+          {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "contact_mai",
+              "amount": 500000,
+              "note": "điện tháng này"
+            }
+          }
+        ],
+        "state_hash": "ad038b964074011e92a10bfe3b98bb20419c950d51905534011d2259aa708a38"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "ewallet.topup_mobile",
+            "arguments": {
+              "phone": "0901234567",
+              "amount": 50000
+            }
+          },
+          "raw_text": "{\"name\": \"ewallet.topup_mobile\", \"arguments\": {\"phone\": \"0901234567\", \"amount\": 50000}}",
+          "seconds": 8.70363888899999
+        },
+        {
+          "event": "tool",
+          "name": "ewallet.topup_mobile",
+          "arguments": {
+            "phone": "0901234567",
+            "amount": 50000
+          },
+          "result": {
+            "ok": true,
+            "transaction": {
+              "id": "tx_01",
+              "type": "topup_mobile",
+              "phone": "0901234567",
+              "amount": -50000
+            },
+            "balance": 4950000
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "contact_mai",
+              "amount": 500000,
+              "note": "điện tháng này"
+            }
+          },
+          "raw_text": "{\"name\": \"ewallet.transfer\", \"arguments\": {\"contact_id\": \"contact_mai\", \"amount\": 500000, \"note\": \"điện tháng này\"}}",
+          "seconds": 9.020144716000004
+        },
+        {
+          "event": "tool",
+          "name": "ewallet.transfer",
+          "arguments": {
+            "contact_id": "contact_mai",
+            "amount": 500000,
+            "note": "điện tháng này"
+          },
+          "result": {
+            "ok": true,
+            "transaction": {
+              "id": "tx_02",
+              "type": "transfer",
+              "to": "contact_mai",
+              "amount": -500000,
+              "note": "điện tháng này"
+            },
+            "balance": 4450000
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 5.5631549209999775
+        }
+      ]
+    },
+    {
+      "id": "train_0008",
+      "arm": "gold_current",
+      "group": "history",
+      "status": "INFERRED",
+      "asr_current": "cái còn lại nếu may mưa thì dời muộn nửa tiếng không mưa rửa hoen.",
+      "history_asr": {
+        "audio/train_0008/train_0008_u1.wav": "mai tôi có những báo thức nào vậy.",
+        "audio/train_0008/train_0008_u2.wav": "sái thái sớm nhất giúp tôi nhé."
+      },
+      "seconds": 35.362974904,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 4,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0008",
+        "tool_calls": [
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm (nếu mưa)"
+            }
+          },
+          {
+            "name": "weather.get_current",
+            "arguments": {
+              "location": "TP.HCM"
+            }
+          },
+          {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "TP.HCM",
+              "date": "2026-11-14"
+            }
+          },
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm (nếu mưa)"
+            }
+          }
+        ],
+        "state_hash": "ed0526f8f31d68e125fcd4eb2ac8aaee30db069f12415d6ca3ed05c38d764087"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm (nếu mưa)"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\", \"label\": \"họp sớm (nếu mưa)\"}}",
+          "seconds": 9.029426969000042
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00",
+            "label": "họp sớm (nếu mưa)"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm (nếu mưa)",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_current",
+            "arguments": {
+              "location": "TP.HCM"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_current\", \"arguments\": {\"location\": \"TP.HCM\"}}",
+          "seconds": 5.453488701000083
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_current",
+          "arguments": {
+            "location": "TP.HCM"
+          },
+          "result": {
+            "ok": true,
+            "current": [
+              {
+                "location": "TP.HCM",
+                "temperature_c": 30,
+                "condition": "mưa rào"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "TP.HCM",
+              "date": "2026-11-14"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_forecast\", \"arguments\": {\"location\": \"TP.HCM\", \"date\": \"2026-11-14\"}}",
+          "seconds": 6.867468712999994
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_forecast",
+          "arguments": {
+            "location": "TP.HCM",
+            "date": "2026-11-14"
+          },
+          "result": {
+            "ok": true,
+            "forecast": [
+              {
+                "location": "TP.HCM",
+                "date": "2026-11-14",
+                "condition": "có mây",
+                "rain": false,
+                "temp_min": 21,
+                "temp_max": 30
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm (nếu mưa)"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\", \"label\": \"họp sớm (nếu mưa)\"}}",
+          "seconds": 9.498197290000007
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00",
+            "label": "họp sớm (nếu mưa)"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm (nếu mưa)",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 4.4480774659999724
+        }
+      ]
+    },
+    {
+      "id": "train_0019",
+      "arm": "gold_current",
+      "group": "empty",
+      "status": "INFERRED",
+      "asr_current": "chị hở ạ tôi cần đặt phòng khách sạn ở đà lạt với anh ạ.",
+      "history_asr": {},
+      "seconds": 1.3174084650000282,
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 0,
+        "n_gold": 0
+      },
+      "submitted": {
+        "id": "train_0019",
+        "tool_calls": [],
+        "state_hash": "a16a52c2f7ec4e57bc4cdeafb901ef8547ba66115c501273721efa196d1de72a"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 1.2947276969999848
+        }
+      ]
+    },
+    {
+      "id": "train_0025",
+      "arm": "gold_current",
+      "group": "ask_after",
+      "status": "INFERRED",
+      "asr_current": "nếu may vừa thì nghĩ dịch đá bóng sáy may phơi lợi cho đảng minh nhé còn không vui vì thôi hàng.",
+      "history_asr": {},
+      "seconds": 90.71771063400001,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.15384615384615385,
+        "n_submitted": 8,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0025",
+        "tool_calls": [
+          {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "Hà Nội",
+              "date": "2026-11-28"
+            }
+          },
+          {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "event_12345"
+            }
+          },
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Gọi cho bạn Minh",
+              "time": "2026-11-29T07:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "event_12345"
+            }
+          },
+          {
+            "name": "calendar.list_events",
+            "arguments": {
+              "date_from": "2026-11-28",
+              "date_to": "2026-11-28"
+            }
+          },
+          {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "evt_01"
+            }
+          },
+          {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "evt_01"
+            }
+          }
+        ],
+        "state_hash": "a035c370c9bb149ef0e6f076b0732463fafa7a595dbe8394b9065059ceff54fe"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "Hà Nội",
+              "date": "2026-11-28"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_forecast\", \"arguments\": {\"location\": \"Hà Nội\", \"date\": \"2026-11-28\"}}",
+          "seconds": 9.573985966999999
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_forecast",
+          "arguments": {
+            "location": "Hà Nội",
+            "date": "2026-11-28"
+          },
+          "result": {
+            "ok": true,
+            "forecast": [
+              {
+                "location": "Hà Nội",
+                "date": "2026-11-28",
+                "condition": "mưa rào",
+                "rain": true,
+                "temp_min": 21,
+                "temp_max": 32
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "event_12345"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.cancel_event\", \"arguments\": {\"event_id\": \"event_12345\"}}",
+          "seconds": 8.505603683999993
+        },
+        {
+          "event": "tool",
+          "name": "calendar.cancel_event",
+          "arguments": {
+            "event_id": "event_12345"
+          },
+          "result": {
+            "ok": true,
+            "done": false,
+            "message": "không tìm thấy event_id='event_12345'"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Gọi cho bạn Minh",
+              "time": "2026-11-29T07:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"Gọi cho bạn Minh\", \"time\": \"2026-11-29T07:00:00+07:00\", \"repeat\": \"once\"}}",
+          "seconds": 12.237239448000025
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "Gọi cho bạn Minh",
+            "time": "2026-11-29T07:00:00+07:00",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "Gọi cho bạn Minh",
+              "time": "2026-11-29T07:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.complete\", \"arguments\": {\"reminder_id\": \"rem_01\"}}",
+          "seconds": 8.308379874000025
+        },
+        {
+          "event": "tool",
+          "name": "reminders.complete",
+          "arguments": {
+            "reminder_id": "rem_01"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": true,
+              "content": "Gọi cho bạn Minh",
+              "time": "2026-11-29T07:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "event_12345"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.cancel_event\", \"arguments\": {\"event_id\": \"event_12345\"}}",
+          "seconds": 8.82976495600002
+        },
+        {
+          "event": "tool",
+          "name": "calendar.cancel_event",
+          "arguments": {
+            "event_id": "event_12345"
+          },
+          "result": {
+            "ok": true,
+            "done": false,
+            "message": "không tìm thấy event_id='event_12345'"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.list_events",
+            "arguments": {
+              "date_from": "2026-11-28",
+              "date_to": "2026-11-28"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.list_events\", \"arguments\": {\"date_from\": \"2026-11-28\", \"date_to\": \"2026-11-28\"}}",
+          "seconds": 11.23005778099997
+        },
+        {
+          "event": "tool",
+          "name": "calendar.list_events",
+          "arguments": {
+            "date_from": "2026-11-28",
+            "date_to": "2026-11-28"
+          },
+          "result": {
+            "ok": true,
+            "events": [
+              {
+                "id": "evt_01",
+                "title": "đá bóng",
+                "start": "2026-11-28T09:00:00+07:00",
+                "end": "2026-11-28T10:00:00+07:00",
+                "location": "Văn phòng",
+                "status": "confirmed"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "evt_01"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.cancel_event\", \"arguments\": {\"event_id\": \"evt_01\"}}",
+          "seconds": 9.025441283999953
+        },
+        {
+          "event": "tool",
+          "name": "calendar.cancel_event",
+          "arguments": {
+            "event_id": "evt_01"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "evt_01",
+              "title": "đá bóng",
+              "start": "2026-11-28T09:00:00+07:00",
+              "end": "2026-11-28T10:00:00+07:00",
+              "location": "Văn phòng",
+              "status": "cancelled"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "stop",
+            "reason": "Đã thực hiện các hành động theo yêu cầu: huỷ lịch đá bóng sáng mai vì trời mưa và không gọi cho bạn Minh. Các thao tác đã được xử lý đúng theo thông tin thời tiết và lịch trình."
+          },
+          "raw_text": "{\"name\": \"stop\", \"reason\": \"Đã thực hiện các hành động theo yêu cầu: huỷ lịch đá bóng sáng mai vì trời mưa và không gọi cho bạn Minh. Các thao tác đã được xử lý đúng theo thông tin thời tiết và lịch trình.\"}",
+          "seconds": 13.863869168000008
+        },
+        {
+          "event": "validation_rejected",
+          "name": "stop",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "tool 'stop' không có trong catalog"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "evt_01"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.cancel_event\", \"arguments\": {\"event_id\": \"evt_01\"}}",
+          "seconds": 9.100380443000006
+        },
+        {
+          "event": "tool",
+          "name": "calendar.cancel_event",
+          "arguments": {
+            "event_id": "evt_01"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "evt_01",
+              "title": "đá bóng",
+              "start": "2026-11-28T09:00:00+07:00",
+              "end": "2026-11-28T10:00:00+07:00",
+              "location": "Văn phòng",
+              "status": "cancelled"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0116",
+      "arm": "gold_current",
+      "group": "ask_only",
+      "status": "INFERRED",
+      "asr_current": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "history_asr": {
+        "audio/train_0116/train_0116_u1.wav": "ví của tôi giờ còn nhiều tiền dễ.",
+        "audio/train_0116/train_0116_u2.wav": "mai có hẹn gì trong lịch không.",
+        "audio/train_0116/train_0116_u3.wav": "mở dùm tôi bài có trách yêu là đây.",
+        "audio/train_0116/train_0116_u4.wav": "chào trợ lý hôm nay thế nào khỏe không.",
+        "audio/train_0116/train_0116_u5.wav": "gần đây quán cơm tấm nào ngon không.",
+        "audio/train_0116/train_0116_u6.wav": "bạn ké chelsea bữa nay nhiêu một lượng rồi."
+      },
+      "seconds": 36.25623441399995,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 4,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0116",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          {
+            "name": "reminders.list",
+            "arguments": {}
+          },
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "e799fba9744408756ecd7858db0d15c6e672d36faa9ff9b7f10f84a45720124e"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"time\": \"2026-11-19T11:00:00+07:00\"}}",
+          "seconds": 8.050539593999986
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gọi điện cho mẹ",
+            "time": "2026-11-19T11:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.complete\", \"arguments\": {\"reminder_id\": \"rem_01\"}}",
+          "seconds": 5.621011875000022
+        },
+        {
+          "event": "tool",
+          "name": "reminders.complete",
+          "arguments": {
+            "reminder_id": "rem_01"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": true,
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.list",
+            "arguments": {}
+          },
+          "raw_text": "{\"name\": \"reminders.list\", \"arguments\": {}}",
+          "seconds": 5.053084180000042
+        },
+        {
+          "event": "tool",
+          "name": "reminders.list",
+          "arguments": {},
+          "result": {
+            "ok": true,
+            "reminders": [
+              {
+                "id": "rem_01",
+                "repeat": "once",
+                "done": true,
+                "content": "gọi điện cho mẹ",
+                "time": "2026-11-19T11:00:00+07:00"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"time\": \"2026-11-19T11:00:00+07:00\"}}",
+          "seconds": 8.593233224000016
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gọi điện cho mẹ",
+            "time": "2026-11-19T11:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_02",
+            "item": {
+              "id": "rem_02",
+              "repeat": "once",
+              "done": false,
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T11:00:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"time\": \"2026-11-19T11:00:00+07:00\"}}",
+          "seconds": 8.873023455999999
+        }
+      ]
+    }
+  ]
+}
