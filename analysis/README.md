@@ -64,6 +64,17 @@ Không chứa raw dataset, audio hay weights.
   tiêu chí falsify, thứ tự chạy, checklist trả về. Brief không chứa
   gold (tra theo ID từ train release) và không cho phép held-out,
   training, đổi model hay merge main.
+- `runtime/E1_DEPLOYMENT_BRIEF_2026-10-28.md` — Brief triển khai E1 tự
+  chứa sau E0 (main f833dd3, proxy vẫn 0.125, giả thuyết "chỉ còn ASR"
+  bị bác): contract chính thức Qwen3-4B-Instruct-2507 rev cdbee75 từ
+  chat template + config + model card cùng revision, bảng ánh xạ code
+  a2e832b → thay đổi tối thiểu M1–M8 (bắt buộc) vs P1–P7 (loại khỏi
+  E1), phân tích lỗi E0 theo contract-có-thể / contract-không-thể,
+  thiết kế 2 arm trên cached ASR v7, metric từng tầng, tiêu chí kết
+  luận có giới hạn ("format sạch nhưng intent sai" = partial
+  confirmation, không phải bác bỏ), và 7 kiểm tra CPU/unit test làm
+  GPU launch gate. Ví dụ message/parser đều synthetic, không lấy đáp
+  án probe.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
