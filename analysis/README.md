@@ -75,6 +75,14 @@ Không chứa raw dataset, audio hay weights.
   confirmation, không phải bác bỏ), và 7 kiểm tra CPU/unit test làm
   GPU launch gate. Ví dụ message/parser đều synthetic, không lấy đáp
   án probe.
+- `runtime/E1_PREREQUISITE_CHECKLIST_2026-10-28.md` — Checklist đo
+  tầng prerequisite cho E1, build từ gold bằng replay + truy vết nguồn
+  giá trị (21 quan hệ chấm điểm cho 8 mẫu: STRICT khi giá trị chỉ có
+  trong output của một read trước, BRANCH cho điều kiện, cùng các
+  rule NO-CALL/task-type/fallback-direction và regression guard
+  0019/0116). FROZEN trước run: Codex copy nguyên vẹn vào hồ sơ run,
+  chấm PASS/FAIL độc lập với format/hash/F1, không đưa vào input
+  agent.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
