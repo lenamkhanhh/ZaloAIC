@@ -155,6 +155,25 @@ class EvidenceRegressions(unittest.TestCase):
         AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call contact_id=opaque", env,
             lambda p, t: None if env.calls else {"name": "phone.call", "arguments": {"contact_id": "opaque"}})
         self.assertEqual(len(env.calls), 1)
+
+    def test_contact_in_phone_history_is_typed_cross_app_evidence(self):
+        self.sample.history = [Turn("assistant", tool_calls=[{"name": "phone.recent", "arguments": {}}],
+            tool_results=[{"ok": True, "calls": [{"id": "call_unused", "contact": {"id": "nested_contact", "name": "Jo"}}]}])]
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call Jo back", env,
+            lambda p, t: None if env.calls else {"name": "phone.call", "arguments": {"contact_id": "nested_contact"}})
+        self.assertEqual(len(env.calls), 1)
+
+    def test_phone_suffix_correction_uses_old_and_new_digits(self):
+        self.sample.history = [Turn("user", audio_text="Call 0712345687")]
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Đuôi là bảy tám chứ không phải tám bảy, gọi lại", env,
+            lambda p, t: None if env.calls else {"name": "wallet.topup", "arguments": {"phone": "0712345678"}})
+        self.assertEqual(len(env.calls), 1)
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Đuôi là bảy tám chứ không phải sáu sáu", env,
+            lambda p, t: {"name": "wallet.topup", "arguments": {"phone": "0712345678"}})
+        self.assertEqual(env.calls, [])
         env = Env()
         AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call contact explicit_7", env,
             lambda p, t: None if env.calls else {"name": "phone.call", "arguments": {"contact_id": "explicit_7"}})
