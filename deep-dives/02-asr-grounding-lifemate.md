@@ -588,3 +588,27 @@ Các thay đổi trong `02-asr-grounding-lifemate.py`:
   không viết lại chúng, và code hiện tại chưa triển khai acoustic
   rescoring hay Epitran/Panphon (đó là bước thí nghiệm tiếp theo, cần
   đo trên train held-out).
+
+---
+
+## Sửa sai đợt LifeMate (2026-10-27) — candidate ≠ intent
+
+Tiền đề cũ trong chuyên đề này — "candidate lấy từ tool read là ground
+truth để ground slot" — là SAI nếu đọc theo nghĩa "tồn tại thì đúng ý
+người dùng". Một candidate do read trả về chỉ chứng minh thực thể đó
+CÓ THẬT trong dữ liệu app, không chứng minh người dùng ĐANG NÓI TỚI
+nó: hai contact trùng tên hiển thị, một tên vừa khớp người vừa khớp
+địa điểm/quán, hoặc history đang nói tới một thực thể khác với span
+vừa khớp, đều là trường hợp span-match đúng mà intent sai. Bản sửa:
+
+- Grounding trả về candidate + bằng chứng (span match, backend fuzzy),
+  KHÔNG trả về kết luận intent. Intent do agent quyết từ transcript +
+  history + context; grounding không override intent.
+- Span khớp đúng một candidate: GROUNDED ở mức "span chỉ tới thực thể
+  thật". Span khớp nhiều candidate, hoặc context/history chỉ tới
+  candidate khác: AMBIGUOUS → dùng slot phân biệt, read bổ sung, hoặc
+  `sys.ask_missing_info`; không bao giờ chọn candidate đầu tiên rồi
+  coi là intent.
+- Triển khai pipeline của quy tắc này nằm ở `lifemate/grounding.py`
+  (`ground_name` trả AMBIGUOUS khi nhiều thực thể cùng display name)
+  và test `test_same_display_different_entities_is_ambiguous`.
