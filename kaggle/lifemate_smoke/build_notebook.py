@@ -18,7 +18,7 @@ def build():
                 "Private diagnostic, not a benchmark or competition submission.\n",
                 "PhoWhisper-small + Qwen3-4B, fixed dev IDs, seed 42, pinned source.\n",
                 "Internet is used for setup; model calls use cached local weights.\n",
-                "Only cuda:0 is used. Timing is not A30 timing.\n",
+                "ASR uses cuda:0; FP16 LLM is balanced across two T4s. Timing is not A30 timing.\n",
                 "Outputs: summary, raw model text, ASR, tool traces and proxy scores in smoke_artifacts.zip.\n",
             ]},
             code(definitions, "runner"), code("main()\n", "launch"),

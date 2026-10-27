@@ -15,7 +15,7 @@ import time
 import traceback
 import zipfile
 
-REPO_COMMIT = "d1b4b3099a2b70f060279c5798b3511d189cf955"
+REPO_COMMIT = "a9d48d24021cb91efef7d50cbc3d18ad98ed5b89"
 DATA_URL = "https://dl-challenge.zalo.ai/2026/lifemate_argfzdgert/train+public_test.zip"
 DATA_BYTES = 876430231
 DATA_SHA256 = "57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320"
@@ -102,6 +102,8 @@ def main():
         import torch
         if not torch.cuda.is_available():
             raise RuntimeError("No CUDA GPU; stop before downloading data/weights")
+        if torch.cuda.device_count() < 2:
+            raise RuntimeError("This smoke placement requires the requested two T4 GPUs")
         version = tuple(int(p) for p in torch.__version__.split("+")[0].split(".")[:2])
         if version < (2, 6):
             raise RuntimeError("PhoWhisper pytorch_model.bin requires torch >= 2.6; no automatic torch replacement")
@@ -111,7 +113,7 @@ def main():
         summary["environment"] = {
             "python": platform.python_version(), "torch": torch.__version__, "cuda": torch.version.cuda,
             "gpu0": gpu.name, "gpu0_bytes": gpu.total_memory, "gpu_count": torch.cuda.device_count(),
-            "device_used": "cuda:0", "packages": {p.split("==")[0]: importlib.metadata.version(p.split("==")[0]) for p in PACKAGES},
+            "device_used": "ASR cuda:0; LLM balanced across cuda:0 and cuda:1", "packages": {p.split("==")[0]: importlib.metadata.version(p.split("==")[0]) for p in PACKAGES},
         }
 
         phase("source")
@@ -172,6 +174,11 @@ def main():
         config = PipelineConfig.from_json(repo / "lifemate" / "configs" / "recommended.json")
         config.asr_checkpoint, config.llm_checkpoint = asr_path, llm_path
         config.asr_backend, config.llm_backend = "transformers", "transformers"
+        # V1 loaded both models but 4/5 prompts exhausted GPU0 attention
+        # memory. Preserve FP16 weights/seed/prompt; distribute weights to
+        # leave activation headroom on both assigned T4s. Not an A30 test.
+        config.llm_device_map = "balanced"
+        config.llm_max_memory_gib = {"0": 6, "1": 6}
         config.local_files_only = True
         config.check_budget()
         write_json(output / "resolved_config.json", dataclasses.asdict(config))
@@ -180,6 +187,7 @@ def main():
         load_start = time.perf_counter()
         asr = build_asr(config, device="cuda:0")
         llm = build_generator(config, device="cuda:0")
+        summary["llm_device_map"] = getattr(llm.model, "hf_device_map", {})
         summary["model_load_seconds"] = time.perf_counter() - load_start
         raw_text = {"value": None}
         original_decode = llm.tokenizer.decode
@@ -197,7 +205,10 @@ def main():
                 record = {**item, "trace": [], "history_asr": [], "gold_transcript": sample.audio_text}
                 env = ZaicEnv(data, "train", sample.id)
                 sample_start = time.perf_counter()
-                torch.cuda.reset_peak_memory_stats(0)
+                for device in (0, 1):
+                    with torch.cuda.device(device):
+                        torch.cuda.empty_cache()
+                        torch.cuda.reset_peak_memory_stats(device)
                 try:
                     tick = time.perf_counter()
                     transcript = asr.transcribe(data / "train" / sample.audio)
@@ -247,7 +258,7 @@ def main():
                     line = env.submission_line()
                     record.update({"status": "ERROR", "error": traceback.format_exc()})
                 record["inference_seconds"] = time.perf_counter() - sample_start
-                record["gpu_peak_allocated_bytes"] = torch.cuda.max_memory_allocated(0)
+                record["gpu_peak_allocated_bytes"] = {str(device): torch.cuda.max_memory_allocated(device) for device in (0, 1)}
                 # Gold is replayed only after inference, on a separate diagnostic env.
                 gold_env = ZaicEnv(data, "train", sample.id)
                 for gold_call in sample.label["tool_calls"]:

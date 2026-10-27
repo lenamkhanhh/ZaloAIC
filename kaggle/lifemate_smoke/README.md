@@ -3,7 +3,7 @@
 Run `python kaggle/lifemate_smoke/build_notebook.py` to regenerate the notebook.
 The notebook is self-contained; Kaggle does not need the sidecar Python files.
 
-- Private kernel, fixed 5 dev IDs, source commit d1b4b30, seed 42.
+- Private kernel, fixed 5 dev IDs, source commit a9d48d2, seed 42.
 - Recommended pipeline, PhoWhisper-small + Qwen3-4B. Transformers backend;
   this is not an ASR/LLM comparison, training run or heldout evaluation.
 - All history user audio is transcribed, even though dev history includes gold
@@ -17,6 +17,14 @@ The notebook is self-contained; Kaggle does not need the sidecar Python files.
   generation boundaries; native CUDA calls are not preempted. Kernel run is
   capped at 3600 seconds when pushed.
 - On failure, inspect `smoke_artifacts.zip` and phase logs before any rerun.
+
+Version 1 was inspected locally before a controlled retry: both original
+models loaded on T4, but 4/5 samples failed with CUDA OOM during long-prompt
+attention. No quality result is inferred from that run. Version 2 preserves
+FP16 weights, seed and five IDs, and balances LLM layers across the two assigned
+T4s (6 GiB weight-placement budget per GPU). This is a smoke placement, not a
+claim of fitting or meeting 30 seconds on a single A30. Source/core defaults
+still use a single device unless this optional placement is requested.
 
 Launch once (GPU time is consumed):
 
