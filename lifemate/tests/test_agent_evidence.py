@@ -130,6 +130,31 @@ class EvidenceRegressions(unittest.TestCase):
         AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Top up không bảy một hai ba bốn năm sáu bảy tám", env,
             lambda p, t: None if env.calls else {"name": "wallet.topup", "arguments": {"phone": "0712345678"}})
         self.assertEqual(len(env.calls), 1)
+
+    def test_grouped_spoken_digits_and_phone_in_read_message(self):
+        for text in ("Call không bảy một hai, ba bốn năm, sáu bảy tám",):
+            env = Env()
+            AgentLoop(PipelineConfig(), TOOLS).run(self.sample, text, env,
+                lambda p, t: None if env.calls else {"name": "wallet.topup", "arguments": {"phone": "0712345678"}})
+            self.assertEqual(len(env.calls), 1)
+        self.sample.history = [Turn("assistant", tool_calls=[{"name": "chat.read", "arguments": {}}],
+            tool_results=[{"ok": True, "messages": [{"content": "New number: 0712345678. Please call."}]}])]
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call that number", env,
+            lambda p, t: None if env.calls else {"name": "wallet.topup", "arguments": {"phone": "0712345678"}})
+        self.assertEqual(len(env.calls), 1)
+
+    def test_person_name_in_user_text_does_not_become_an_id(self):
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call Jo", env,
+            lambda p, t: {"name": "phone.call", "arguments": {"contact_id": "Jo"}})
+        self.assertEqual(env.calls, [])
+
+    def test_plain_explicit_id_with_parameter_label_is_supported(self):
+        env = Env()
+        AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call contact_id=opaque", env,
+            lambda p, t: None if env.calls else {"name": "phone.call", "arguments": {"contact_id": "opaque"}})
+        self.assertEqual(len(env.calls), 1)
         env = Env()
         AgentLoop(PipelineConfig(), TOOLS).run(self.sample, "Call contact explicit_7", env,
             lambda p, t: None if env.calls else {"name": "phone.call", "arguments": {"contact_id": "explicit_7"}})
