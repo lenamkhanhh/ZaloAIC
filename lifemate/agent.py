@@ -10,8 +10,8 @@ Loop semantics (same as deep-dives/01, now with the 2026-10-27 review
 fix applied here and there):
 
 - After EVERY executed call, the next prompt is rebuilt with ALL
-  observations so far (``name(args) -> ok/error/output``, output
-  truncated to 300 chars). Previously observation only entered the
+  observations so far (``name(args) -> ok/error/output``, complete
+  compact JSON). Previously observation only entered the
   prompt on a guard-triggered replan, which meant the normal
   "continue" path ran blind — a read result could not feed the next
   call at all.
@@ -37,6 +37,17 @@ from typing import Callable
 from .adapter import ZaicEnv
 from .loader import Sample, catalog_tools_for_sample
 from .grounding import ground_arguments
+from .llm import is_stop_signal
+
+
+ACTION_POLICY = """Action policy (apply to the CURRENT request, not old requests in history):
+1. Identify the user's final intent, corrections, cancellations and each requested action. Do not add follow-up actions the user did not request. A cancelled sole request, chat, or an unavailable capability needs no tool call; output {"stop":true}.
+2. Evaluate conditions BEFORE their dependent writes. Resolve the target date/location using current_time and context. Reuse a still-valid matching observation in history; otherwise read the needed fact first. Do not execute both branches. If the selected branch requests no action, stop.
+3. Resolve entities BEFORE acting. Use catalog x-ref IDs from matching observed collections or an ID explicitly provided by the user. Names are not IDs. Read/search when an entity is not yet resolved. One returned entity is not proof of user intent: check name/relation/room and the request. Several candidates require a unique explicit discriminator or sys.ask_missing_info; do not pick the first.
+4. Every argument needs evidence: the user's request/context, applicable history, a tool result, a schema default, or a calculation from those facts. Never invent phone numbers, amounts or dates/times. Read a bill/balance/event when the request refers to its value. Missing required information that cannot be obtained by a relevant read must be asked using sys.ask_missing_info with the exact tool_name and missing params. Do not assume the current time is a requested reminder time.
+5. Tool results with done:false did NOT complete the requested action even if ok:true. Change the plan using evidence; do not repeat the same failed call. A created reminder is not a completed reminder: do not mark it done unless the user requested completion. A condition written into a label does not make an immediate write conditional.
+6. After all requested actions of the selected branch succeed, output {"stop":true}. Do not undo, mark complete, recreate or verify writes without a separate need in this request. Repeat an identical action only if the user explicitly requested multiple instances; otherwise avoid duplicate calls. sys.ask_missing_info ends this turn while waiting for the user.
+Output exactly one tool-call JSON or {"stop":true}; no invented tool named stop, no narrative, no list of calls."""
 
 
 @dataclass
@@ -62,10 +73,11 @@ class LoopGuard:
 def render_observation_prompt(base_prompt: str, executed: list[dict], results: list[dict], replan: bool = False) -> str:
     lines = []
     for call, result in zip(executed, results):
-        outcome = "ok" if result.get("ok") else f"error: {result.get('error')}"
-        output = repr(result)
-        if len(output) > 300:
-            output = output[:300] + "..."
+        outcome = ("not_done" if result.get("ok") and result.get("done") is False else
+                   "ok" if result.get("ok") else f"error: {result.get('error')}")
+        # All fields remain available, including phone/relation/amount/text.
+        # The LLM backend enforces the prompt+output cap; never silently clip.
+        output = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
         lines.append(f"- {call['name']}({call['arguments']}) -> {outcome}; output={output}")
     text = (
         f"{base_prompt}\n\nPrevious calls and their OBSERVED results "
@@ -89,7 +101,8 @@ def build_base_prompt(sample: Sample, transcript: str, tools: dict) -> str:
         "You are a Vietnamese voice assistant. Output exactly one JSON "
         "object per turn: {\"name\": \"<tool>\", \"arguments\": {...}} or "
         "{\"stop\": true} when done. Never invent ids: use only ids from "
-        "previous tool results in this conversation.",
+        "previous tool results in this conversation or explicit user input.",
+        ACTION_POLICY,
         f"Current time: {ctx.get('current_time')} ({ctx.get('timezone')}).",
         f"User: {profile.get('name', '')}, city {profile.get('city', '')}.",
         "User-provided context: " + json.dumps(ctx, ensure_ascii=False),
@@ -143,14 +156,17 @@ class AgentLoop:
                 gen = generator(prompt, self.tools)
                 if gen is None:
                     return env.submission_line()
-                if isinstance(gen, dict) and gen.get("stop"):
+                if is_stop_signal(gen):
                     return env.submission_line()
                 if not isinstance(gen, dict) or "name" not in gen:
-                    prompt = base + "\n\nYour last output was not a valid tool call JSON. Output one tool call or {\"stop\": true}."
+                    prompt = render_observation_prompt(base, executed, results)
+                    prompt += "\n\nYour last output was not a valid tool call JSON. Output one tool call or {\"stop\": true}."
                     continue
                 call = {"name": gen["name"], "arguments": gen.get("arguments", {}) or {}}
                 if self.config.grounding:
-                    call, errors = ground_arguments(call, self.tools, executed, results)
+                    call, errors = ground_arguments(call, self.tools, executed, results,
+                                                    history=sample.history, transcript=transcript,
+                                                    context=sample.context)
                 else:
                     errors = []
                 check = ({"ok": False, "error": "; ".join(errors)} if errors else
@@ -173,6 +189,8 @@ class AgentLoop:
             result = env.call(call["name"], call["arguments"])
             executed.append(call)
             results.append(result)
+            if call["name"] == "sys.ask_missing_info" and result.get("ok"):
+                return env.submission_line()
             if completion is not None and completion(result, executed):
                 return env.submission_line()
             action = self.guard.record(call, state_progress=bool(result.get("ok")))

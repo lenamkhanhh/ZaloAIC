@@ -57,9 +57,15 @@ def parse_model_output(text: str) -> dict | None:
         raise ValueError(f"model output is not JSON: {text[:200]!r}") from exc
     if not isinstance(obj, dict):
         raise ValueError(f"model output is not a JSON object: {text[:200]!r}")
-    if obj.get("stop") is True:
+    if is_stop_signal(obj):
         return None
     return obj
+
+
+def is_stop_signal(obj):
+    """Accept the canonical stop and an unambiguous stop-as-tool variant."""
+    return isinstance(obj, dict) and (obj.get("stop") is True or
+           (obj.get("name") == "stop" and not obj.get("arguments")))
 
 
 class VLLMGenerator:

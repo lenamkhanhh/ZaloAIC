@@ -187,11 +187,14 @@ def ground_name(span: str, candidates: list) -> GroundingResult:
                            backend=FUZZY_BACKEND)
 
 
-def ground_arguments(call: dict, tools: dict, executed: list[dict], results: list[dict]):
+def ground_arguments(call: dict, tools: dict, executed: list[dict], results: list[dict],
+                     *, history=(), transcript="", context=None):
     """Normalize only supplied slots; never invent a missing argument.
 
-    Names for x-ref slots can resolve only against entities returned by read
-    tools in the referenced app. Keep the exact id from the observation;
+    Names for x-ref slots resolve against successful observed entities in the
+    referenced collection (including history and newly created entities).
+    Unknown IDs/phones are rejected before call, with no hidden state lookup.
+    Keep the exact id from the observation;
     never apply punctuation/case normalization to a tool-internal identifier.
     Ambiguity goes back to the model as a validation error, not an auto-ask.
     """
@@ -202,18 +205,8 @@ def ground_arguments(call: dict, tools: dict, executed: list[dict], results: lis
     properties = tools.get(call.get("name"), {}).get("parameters", {}).get("properties", {})
     errors = []
 
-    def entities(value):
-        if isinstance(value, dict):
-            if isinstance(value.get("id"), str):
-                display = next((value[k] for k in ("name", "display_name", "title", "label")
-                                if isinstance(value.get(k), str)), None)
-                if display is not None:
-                    yield (value["id"], display)
-            for child in value.values():
-                yield from entities(child)
-        elif isinstance(value, list):
-            for child in value:
-                yield from entities(child)
+    from .evidence import EvidenceLedger, _phone
+    evidence = EvidenceLedger(tools, executed, results, history, transcript, context)
 
     for name, value in list(args.items()):
         schema = properties.get(name, {})
@@ -243,18 +236,21 @@ def ground_arguments(call: dict, tools: dict, executed: list[dict], results: lis
             else:
                 args[name] = date
         elif isinstance(value, str) and schema.get("x-ref"):
-            app = str(schema["x-ref"]).split(".")[0]
-            candidates = {}
-            for previous, result in zip(executed, results):
-                spec = tools.get(previous["name"], {})
-                if (spec.get("kind") == "read" and previous["name"].startswith(app + ".")
-                        and result.get("ok")):
-                    candidates.update(entities(result))
-            if not candidates or value in candidates:
-                continue  # No repair without read evidence. Official validate remains authoritative.
-            grounded = ground_name(value, list(candidates.items()))
+            ref = schema["x-ref"]
+            candidates = evidence.entities.get(ref, {})
+            if value in candidates or evidence.user_supplied(value):
+                continue
+            named = [(key, display) for key, display in candidates.items() if display is not None]
+            grounded = ground_name(value, named)
             if grounded.status in ("EXACT", "FUZZY_GROUNDED"):
                 args[name] = grounded.candidate
             else:
-                errors.append(f"{name}: {grounded.status}; select an observed id or obtain distinguishing information")
+                app = str(ref).split(".")[0]
+                reads = [key for key, spec in tools.items() if key.startswith(app + ".") and spec.get("kind") == "read"]
+                errors.append(f"{name}: no supported ID for {ref}; use observed evidence or read via {reads}; "
+                              "ask only if the user must supply missing/disambiguating information")
+        elif name in ("phone", "phone_number") and isinstance(value, str):
+            if _phone(value) not in evidence.phones:
+                errors.append(f"{name}: no supporting phone in user input/context or successful tool results; "
+                              "resolve the person through contacts.search or ask for the missing phone")
     return call, errors
