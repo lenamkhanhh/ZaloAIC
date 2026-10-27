@@ -1,0 +1,468 @@
+{
+  "source": {
+    "branch": "codex/lifemate-baseline-integration",
+    "repo": "lenamkhanhh/ZaloAIC",
+    "split_file": "lifemate/splits/train_dev_heldout.json",
+    "split": "dev",
+    "n_dev": 1237,
+    "n_heldout_not_used": 308,
+    "data": "train+public_test.zip v3.2.0 build 2026-10-24, 876430231 bytes, SHA256 57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320",
+    "note": "Gold tool calls are NOT included in this file on purpose: score them from train labels with lifemate/run.py score. Do not hard-code probe answers into the agent."
+  },
+  "smoke_ids": [
+    "train_0025",
+    "train_0016",
+    "train_0049",
+    "train_0004",
+    "train_0019"
+  ],
+  "probes": [
+    {
+      "id": "train_0003",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 5,
+      "history_turns": 0,
+      "current_time": "2026-11-18T21:00:00+07:00",
+      "transcript_gold": "Ơi, nạp giúp mình 50 nghìn điện thoại cho bác Ba với chuyển ví cho cô Mai số tiền điện tháng này nhé.",
+      "categories": [
+        "multi_step",
+        "read_dependent",
+        "money"
+      ],
+      "reason": "Chuỗi 5 call: list_bills -> search Bác Ba -> topup 50k vào số của Bác Ba -> search Cô giáo Mai -> transfer 845k (bằng đúng hóa đơn điện) cho c_06.",
+      "skill_to_test": "Lấy phone từ kết quả search trước, không dùng số trong transcript; lấy amount từ bill, không dùng số nói sẵn; mỗi bước dùng đúng kết quả bước trước.",
+      "error_to_distinguish": "Topup nhầm số; transfer amount khác bill điện; chuyển cho contact đầu tiên của search thứ hai mà không kiểm tra id."
+    },
+    {
+      "id": "train_0004",
+      "smoke": true,
+      "class": "normal",
+      "n_gold_calls": 2,
+      "history_turns": 0,
+      "current_time": "2026-11-23T08:10:00+07:00",
+      "transcript_gold": "Trợ lý ơi, giảm độ sáng đèn phòng ngủ nhỏ xuống còn một nửa nhé.",
+      "categories": [
+        "device_grounding",
+        "relative_quantity"
+      ],
+      "reason": "'Đèn phòng ngủ nhỏ' không phải 'phòng ngủ' chung, và 'một nửa' phải ra số nguyên.",
+      "skill_to_test": "Lấy device_id từ get_status theo name/room chính xác; brightness là integer theo thang 0-100, gold là 50.",
+      "error_to_distinguish": "Chọn light_bedroom thay vì light_bedroom2; gửi brightness dạng chuỗi '50%' hoặc 'một nửa'; bỏ qua get_status mà đoán id."
+    },
+    {
+      "id": "train_0005",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 2,
+      "history_turns": 0,
+      "current_time": "2026-11-26T13:30:00+07:00",
+      "transcript_gold": "Trợ lý ơi, đặt giúp tôi xe bốn chỗ từ công ty đi họp phụ huynh chiều nay nhé, đặt ngay bây giờ luôn.",
+      "categories": [
+        "read_dependent",
+        "ride",
+        "fuzzy_text"
+      ],
+      "reason": "List calendar rồi đặt xe tới đúng địa điểm của sự kiện họp phụ huynh, vehicle car4.",
+      "skill_to_test": "Lấy dropoff từ event.location; pickup/dropoff là fuzzy nên chỉ cần token-F1 >0.6, nhưng vehicle và status/id mới quyết định hash (pickup/dropoff bị loại khỏi canon hash, xem §3).",
+      "error_to_distinguish": "Đặt xe tới địa chỉ nói chung chung; sai vehicle; bỏ qua calendar mà đoán dropoff."
+    },
+    {
+      "id": "train_0007",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 1,
+      "history_turns": 0,
+      "current_time": "2026-11-10T17:15:00+07:00",
+      "transcript_gold": "Đặt báo thức 5 giờ nhé, à không, 5 rưỡi sáng mai đó",
+      "categories": [
+        "negation",
+        "self_correction",
+        "date_time",
+        "write_only"
+      ],
+      "reason": "'Đặt báo thức 5 giờ nhé, à không, 5 rưỡi sáng mai' - chỉ 1 write, không read.",
+      "skill_to_test": "Lấy thời gian cuối cùng sau mệnh đề sửa; 'sáng mai' = ngày hôm sau 05:30.",
+      "error_to_distinguish": "Tạo alarm 05:00 theo mệnh đề đầu; tạo 2 alarm; thêm read xác minh không có trong gold."
+    },
+    {
+      "id": "train_0008",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 1,
+      "history_turns": 4,
+      "current_time": "2026-11-13T12:00:00+07:00",
+      "transcript_gold": "Cái còn lại nếu mai mưa thì dời muộn nửa tiếng, không mưa giữ nguyên.",
+      "categories": [
+        "conditional",
+        "history",
+        "pronoun"
+      ],
+      "reason": "'Cái còn lại' chỉ báo thức 07:00 còn lại sau khi history đã xóa 06:15; forecast ngày mai không mưa -> gold chỉ có forecast, không write.",
+      "skill_to_test": "Giải đại từ từ history; nhánh sai thì dừng sau read, không sửa/xóa báo thức còn lại.",
+      "error_to_distinguish": "Sửa/xóa báo thức 07:00 ở nhánh sai; hiểu 'cái còn lại' thành evt/alarm khác; bỏ qua forecast."
+    },
+    {
+      "id": "train_0009",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 1,
+      "history_turns": 0,
+      "current_time": "2026-11-19T19:10:00+07:00",
+      "transcript_gold": "Nạp dùm em Linh 50 ngàn cho số không chín năm không năm ba sáu không ba sáu bảy nha.",
+      "categories": [
+        "money",
+        "spoken_digits",
+        "write_only"
+      ],
+      "reason": "Số điện thoại đọc rời từng chữ số và amount 50k, chỉ 1 write topup.",
+      "skill_to_test": "Ghép chuỗi số thành 09505360367 giữ nguyên, không khoảng trắng; amount integer 50000.",
+      "error_to_distinguish": "Mất/thừa chữ số; amount dạng chuỗi '50 ngàn'; thêm contacts.search không có trong gold."
+    },
+    {
+      "id": "train_0011",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 4,
+      "history_turns": 0,
+      "current_time": "2026-11-10T18:15:00+07:00",
+      "transcript_gold": "Nếu ví đủ thì trả điện và nhắn Bố là đã đóng, còn không thì trả ngân hàng và nhắc tôi tám giờ tối nay nạp tiền vào ví nhé.",
+      "categories": [
+        "conditional",
+        "money",
+        "bill",
+        "branch"
+      ],
+      "reason": "Ví 705.232đ < hóa đơn điện 854.000đ -> trả bằng bank, nhắc nạp ví 20:00 tối đó, và KHÔNG nhắn Bố (nhắn Bố chỉ thuộc nhánh ví đủ).",
+      "skill_to_test": "So sánh balance với amount của đúng bill điện; source enum bank/ewallet; chỉ làm follow-up của nhánh đã chọn.",
+      "error_to_distinguish": "Trả bằng ewallet rồi nhận done=false; nhắn Bố ở nhánh sai; quên reminder; trả bill tv/nước đầu tiên."
+    },
+    {
+      "id": "train_0016",
+      "smoke": true,
+      "class": "normal",
+      "n_gold_calls": 5,
+      "history_turns": 0,
+      "current_time": "2026-11-24T11:40:00+07:00",
+      "transcript_gold": "Ờ à, nếu mai mưa thì dời lịch đá bóng sáng mai muộn hai tiếng với nhắn SMS cho Mẹ báo giờ mới, còn không mưa thì thôi nhé.",
+      "categories": [
+        "conditional",
+        "multi_step",
+        "read_dependent",
+        "date_time",
+        "sms"
+      ],
+      "reason": "Nhánh mưa đúng, phức tạp hơn 0025: dời event +2 giờ cả start lẫn end, rồi SMS cho Mẹ với giờ mới.",
+      "skill_to_test": "Cộng giờ vào cả start và end; lấy event_id từ list_events; lấy contact_id của Mẹ từ contacts.search; nội dung SMS phải chứa giờ mới (fuzzy).",
+      "error_to_distinguish": "Chỉ dời start mà quên end; SMS giờ cũ; nhắn nhầm người; dùng location/title thay cho id."
+    },
+    {
+      "id": "train_0019",
+      "smoke": true,
+      "class": "empty",
+      "n_gold_calls": 0,
+      "history_turns": 0,
+      "current_time": "2026-11-19T17:40:00+07:00",
+      "transcript_gold": "Chị ơi, giúp tôi đặt phòng khách sạn ở Đà Lạt với nhé.",
+      "categories": [
+        "empty",
+        "out_of_scope"
+      ],
+      "reason": "Đặt phòng khách sạn ở Đà Lạt, trong khi installed_apps chỉ có smart_home, alarm, weather. Mẫu empty ngắn nhất, kiểm tra refuse.",
+      "skill_to_test": "Trả [] và không gọi bất kỳ tool nào, kể cả read thăm dò.",
+      "error_to_distinguish": "Gọi tool gần giống (calendar, ride, maps) cho 'chắc'; trả ask thay vì []; gọi read rồi mới []."
+    },
+    {
+      "id": "train_0025",
+      "smoke": true,
+      "class": "ask_after",
+      "n_gold_calls": 5,
+      "history_turns": 0,
+      "current_time": "2026-11-27T14:00:00+07:00",
+      "transcript_gold": "Nếu mai mưa thì huỷ lịch đá bóng sáng mai với gọi cho bạn Minh nhé, còn không mưa thì thôi ạ.",
+      "categories": [
+        "conditional",
+        "ask_after",
+        "duplicate_name",
+        "date_time"
+      ],
+      "reason": "Nhánh mưa đúng: forecast mưa -> hủy đá bóng, rồi gọi Minh nhưng search trả 2 Minh -> hỏi. Gộp 3 kỹ năng trong 1 mẫu ngắn, không history.",
+      "skill_to_test": "Đọc forecast rồi mới quyết định nhánh; chọn event đúng theo title+ngày; không chọn bừa 1 trong 2 contact trùng tên mà hỏi đúng tool_name/params.",
+      "error_to_distinguish": "Chọn c_05 hoặc c_08 thay vì ask; hủy sai event; gọi phone.call với contact_id đoán; bỏ qua forecast mà hủy luôn."
+    },
+    {
+      "id": "train_0036",
+      "smoke": false,
+      "class": "empty",
+      "n_gold_calls": 0,
+      "history_turns": 0,
+      "current_time": "2026-11-21T13:30:00+07:00",
+      "transcript_gold": "Tắt đèn phòng làm việc đi à thôi khỏi, không cần.",
+      "categories": [
+        "empty",
+        "negation",
+        "self_cancel"
+      ],
+      "reason": "'Tắt đèn phòng làm việc đi à thôi khỏi, không cần.' Ý định cuối là không làm gì.",
+      "skill_to_test": "Ưu tiên mệnh đề hủy cuối cùng hơn động từ đầu tiên.",
+      "error_to_distinguish": "Thực thi light_set theo động từ đầu; hỏi lại thay vì []; đọc get_status rồi mới []."
+    },
+    {
+      "id": "train_0042",
+      "smoke": false,
+      "class": "ask_after",
+      "n_gold_calls": 3,
+      "history_turns": 0,
+      "current_time": "2026-11-16T12:00:00+07:00",
+      "transcript_gold": "Đặt báo thức 6 rưỡi sáng mai với gọi cho Minh giúp tôi nhé.",
+      "categories": [
+        "ask_after",
+        "duplicate_name",
+        "date_time"
+      ],
+      "reason": "Báo thức 6 rưỡi sáng mai + gọi Minh, search trả 2 Minh -> hỏi sau khi đã tạo alarm.",
+      "skill_to_test": "Chuyển '6 rưỡi sáng mai' thành ngày hôm sau 06:30 ISO có offset; ask ở cuối, không làm mất alarm đã tạo.",
+      "error_to_distinguish": "Chọn 1 Minh; hỏi trước khi tạo alarm rồi dừng luôn; chuyển 6:30 thành hôm nay."
+    },
+    {
+      "id": "train_0048",
+      "smoke": false,
+      "class": "ask_after",
+      "n_gold_calls": 2,
+      "history_turns": 0,
+      "current_time": "2026-11-06T10:40:00+07:00",
+      "transcript_gold": "Ờ à, gọi cho Lan nhé.",
+      "categories": [
+        "ask_after",
+        "duplicate_name"
+      ],
+      "reason": "Dạng ask_after ngắn nhất: chỉ search Lan (vợ vs đồng nghiệp) rồi hỏi, final_state rỗng.",
+      "skill_to_test": "Khi 2 Lan khác relation và không có slot phân biệt thì hỏi phone.call/contact_id, không chọn người đầu tiên.",
+      "error_to_distinguish": "Chọn c_05 hoặc c_10 theo thứ tự list; gọi phone.call với phone đoán; hỏi sai params."
+    },
+    {
+      "id": "train_0049",
+      "smoke": true,
+      "class": "normal",
+      "n_gold_calls": 4,
+      "history_turns": 0,
+      "current_time": "2026-11-15T07:45:00+07:00",
+      "transcript_gold": "Ờ à, chuyển tiền mạng tháng này cho chủ nhà Phạm Hùng nhé, nếu tài khoản thanh toán không đủ thì lấy từ tiết kiệm giúp tôi.",
+      "categories": [
+        "money",
+        "read_dependent",
+        "balance_fallback",
+        "multi_step"
+      ],
+      "reason": "Tiền mạng 221.000đ, tài khoản thanh toán chỉ 129.450đ -> chuyển từ tiết kiệm cho 'Chủ nhà - Phạm Hùng'.",
+      "skill_to_test": "Chọn bill theo type=internet (không phải bill đầu tiên); so sánh số dư; đổi from_account_id; lấy beneficiary_id từ list_beneficiaries, tên hiển thị có tiền tố 'Chủ nhà -'.",
+      "error_to_distinguish": "Chuyển từ tài khoản thanh toán rồi nhận done=false mà không đổi nguồn; chọn beneficiary theo tên gần đúng; lấy amount từ transcript thay vì bill."
+    },
+    {
+      "id": "train_0063",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 1,
+      "history_turns": 2,
+      "current_time": "2026-11-13T19:30:00+07:00",
+      "transcript_gold": "Nhắn tin cho Minh: nhớ mang tài liệu.",
+      "categories": [
+        "history",
+        "x_one_of"
+      ],
+      "reason": "History đã cho số Minh (khách hàng) 09631116692; gold gửi SMS bằng contact_id c_10 luôn, không search lại.",
+      "skill_to_test": "Dùng id từ history (assistant turn đã nêu contact tương ứng); sms.send chỉ cần 1 trong contact_id/phone_number + content bắt buộc.",
+      "error_to_distinguish": "Search lại rồi chọn nhầm Minh khác; gửi bằng phone_number thay vì contact_id (sai key-set trong proxy scorer); thiếu content."
+    },
+    {
+      "id": "train_0069",
+      "smoke": false,
+      "class": "ask_after",
+      "n_gold_calls": 4,
+      "history_turns": 10,
+      "current_time": "2026-11-20T21:40:00+07:00",
+      "transcript_gold": "Tắt đèn phòng ngủ nhỏ giúp chị, rồi gửi tin nhắn cho Hương là nhớ mang hộ cái sạc nhé.",
+      "categories": [
+        "history",
+        "device_grounding",
+        "duplicate_name",
+        "ask_after"
+      ],
+      "reason": "History 10 turn gây nhiễu, 'đèn phòng ngủ nhỏ' -> light_bedroom2 tắt, rồi nhắn Hương nhưng có 2 Hương -> hỏi sms.send.",
+      "skill_to_test": "Bỏ qua history không liên quan; phân biệt phòng ngủ nhỏ với phòng ngủ; duplicate -> ask đúng tool sms.send.",
+      "error_to_distinguish": "Tắt light_bedroom; chọn 1 Hương; gửi SMS luôn với contact_id đoán."
+    },
+    {
+      "id": "train_0076",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 3,
+      "history_turns": 0,
+      "current_time": "2026-11-17T09:00:00+07:00",
+      "transcript_gold": "Đặt xe bốn chỗ từ công ty đến chỗ hẹn cà phê với gia đình chiều nay, đón sớm bốn mươi lăm phút, nhắc tôi mang laptop trước giờ xe đón mười lăm phút.",
+      "categories": [
+        "read_dependent",
+        "date_time",
+        "arithmetic",
+        "ride"
+      ],
+      "reason": "Lịch cà phê 14:30 -> đón sớm 45 phút = 13:45, nhắc mang laptop trước giờ đón 15 phút = 13:30; pickup là work_address, dropoff là event location, xe bốn chỗ = car4.",
+      "skill_to_test": "Trừ giờ 2 lần có chuỗi phụ thuộc (event -> pickup -> reminder); lấy pickup từ profile, không lấy từ transcript; vehicle enum.",
+      "error_to_distinguish": "Đón lúc 14:30; nhắc lúc 14:15 hoặc 13:45; pickup = địa chỉ nhà; sai vehicle."
+    },
+    {
+      "id": "train_0079",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 3,
+      "history_turns": 6,
+      "current_time": "2026-11-21T10:45:00+07:00",
+      "transcript_gold": "Mấy hoá đơn đến hạn trong năm ngày tới thì trả bằng ngân hàng hết, mà cái nào trên 500 nghìn thì để lại đó chưa trả nhé.",
+      "categories": [
+        "bill",
+        "filter",
+        "date_time",
+        "money"
+      ],
+      "reason": "Trả các hóa đơn đến hạn trong 5 ngày tới bằng bank, nhưng loại hóa đơn >500k: điện 920k bị loại, nước 210k và internet 220k được trả.",
+      "skill_to_test": "Lọc đồng thời theo due_date trong cửa sổ và amount <=500k; mỗi bill là 1 pay call riêng với source=bank.",
+      "error_to_distinguish": "Trả tất cả hóa đơn chưa trả; trả cả bill >500k; dùng source=ewallet; tính cửa sổ ngày sai."
+    },
+    {
+      "id": "train_0082",
+      "smoke": false,
+      "class": "empty",
+      "n_gold_calls": 0,
+      "history_turns": 10,
+      "current_time": "2026-11-24T09:10:00+07:00",
+      "transcript_gold": "Mai mà mưa thì đẩy lịch chạy bộ sáng muộn hai tiếng rồi nhắn SMS cho bố giờ mới, còn không mưa thì thôi nha.",
+      "categories": [
+        "empty",
+        "conditional",
+        "history"
+      ],
+      "reason": "Điều kiện mưa ngày mai đã được trả lời trong history (ngày mai có mây, không mưa) nên gold là [], không có cả forecast read.",
+      "skill_to_test": "Dùng observation đã có trong history thay vì gọi lại forecast; nhánh sai thì dừng hẳn.",
+      "error_to_distinguish": "Gọi lại weather.get_forecast làm trace khác rỗng -> mất điểm mẫu empty dù hash không đổi; vẫn hủy lịch/nhắn SMS ở nhánh sai."
+    },
+    {
+      "id": "train_0092",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 4,
+      "history_turns": 8,
+      "current_time": "2026-11-02T19:00:00+07:00",
+      "transcript_gold": "Đặt giúp em món bún bò giò ở quán bún bò Huế, mỗi người trong nhóm chat Gia đình một suất, không tính em nhé.",
+      "categories": [
+        "multi_step",
+        "read_dependent",
+        "counting"
+      ],
+      "reason": "Đếm thành viên nhóm Gia đình từ list_chats (Mẹ, Bố, Lan = 3) rồi đặt đúng 3 phần bún bò giò, không tính user.",
+      "skill_to_test": "Đếm members của đúng chat group, không cộng user, không đếm các chat direct; lấy item_id từ menu sau khi chọn đúng quán.",
+      "error_to_distinguish": "Đặt 4 phần (cộng user) hoặc 1 phần; chọn món đặc biệt thay vì bún bò giò; bỏ qua get_menu mà đoán item_id."
+    },
+    {
+      "id": "train_0095",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 1,
+      "history_turns": 6,
+      "current_time": "2026-11-27T11:10:00+07:00",
+      "transcript_gold": "Thôi gọi luôn cho người đó giúp em nha.",
+      "categories": [
+        "history",
+        "pronoun"
+      ],
+      "reason": "'Thôi gọi luôn cho người đó' - 'người đó' là Mẹ, người vừa được hỏi số ở history đầu, không phải ca sĩ Đức Phúc ở turn sau.",
+      "skill_to_test": "Giải đại từ về người gần nhất trong ngữ cảnh hỏi số, bỏ qua distractor âm nhạc; phone.call bằng contact_id c_02.",
+      "error_to_distinguish": "Gọi cho người khác trong history; search lại rồi chọn sai; gọi bằng phone_number đoán."
+    },
+    {
+      "id": "train_0116",
+      "smoke": false,
+      "class": "ask_only",
+      "n_gold_calls": 1,
+      "history_turns": 12,
+      "current_time": "2026-11-19T10:30:00+07:00",
+      "transcript_gold": "Ờ, nhắc tôi gọi điện cho mẹ với nha.",
+      "categories": [
+        "ask_only",
+        "missing_info",
+        "history_distractor"
+      ],
+      "reason": "'Nhắc tôi gọi điện cho mẹ' thiếu time, history dài 12 turn toàn thông tin gây nhiễu (ví, lịch, nhạc, quán, vàng).",
+      "skill_to_test": "Hỏi đúng tool_name=reminders.create, params=[time]; không đoán time, không search contact, không đưa thông tin history vào trace.",
+      "error_to_distinguish": "Tạo reminder với time đoán; hỏi sai tool (phone.call) hoặc sai param; gọi read thăm dò trước khi hỏi."
+    },
+    {
+      "id": "train_0219",
+      "smoke": false,
+      "class": "ask_only",
+      "n_gold_calls": 1,
+      "history_turns": 0,
+      "current_time": "2026-11-06T13:30:00+07:00",
+      "transcript_gold": "Nhắc em đi họp với nha.",
+      "categories": [
+        "ask_only",
+        "missing_info"
+      ],
+      "reason": "Dạng ask_only ngắn nhất: 'Nhắc em đi họp với nha.' thiếu time, không history.",
+      "skill_to_test": "Hỏi đúng reminders.create/time, không đoán.",
+      "error_to_distinguish": "Đoán time 'mai' thành một giờ cụ thể; tạo reminder thiếu time (schema error) thay vì ask."
+    },
+    {
+      "id": "train_0640",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 3,
+      "history_turns": 2,
+      "current_time": "2026-10-01T09:00:00+07:00",
+      "transcript_gold": "Hôm nay đi em, xem lịch hôm nay của anh mà không vướng gì thì cho nó dọn phòng khách luôn.",
+      "categories": [
+        "history",
+        "empty_read",
+        "precondition"
+      ],
+      "reason": "History đặt luật: robot chỉ dọn phòng khách vào ngày lịch trống. List calendar hôm đó trả events=[] (đọc rỗng, không phải lỗi) -> get_status pin 90% -> start phòng khách.",
+      "skill_to_test": "Coi kết quả rỗng là điều kiện thỏa, không phải done=false; kiểm tra pin >=15% trước khi start; rooms phải khớp tên sau khi bỏ dấu.",
+      "error_to_distinguish": "Dừng vì tưởng list rỗng là thất bại; start cả nhà; start khi chưa kiểm tra pin/lịch."
+    },
+    {
+      "id": "train_0896",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 1,
+      "history_turns": 2,
+      "current_time": "2026-09-20T09:00:00+07:00",
+      "transcript_gold": "Vậy chiều hôm đó thêm cho tôi cái lịch gọi cho đội thi công lúc bốn giờ nhé.",
+      "categories": [
+        "history",
+        "date_time",
+        "calendar",
+        "default_value"
+      ],
+      "reason": "History cho ngày 23/9; 'chiều hôm đó' + 16:00 -> create_event không có end, executor tự mặc định end = start + 1 giờ.",
+      "skill_to_test": "Lấy ngày từ history, không lấy ngày current_time 20/9; giữ đúng tập tham số của gold trong proxy scorer (thêm end sẽ vỡ key-set match dù hash vẫn đúng).",
+      "error_to_distinguish": "Tạo lịch ngày 20/9; tự thêm end=17:00; lấy ngày từ 'hôm đó' thành ngày khác."
+    },
+    {
+      "id": "train_1696",
+      "smoke": false,
+      "class": "normal",
+      "n_gold_calls": 3,
+      "history_turns": 22,
+      "current_time": "2026-12-05T20:05:00+07:00",
+      "transcript_gold": "Khoản Northwind Trading chuyển sáng nay, em gửi tiết kiệm sáu tháng nguyên số đó, rồi nhắn Zalo bà Hồng là tui gửi rồi nha.",
+      "categories": [
+        "history",
+        "similar_entity",
+        "money",
+        "done_false"
+      ],
+      "reason": "Mẫu duy nhất trong dev có tool_result ok=true/done=false. History phân biệt Northwind Trading 18tr (xoài) với Northwind Traders 9,5tr (bưởi); gold gửi tiết kiệm 18tr 6 tháng, rồi list_chats, rồi send_message với chat_id chat_6142 KHÔNG có trong list -> done=false.",
+      "skill_to_test": "Chọn đúng thực thể theo tên đầy đủ + số tiền trong history; term_months=6; và khi observation trả done=false thì chẩn đoán, không tự 'sửa' bằng cách chọn chat khác trong list.",
+      "error_to_distinguish": "Lấy 9,5tr của Traders; gửi tiết kiệm sai kỳ hạn; chọn chat Hương/Bác Ba trong list thay cho chat_id gold; coi done=false là schema error và retry vô hạn."
+    }
+  ]
+}
