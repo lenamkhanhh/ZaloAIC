@@ -134,40 +134,60 @@ def canonicalise_output(value: Any) -> Any:
     a claim about the official evaluator's normalisation, which is
     unverified):
 
-    * numbers: rounded to 2 decimal places (DataMate answers are
+    * EVERY canonical form is tagged with its type. The previous
+      version returned a bare bool and a bare float, and in Python
+      ``True == 1.0`` is True, so ``outputs_equal(True, 1)`` wrongly
+      returned True. Now bool -> ("bool", ...), number ->
+      ("number", ...), string -> ("string", ...), date -> ("date",
+      isoformat): different types can never be equal, by construction.
+    * numbers: int and float ARE equivalent when they hold the same
+      value after rounding to 2 decimal places (DataMate answers are
       reported to 2dp in the prior portal notes; rounding here only
-      decides whether two candidates "agree");
+      decides whether two candidates "agree"). NaN/inf are kept as
+      distinct special values, never equal to a number.
     * strings: NFC, lowercased, punctuation collapsed to single spaces;
+    * dates/datetimes: ISO format, kept distinct from the STRING
+      "2025-01-01" (a date object and a date string are different
+      output types; callers must normalise types before consensus if
+      they want them to match);
     * lists: order preserved (ranking questions are order-sensitive);
     * tables (list of dicts): column names normalised the same way as
       strings, rows kept as a set of JSON strings (row order is not
       treated as meaningful for tables).
     """
+    from datetime import date as _date, datetime as _datetime
 
     if isinstance(value, bool):
-        return value
+        return ("bool", value)
     if isinstance(value, (int, float)):
         if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-            return repr(value)
-        return round(float(value), 2)
+            return ("float_special", repr(value))
+        return ("number", round(float(value), 2))
+    if isinstance(value, _datetime):
+        return ("date", value.isoformat())
+    if isinstance(value, _date):
+        return ("date", value.isoformat())
     if isinstance(value, str):
         text = unicodedata.normalize("NFC", value).lower()
         text = "".join(ch if ch.isalnum() else " " for ch in text)
-        return " ".join(text.split())
+        return ("string", " ".join(text.split()))
     if isinstance(value, (list, tuple)):
         if value and all(isinstance(row, dict) for row in value):
             rows = {
                 json.dumps(
-                    {canonicalise_output(k): canonicalise_output(v) for k, v in row.items()},
+                    {str(canonicalise_output(k)): canonicalise_output(v) for k, v in row.items()},
                     sort_keys=True,
                     ensure_ascii=False,
+                    default=str,
                 )
                 for row in value
             }
             return ("table", tuple(sorted(rows)))
         return ("list", tuple(canonicalise_output(v) for v in value))
     if isinstance(value, dict):
-        return ("dict", tuple(sorted((canonicalise_output(k), canonicalise_output(v)) for k, v in value.items())))
+        return ("dict", tuple(sorted(
+            (str(canonicalise_output(k)), canonicalise_output(v)) for k, v in value.items()
+        )))
     return ("other", repr(value))
 
 
@@ -182,41 +202,70 @@ def outputs_equal(a: Any, b: Any) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def decide_consensus(results: Sequence[CandidateResult]) -> Decision:
+def decide_consensus(
+    results: Sequence[CandidateResult],
+    *,
+    allow_empty_answer: bool = False,
+) -> Decision:
     """Decide from executed candidates alone (before independent gates).
 
     Rules (companion report, section 2.3):
 
-    * only successfully executed outputs vote;
-    * 3/3 or 2/3 agreement on the canonicalised output -> provisional answer;
-    * all outputs different, or no output at all -> abstain (an execution
-      failure is NOT evidence that the data is missing, so it is never
-      mapped to ``unanswerable`` here);
-    * an agreed-upon empty output (no rows / empty value) is NOT an
-      answer: it may be a wrong filter rather than genuinely empty data,
-      so it abstains pending an evidence check by the caller.
+    * only successfully executed outputs vote. The DENOMINATOR is the
+      number of successful candidates, and the reasons always state how
+      many candidates were attempted and how many failed, so a "2/3"
+      can never silently mean "2 of 5 attempted, 3 failed".
+    * STRICT majority: the winning output must hold MORE THAN HALF of
+      the successful votes (best_count * 2 > n_successful). The previous
+      code used ``best_count >= 2``, which answered on 2/5 (a minority)
+      and on a 2/2 tie in a 4-candidate run. "Two outputs agree" is not
+      a majority; it is only a majority when k and the failure count
+      make it one. For k=1 the single candidate trivially holds a
+      strict majority -- that is a degenerate case, not consensus
+      evidence, and the reason says so.
+    * no strict majority (all differ, or a tie) -> abstain.
+    * no successful output at all -> abstain (an execution failure is
+      NOT evidence that the data is missing, so it is never mapped to
+      ``unanswerable`` here).
+    * an agreed-upon EMPTY output (None, empty list/tuple, empty
+      string) is NOT an answer by default: it may be a wrong filter
+      rather than genuinely empty data, so it abstains pending an
+      evidence check by the caller. Pass ``allow_empty_answer=True``
+      only when the caller has independently verified the filter and
+      that an empty result is the expected answer type. Note the
+      asymmetry this preserves: COUNT=0 is a NUMBER (0), not an empty
+      output, and is answered normally -- an empty result is not
+      automatically unanswerable, and 0 is not an empty result.
     """
 
     succeeded = [r for r in results if r.succeeded]
+    n_failed = len(results) - len(succeeded)
     if not succeeded:
-        return Decision(kind="abstain", reasons=("all candidates failed or timed out",))
+        return Decision(kind="abstain", reasons=(f"all {len(results)} candidates failed or timed out",))
 
     counts: Counter = Counter(canonicalise_output(r.output) for r in succeeded)
     best_key, best_count = counts.most_common(1)[0]
     fraction = best_count / len(succeeded)
+    is_majority = best_count * 2 > len(succeeded)
 
     # Recover one representative raw output for the winning key.
     representative = next(r.output for r in succeeded if canonicalise_output(r.output) == best_key)
 
-    if best_count >= 2 and len(succeeded) >= 2:
-        if representative is None or (isinstance(representative, (list, tuple)) and len(representative) == 0):
+    if is_majority:
+        if (representative is None
+                or (isinstance(representative, (list, tuple)) and len(representative) == 0)
+                or (isinstance(representative, str) and representative == "")) and not allow_empty_answer:
             return Decision(
                 kind="abstain",
                 consensus_fraction=fraction,
-                reasons=(f"consensus {best_count}/{len(succeeded)} on an empty output; needs an evidence check",),
+                reasons=(f"strict majority {best_count}/{len(succeeded)} successful "
+                         f"({n_failed} failed) on an empty output; needs an evidence check",),
             )
         dissent = [r for r in succeeded if canonicalise_output(r.output) != best_key]
-        reasons = [f"consensus {best_count}/{len(succeeded)} on executed outputs"]
+        reasons = [f"strict majority {best_count}/{len(succeeded)} successful "
+                   f"({len(results)} attempted, {n_failed} failed) on executed outputs"]
+        if len(succeeded) == 1:
+            reasons.append("single successful candidate only; no consensus evidence")
         if dissent:
             reasons.append(f"dissenting output(s) logged: {[r.output for r in dissent]}")
         return Decision(kind="answer", value=representative, consensus_fraction=fraction, reasons=tuple(reasons))
@@ -224,7 +273,8 @@ def decide_consensus(results: Sequence[CandidateResult]) -> Decision:
     return Decision(
         kind="abstain",
         consensus_fraction=fraction,
-        reasons=(f"no majority: {len(succeeded)} successful outputs all differ",),
+        reasons=(f"no strict majority: best {best_count}/{len(succeeded)} successful "
+                 f"({len(results)} attempted, {n_failed} failed)",),
     )
 
 
@@ -291,6 +341,15 @@ def decide_unanswerable(coverage: SchemaCoverage) -> Optional[Decision]:
     schema -- otherwise this function refuses to conclude and returns
     None, forcing the caller to abstain-or-continue explicitly instead
     of silently mislabelling an answerable question.
+
+    What "full-schema fallback" must include (attested by
+    ``fallback_tried=True``, enforced by :func:`check_schema_coverage`
+    when it is used): a scan of ALL available tables/columns, not just
+    the planner's shortlist, AND an alias/equivalent search (a column
+    the planner named one way may exist under another name, and a
+    value derivable from other columns is not "missing data"). A
+    missing column reported by the planner alone proves nothing about
+    the data; only a full scan that also checked equivalents does.
     """
 
     if coverage.is_complete:
@@ -307,6 +366,58 @@ def decide_unanswerable(coverage: SchemaCoverage) -> Optional[Decision]:
     return Decision(kind="unanswerable", reasons=(f"required data/rule absent after full-schema fallback: {'; '.join(missing)}",))
 
 
+def check_schema_coverage(
+    required_tables: Sequence[str],
+    required_columns: Sequence[str],
+    available_tables: Sequence[str],
+    available_columns: Sequence[str],
+    *,
+    aliases: dict[str, Sequence[str]] | None = None,
+    required_rules: Sequence[str] = (),
+    available_rules: Sequence[str] = (),
+) -> SchemaCoverage:
+    """Build a SchemaCoverage from a FULL schema scan, not a shortlist.
+
+    A required item counts as found if it, or any of its aliases, is
+    present in the available schema (alias matching is case-insensitive
+    and ignores spaces/underscores, so "discount_amount",
+    "DiscountAmount" and "discount amount" are the same column). Only
+    items still missing after this scan are reported, and
+    ``fallback_tried`` is True by construction -- this function IS the
+    fallback. Callers must not build a SchemaCoverage by hand from a
+    planner shortlist and then set ``fallback_tried=True``: that is
+    exactly the mislabelling this function exists to prevent. Note
+    what it does NOT prove: a column present in the schema may still
+    hold no rows for the question's period, and a derivable value
+    (e.g. revenue from price x quantity when no revenue column exists)
+    is a modelling decision the caller must make separately -- presence
+    in the schema is necessary, not sufficient, for answerability.
+    """
+    aliases = aliases or {}
+
+    def _norm(name: str) -> str:
+        return name.lower().replace(" ", "").replace("_", "")
+
+    available_t_norm = {_norm(t) for t in available_tables}
+    available_c_norm = {_norm(c) for c in available_columns}
+    available_r_norm = {_norm(r) for r in available_rules}
+
+    def _found(name: str, available: set[str]) -> bool:
+        if _norm(name) in available:
+            return True
+        return any(_norm(alias) in available for alias in aliases.get(name, ()))
+
+    missing_tables = tuple(t for t in required_tables if not _found(t, available_t_norm))
+    missing_columns = tuple(c for c in required_columns if not _found(c, available_c_norm))
+    missing_rules = tuple(r for r in required_rules if not _found(r, available_r_norm))
+    return SchemaCoverage(
+        missing_tables=missing_tables,
+        missing_columns=missing_columns,
+        missing_rules=missing_rules,
+        fallback_tried=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Full per-question decision (schema -> consensus -> gates -> threshold)
 # ---------------------------------------------------------------------------
@@ -321,6 +432,7 @@ def decide_question(
     default_threshold: float = 0.5,
     gates: Optional[GateReport] = None,
     question_type: Optional[str] = None,
+    allow_empty_answer: bool = False,
 ) -> Decision:
     """Run the full decision pipeline for one question.
 
@@ -335,7 +447,7 @@ def decide_question(
         return unanswerable
 
     results = [executor(code) for code in candidates]
-    consensus = decide_consensus(results)
+    consensus = decide_consensus(results, allow_empty_answer=allow_empty_answer)
     if consensus.kind != "answer":
         return consensus
 
@@ -396,6 +508,12 @@ def penalized_accuracy(records: Sequence[CalibrationRecord]) -> float:
     return total / len(records)
 
 
+# A threshold above every possible combined score (scores are in [0, 1]):
+# with this threshold the system answers nothing. It is a real decision
+# in the grid, not a special case bolted on afterwards.
+REJECT_ALL_THRESHOLD = 1.0 + 0.05
+
+
 def learn_thresholds(
     records: Sequence[CalibrationRecord],
     *,
@@ -404,16 +522,32 @@ def learn_thresholds(
 ) -> dict[str, float]:
     """Learn one threshold per question type on train_cal.
 
-    Grid-searches thresholds in [0, 1] maximising PA for that type;
-    ties break towards higher coverage (answer more when PA is equal).
+    Grid-searches thresholds in [0, 1] PLUS the reject-all threshold
+    (1.0 + step) maximising PA for that type; ties break towards higher
+    coverage (answer more when PA is equal). The reject-all option is
+    what the previous version lacked: with a single calibration record
+    (score=1.0, correct=False), every threshold in [0, 1] answers it
+    and scores PA=-1, while rejecting everything scores PA=0 -- so
+    reject-all must be in the grid, or calibration can never learn to
+    abstain from a score range that is entirely wrong.
+
     Types with fewer than ``min_support`` records fall back to the
     global threshold (key ``"__global__"``). This is a proposed
     procedure, not a tuned result: ``min_support`` and ``step`` are
     practical choices, and the learned thresholds must be validated on
     a held-out split before any use.
+
+    Semantics shared by ``learn_thresholds``, ``evaluate_holdout`` and
+    ``decide_question`` (all three must agree, or calibration is a
+    lie): a question is ANSWERED iff ``score >= threshold``. An empty
+    record list cannot justify any answering policy, so it yields the
+    reject-all threshold (fail closed) instead of a fabricated 0.0.
     """
+    reject_all = 1.0 + step
 
     def best_threshold(subset: Sequence[CalibrationRecord]) -> float:
+        if not subset:
+            return reject_all
         best_t, best_pa, best_cov = 0.0, float("-inf"), -1.0
         t = 0.0
         while t <= 1.0 + 1e-9:
@@ -426,6 +560,10 @@ def learn_thresholds(
             if pa > best_pa or (pa == best_pa and cov > best_cov):
                 best_t, best_pa, best_cov = t, pa, cov
             t = round(t + step, 10)
+        # Reject-all candidate: answers nothing, PA = 0 by definition.
+        # It wins only on strictly better PA (tie keeps higher coverage).
+        if 0.0 > best_pa:
+            return reject_all
         return best_t
 
     thresholds: dict[str, float] = {"__global__": best_threshold(list(records))}

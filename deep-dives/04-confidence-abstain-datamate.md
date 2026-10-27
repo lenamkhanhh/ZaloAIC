@@ -653,3 +653,63 @@ mục tiêu ZAIC.
 - **Câu hỏi evaluator còn mở:** xem §5.3 (Q1–Q7); đồng thời xem danh
   sách đầy đủ Q-D1..Q-D6 trong [../gaps.md](../gaps.md). Không gửi câu
   hỏi cho ban tổ chức trong đợt này.
+
+---
+
+## Cập nhật đợt 3 (2026-10-27) — sửa code, đã kiểm chứng bằng test
+
+Các thay đổi trong `04-confidence-abstain-datamate.py`:
+
+- **Canonical form gắn tag type.** Trước đây bool trả về bare `True`
+  và number trả về bare float, mà trong Python `True == 1.0` nên
+  `outputs_equal(True, 1)` sai thành True. Giờ mọi dạng đều có tag:
+  bool → `("bool", …)`, number → `("number", …)`, string →
+  `("string", …)`, date/datetime → `("date", isoformat)`. Khác type
+  không bao giờ bằng nhau theo construction. Int/float vẫn tương đương
+  khi cùng giá trị sau làm tròn 2dp (`1` = `1.0`); NaN/inf là giá trị
+  đặc biệt riêng, không bằng số nào. Date object và chuỗi ngày vẫn
+  khác type — caller muốn chúng khớp thì phải chuẩn hóa type trước
+  consensus, code không tự gộp.
+- **Consensus đổi sang đa số tuyệt đối.** Trước đây
+  `best_count >= 2` nên 2/5 (thiểu số) và hòa 2/2 trong 4 candidate đều
+  bị trả lời. Giờ thắng chỉ khi `best_count * 2 > n_successful`.
+  Mẫu số là số candidate thành công, và reasons luôn ghi số attempted
+  và số failed (`2/3 successful (5 attempted, 2 failed)`), nên "2/3"
+  không bao giờ lặng lẽ nghĩa là "2 trên 5 thử, 3 hỏng". k=1 là trường
+  hợp suy biến (1 candidate tự nhiên đa số tuyệt đối) và reason ghi
+  rõ "không có bằng chứng consensus".
+- **Calibration thêm ngưỡng reject-all.** Lưới ngưỡng giờ gồm [0, 1]
+  cộng ngưỡng `1.0 + step` (không trả lời gì cả). Ca một record
+  (score=1.0, correct=False) trước đây bắt buộc trả lời với PA=-1; giờ
+  reject-all thắng với PA=0. Ngưỡng reject-all chỉ thắng khi PA tốt
+  hơn hẳn (hòa thì giữ coverage cao hơn). Tập calibration rỗng → ngưỡng
+  reject-all (fail-closed) thay vì 0,0 bịa đặt. Ba hàm
+  `learn_thresholds` / `evaluate_holdout` / `decide_question` dùng
+  chung semantics: trả lời ⟺ `score >= threshold`.
+- **Schema coverage từ full scan, không tin shortlist.** Thêm
+  `check_schema_coverage()`: một item yêu cầu được coi là có nếu nó
+  hoặc alias của nó xuất hiện trong schema đầy đủ (so khớp không phân
+  biệt hoa/thường và space/underscore). Chỉ item còn thiếu sau scan này
+  mới được báo, và `fallback_tried=True` là đúng theo construction —
+  caller không được tự build `SchemaCoverage` từ shortlist của planner
+  rồi gắn `fallback_tried=True`. Hàm này KHÔNG chứng minh: cột có trong
+  schema vẫn có thể không có dòng trong khoảng cần hỏi, và giá trị suy
+  ra được (ví dụ revenue từ price × quantity khi không có cột revenue)
+  là quyết định modelling riêng của caller.
+- **Rỗng được xử lý phân biệt, không gộp.** `COUNT=0` là số 0, trả lời
+  bình thường (test đã chạy). List/chuỗi rỗng đồng thuận vẫn abstain
+  theo mặc định vì có thể là filter sai, nhưng caller đã kiểm chứng
+  filter và kiểu đáp án rỗng thì truyền `allow_empty_answer=True`.
+  Rỗng không tự động thành `unanswerable` — đó là kết luận khác, xem
+  `../research/round3-p5-evidence-of-absence.md` và
+  `research-updates-2026-10-27.md` §5 (đảo thứ tự: `unanswerable` chỉ
+  sau checklist E0–E8, abstain là mặc định khi không chắc).
+- **Liên hệ đợt research 3:** score trọng số 0,5/0,3/0,2 bị đề xuất bỏ
+  (thay bằng cổng xác định + verifier logistic nhỏ trên đặc trưng quan
+  sát được), pool candidate đổi từ seed-only sang đa dạng chiến lược,
+  và compute đổi sang adaptive 1 → 3 → 3+1 — xem
+  `../research/round3-p4-consensus-compute.md` và
+  `research-updates-2026-10-27.md` §4. Code hiện tại vẫn giữ hàm
+  `combined_score` cho tương thích, nhưng tài liệu này không còn coi
+  nó là cổng quyết định được khuyến nghị; thí nghiệm phân biệt A0→A5
+  trong bản nháp P4 là bước tiếp theo.

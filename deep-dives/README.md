@@ -19,6 +19,30 @@
 Danh sách dependency offline đầy đủ: xem
 [requirements-offline.md](requirements-offline.md).
 
+## Cập nhật đợt 3 (2026-10-27)
+
+- **Sửa code + test hồi quy:** 4 file `.py` đã sửa các lỗi thực sự
+  (không chỉ sửa diễn giải) và có bộ test chạy thật tại
+  [tests/test_regressions.py](tests/test_regressions.py) — 54 test,
+  `python3 -m unittest discover -s deep-dives/tests` → OK. Chi tiết
+  từng lỗi trước/sau nằm ở mục "Cập nhật đợt 3" cuối mỗi chuyên đề.
+  Chú ý: mục 3 và 7 ở trên (trọng số score 0,5/0,3/0,2; demo float cho
+  tiền) giờ đã lỗi thời theo hướng mới — score trọng số không còn là
+  cổng quyết định được khuyến nghị (xem research-updates §4), và tiền
+  giờ có đường `parse_vn_money` riêng trả `Decimal` (xem cập nhật
+  chuyên đề 3). Các mục cũ được giữ lại để thấy lịch sử, không xóa.
+- **Tổng hợp research đợt 3:**
+  [research-updates-2026-10-27.md](research-updates-2026-10-27.md)
+  (chỉ ghi quyết định đổi hướng, không viết lại 4 chuyên đề) và 5 bản
+  nháp đầy đủ trong `../research/`:
+  [round3-p1-asr-repair-vs-ask.md](../research/round3-p1-asr-repair-vs-ask.md),
+  [round3-p2-lifemate-models-recipe.md](../research/round3-p2-lifemate-models-recipe.md),
+  [round3-p3-datamate-complete-solutions.md](../research/round3-p3-datamate-complete-solutions.md),
+  [round3-p4-consensus-compute.md](../research/round3-p4-consensus-compute.md),
+  [round3-p5-evidence-of-absence.md](../research/round3-p5-evidence-of-absence.md).
+  Mọi claim SECONDARY/SNIPPET/UNVERIFIED trong các bản nháp vẫn giữ
+  nguyên nhãn trong bản tổng hợp — không nâng cấp.
+
 ## Các sửa đổi / hiệu chỉnh đã áp dụng khi tổng hợp
 
 1. **Model LifeMate đã sửa:** LLM LifeMate là Qwen3-4B-Instruct-2507
