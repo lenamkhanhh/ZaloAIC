@@ -20,6 +20,8 @@ REPO_COMMIT = "a9d48d24021cb91efef7d50cbc3d18ad98ed5b89"
 DATA_URL = "https://dl-challenge.zalo.ai/2026/lifemate_argfzdgert/train+public_test.zip"
 DATA_BYTES = 876430231
 DATA_SHA256 = "57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320"
+SOURCE_SHA256 = "a1591c425486878c8f79d7e9859bfa3dee33636dbbe79b8538ceebcb30bd9cd8"
+INPUT_DATASET = "khanhss/lifemate-runtime-inputs-20261028"
 ASR_REVISION = "a86b604c346caf7148c37512eafe783a16420adb"
 LLM_REVISION = "cdbee75"
 SAMPLE_PLAN = [
@@ -40,9 +42,17 @@ def write_json(path, value):
 
 def sha256(path):
     digest = hashlib.sha256()
+    started = last = time.monotonic()
+    processed = 0
+    print(f"HASH_START {Path(path).name}", flush=True)
     with open(path, "rb") as stream:
         for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
             digest.update(block)
+            processed += len(block)
+            if time.monotonic() - last >= 10:
+                print(f"HASH_PROGRESS {Path(path).name} bytes={processed}", flush=True)
+                last = time.monotonic()
+    print(f"HASH_DONE {Path(path).name} bytes={processed} seconds={time.monotonic()-started:.1f}", flush=True)
     return digest.hexdigest()
 
 
@@ -52,14 +62,54 @@ def safe_extract(archive, target):
         for member in zipped.infolist():
             if not (target / member.filename).resolve().is_relative_to(target):
                 raise ValueError(f"Unsafe archive path: {member.filename}")
-        zipped.extractall(target)
+        last = time.monotonic()
+        for count, member in enumerate(zipped.infolist(), 1):
+            zipped.extract(member, target)
+            if time.monotonic() - last >= 10:
+                print(f"EXTRACT_PROGRESS {Path(archive).name} entries={count}", flush=True)
+                last = time.monotonic()
+        print(f"EXTRACT_DONE {Path(archive).name} entries={len(zipped.infolist())}", flush=True)
 
 
-def run_command(command, log):
-    result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    Path(log).write_text(result.stdout, encoding="utf-8")
-    if result.returncode:
-        raise RuntimeError(f"Command failed ({result.returncode}): {command[0]}; see {Path(log).name}")
+def run_command(command, log, timeout=300, heartbeat_seconds=15):
+    """Write logs live and enforce one wall-clock budget, with no nested retries."""
+    started = time.monotonic()
+    with open(log, "w", encoding="utf-8") as stream:
+        process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
+        try:
+            while True:
+                remaining = timeout - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                try:
+                    code = process.wait(timeout=min(heartbeat_seconds, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    print(f"COMMAND_PROGRESS {Path(log).name} elapsed={time.monotonic()-started:.1f}s log_bytes={Path(log).stat().st_size}", flush=True)
+        except BaseException:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            raise
+    if code:
+        raise RuntimeError(f"Command failed ({code}): {command[0]}; see {Path(log).name}")
+
+
+def mounted_archives(input_root):
+    """Require exact immutable ZIP bytes; never download data on a GPU worker."""
+    candidates = list(Path(input_root).rglob("lifemate-v3.2.0.zip.bin"))
+    if len(candidates) != 1:
+        raise RuntimeError(f"Expected one mounted LifeMate ZIP, found {len(candidates)}; attach {INPUT_DATASET}")
+    data_zip = candidates[0]
+    source_zip = data_zip.parent / "source-a9d48d2.zip.bin"
+    if data_zip.stat().st_size != DATA_BYTES or sha256(data_zip) != DATA_SHA256:
+        raise RuntimeError("Mounted dataset identity mismatch; no network fallback")
+    if not source_zip.is_file() or sha256(source_zip) != SOURCE_SHA256:
+        raise RuntimeError("Mounted source identity mismatch; no network fallback")
+    return data_zip, source_zip
 
 
 def make_bundle(output):
@@ -175,6 +225,10 @@ def main(paired_inputs=None):
         print(f"PHASE {name} elapsed={summary['elapsed_seconds']:.1f}s", flush=True)
 
     try:
+        phase("mounted_input_verify")
+        data_zip, source_zip = mounted_archives(os.environ.get("LIFEMATE_KAGGLE_INPUT_ROOT", "/kaggle/input"))
+        summary["input_dataset"] = INPUT_DATASET
+        summary["input_mode"] = "mounted_exact_zip_bytes_no_network_fallback"
         phase("dependencies")
         os.environ.update({"USE_TF": "0", "USE_FLAX": "0", "HF_HUB_DISABLE_TELEMETRY": "1",
                            "HF_HUB_DISABLE_XET": "1", "TOKENIZERS_PARALLELISM": "false"})
@@ -207,9 +261,6 @@ def main(paired_inputs=None):
         summary["attention_override"] = "HF repeat_kv + EFFICIENT_ATTENTION; smoke only; may affect floating-point outputs"
 
         phase("source")
-        source_zip = work / "source.zip"
-        run_command(["curl", "--fail", "--location", "--silent", "--show-error", "--retry", "2",
-                     "-o", str(source_zip), f"https://codeload.github.com/lenamkhanhh/ZaloAIC/zip/{REPO_COMMIT}"], output / "source_download.log")
         safe_extract(source_zip, work / "source")
         repo = work / "source" / f"ZaloAIC-{REPO_COMMIT}"
         if not (repo / "lifemate" / "run.py").is_file():
@@ -217,19 +268,7 @@ def main(paired_inputs=None):
         summary["source_archive_sha256"] = sha256(source_zip)
         sys.path.insert(0, str(repo))
 
-        phase("data_download_and_verify")
-        data_zip = work / "train+public_test.zip"
-        for attempt in range(3):
-            try:
-                run_command(["curl", "--fail", "--location", "--silent", "--show-error", "--retry", "2",
-                             "--connect-timeout", "30", "--max-time", "900", "--continue-at", "-",
-                             "-o", str(data_zip), DATA_URL], output / f"data_download_{attempt}.log")
-                break
-            except RuntimeError:
-                if attempt == 2:
-                    raise
-        if data_zip.stat().st_size != DATA_BYTES or sha256(data_zip) != DATA_SHA256:
-            raise RuntimeError("Dataset identity mismatch; do not run models")
+        phase("mounted_data_extract")
         summary["dataset"] = {"bytes": DATA_BYTES, "sha256": DATA_SHA256}
         safe_extract(data_zip, work / "data")
         data = work / "data" / "train+public_test"
@@ -255,10 +294,18 @@ def main(paired_inputs=None):
         fuzzy = fuzzy_params(catalog)
 
         phase("weights")
-        from huggingface_hub import snapshot_download
         allow = ["*.json", "*.safetensors", "*.bin", "*.txt", "*.model", "*.jinja"]
-        asr_path = snapshot_download("vinai/PhoWhisper-small", revision=ASR_REVISION, allow_patterns=allow)
-        llm_path = snapshot_download("Qwen/Qwen3-4B-Instruct-2507", revision=LLM_REVISION, allow_patterns=allow)
+        # HF downloads are isolated in a bounded subprocess; progress persists
+        # live in weights.log and the notebook emits heartbeat every 15 seconds.
+        snapshots_file = work / "snapshots.json"
+        download_code = (
+            "import json; from pathlib import Path; from huggingface_hub import snapshot_download; "
+            f"a=snapshot_download('vinai/PhoWhisper-small',revision={ASR_REVISION!r},allow_patterns={allow!r}); "
+            f"b=snapshot_download('Qwen/Qwen3-4B-Instruct-2507',revision={LLM_REVISION!r},allow_patterns={allow!r}); "
+            f"Path({str(snapshots_file)!r}).write_text(json.dumps([a,b]))"
+        )
+        run_command([sys.executable, "-u", "-c", download_code], output / "weights.log", timeout=600)
+        asr_path, llm_path = json.loads(snapshots_file.read_text())
         summary["models"] = {"asr": "vinai/PhoWhisper-small", "asr_revision": ASR_REVISION,
                              "llm": "Qwen/Qwen3-4B-Instruct-2507", "llm_snapshot": Path(llm_path).name}
         config = PipelineConfig.from_json(repo / "lifemate" / "configs" / "recommended.json")

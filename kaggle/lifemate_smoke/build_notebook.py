@@ -20,7 +20,8 @@ def build(output_dir=None, paired_inputs=None):
                 "# LifeMate dev5 GPU smoke\n",
                 "Private diagnostic, not a benchmark or competition submission.\n",
                 "PhoWhisper-small + Qwen3-4B, fixed dev IDs, seed 42, pinned source.\n",
-                "Internet is used for setup; model calls use cached local weights.\n",
+                "Data and pinned source are mounted from a private verified dataset; no origin download.\n",
+                "Internet is used for dependency/model setup, with deadlines and heartbeat logs.\n",
                 "ASR uses cuda:0; FP16 LLM is balanced across two T4s. Timing is not A30 timing.\n",
                 "Outputs: summary, raw model text, ASR, tool traces and proxy scores in smoke_artifacts.zip.\n",
             ]},
@@ -43,7 +44,7 @@ def build(output_dir=None, paired_inputs=None):
         "id": "khanhss/lifemate-smoke-dev5-20261027", "title": "LifeMate Smoke Dev5 20261027",
         "code_file": "lifemate_smoke.ipynb", "language": "python", "kernel_type": "notebook",
         "is_private": True, "enable_gpu": True, "enable_internet": True,
-        "machine_shape": "NvidiaTeslaT4", "dataset_sources": [], "competition_sources": [],
+        "machine_shape": "NvidiaTeslaT4", "dataset_sources": ["khanhss/lifemate-runtime-inputs-20261028/1"], "competition_sources": [],
         "kernel_sources": [], "model_sources": [],
     }
     (destination / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")

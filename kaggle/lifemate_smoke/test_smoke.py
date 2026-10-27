@@ -7,6 +7,8 @@ from unittest.mock import patch
 from contextlib import nullcontext
 from types import SimpleNamespace
 import zipfile
+import sys
+import subprocess
 
 ROOT = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("smoke_runner", ROOT / "smoke_runner.py")
@@ -15,6 +17,23 @@ spec.loader.exec_module(runner)
 
 
 class SmokePreflight(unittest.TestCase):
+    def test_command_error_and_wall_clock_timeout_preserve_logs(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as temp:
+            log = Path(temp) / "child.log"
+            with self.assertRaisesRegex(RuntimeError, "Command failed \\(7\\)"):
+                runner.run_command([sys.executable, "-u", "-c", "print('failure evidence'); raise SystemExit(7)"], log)
+            self.assertIn("failure evidence", log.read_text())
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner.run_command([sys.executable, "-u", "-c", "import time; print('started'); time.sleep(60)"], log,
+                                   timeout=0.3, heartbeat_seconds=0.1)
+            self.assertIn("started", log.read_text())
+
+    def test_missing_mount_fails_without_any_download(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as temp:
+            with patch.object(runner.subprocess, "Popen", side_effect=AssertionError("no network process")):
+                with self.assertRaisesRegex(RuntimeError, "Expected one mounted"):
+                    runner.mounted_archives(temp)
+
     def test_paired_changes_current_only_and_rejects_history_mismatch(self):
         import copy
         sample = SimpleNamespace(audio_text="gold current", history=[
@@ -76,6 +95,7 @@ class SmokePreflight(unittest.TestCase):
         metadata = json.loads((ROOT / "kernel-metadata.json").read_text())
         self.assertIs(metadata["is_private"], True)
         self.assertEqual(metadata["machine_shape"], "NvidiaTeslaT4")
+        self.assertEqual(metadata["dataset_sources"], [runner.INPUT_DATASET + "/1"])
 
     def test_archive_rejects_traversal(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as temp:
