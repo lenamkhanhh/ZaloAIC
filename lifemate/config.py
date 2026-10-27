@@ -38,6 +38,8 @@ class PipelineConfig:
     llm_temperature: float = 0.0
     llm_seed: int = 42
     llm_max_new_tokens: int = 512
+    llm_device_map: str | None = None  # optional Transformers-only smoke placement
+    llm_max_memory_gib: dict[str, int] | None = None
     local_files_only: bool = True  # pre-download weights; inference stays offline
     # Agent
     max_steps: int = 12

@@ -135,6 +135,29 @@ class IntegrationFixes(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "subset"):
                 _submission_lines(path, ["x", "y"])
 
+    def test_transformers_sharding_preserves_device_map(self):
+        from lifemate.llm import TransformersGenerator
+        captured = {}
+        class Model:
+            def to(self, device): raise AssertionError("sharded model must not be moved onto one GPU")
+            def eval(self): return self
+            def get_input_embeddings(self):
+                return types.SimpleNamespace(weight=types.SimpleNamespace(device="cuda:1"))
+        def load(*args, **kwargs):
+            captured.update(kwargs)
+            return Model()
+        torch = types.SimpleNamespace(manual_seed=lambda seed: None, float16="float16", float32="float32")
+        transformers = types.SimpleNamespace(
+            AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda *a, **kw: object()),
+            AutoModelForCausalLM=types.SimpleNamespace(from_pretrained=load),
+        )
+        with patch.dict("sys.modules", {"torch": torch, "transformers": transformers}):
+            generator = TransformersGenerator("model", "rev", device_map="balanced",
+                                               max_memory_gib={"0": 6, "1": 6})
+        self.assertEqual(captured["device_map"], "balanced")
+        self.assertEqual(captured["max_memory"], {0: "6GiB", 1: "6GiB"})
+        self.assertEqual(generator.device, "cuda:1")
+
     @unittest.skipUnless(os.environ.get("LIFEMATE_DATA"), "set LIFEMATE_DATA")
     def test_real_assignment_selects_exact_308_ids(self):
         from lifemate.loader import load_split

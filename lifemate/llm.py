@@ -100,7 +100,8 @@ class VLLMGenerator:
 
 class TransformersGenerator:
     def __init__(self, checkpoint: str, revision: str, device: str = "cuda", seed: int = 42,
-                 max_context_tokens: int = 16384, max_tokens: int = 512, local_files_only: bool = True):
+                 max_context_tokens: int = 16384, max_tokens: int = 512, local_files_only: bool = True,
+                 device_map: str | None = None, max_memory_gib: dict[str, int] | None = None):
         try:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -111,10 +112,26 @@ class TransformersGenerator:
         self.tokenizer = AutoTokenizer.from_pretrained(checkpoint, revision=revision,
                                                        local_files_only=local_files_only)
         dtype = torch.float16 if device.startswith("cuda") else torch.float32
+        placement = {}
+        if device_map is not None:
+            placement["device_map"] = device_map
+            if max_memory_gib is not None:
+                placement["max_memory"] = {
+                    int(key) if key.isdigit() else key: f"{value}GiB"
+                    for key, value in max_memory_gib.items()
+                }
+        elif max_memory_gib is not None:
+            raise ValueError("max_memory_gib requires an explicit device_map")
         self.model = AutoModelForCausalLM.from_pretrained(
             checkpoint, revision=revision, local_files_only=local_files_only, torch_dtype=dtype,
-        ).to(device).eval()
-        self.device = device
+            **placement,
+        )
+        if device_map is None:
+            self.model = self.model.to(device)
+        self.model.eval()
+        # Accelerate dispatches layers itself; .to() must not collapse a
+        # sharded model back onto GPU0. Inputs follow the embedding device.
+        self.device = self.model.get_input_embeddings().weight.device if device_map else device
         self.max_context_tokens, self.max_tokens = max_context_tokens, max_tokens
 
     def __call__(self, prompt: str, tools: dict) -> dict | None:
@@ -138,7 +155,8 @@ def build_generator(config, device: str = "cuda"):
     if config.llm_backend == "vllm":
         return VLLMGenerator(**common)
     if config.llm_backend == "transformers":
-        return TransformersGenerator(**common, device=device)
+        return TransformersGenerator(**common, device=device, device_map=config.llm_device_map,
+                                     max_memory_gib=config.llm_max_memory_gib)
     raise ValueError(f"Unknown LLM backend: {config.llm_backend!r}")
 
 
