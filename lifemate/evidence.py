@@ -115,11 +115,14 @@ class EvidenceLedger:
         visit(result, default)
 
     def user_supplied(self, value, parameter):
+        if not value:
+            return False
         if value in self.context_ids.get(parameter, ()):
             return True
         literal = r"(?<!\w)" + re.escape(value) + r"(?!\w)"
         # A person's name merely appearing in the request is not an opaque ID.
-        shaped_id = not re.search(r"\s", value) and bool(re.search(r"[\d_:-]", value))
+        shaped_id = (not re.search(r"\s", value) and bool(re.search(r"[\d_:-]", value))
+                     and bool(re.search(r"[a-zA-Z]", value)))
         labelled = r"\b(?:" + re.escape(parameter) + r"|id)\s*[:=]?\s*['\"]?" + re.escape(value) + r"(?!\w)"
         return any(re.search(labelled, text, re.I) or (shaped_id and re.search(literal, text))
                    for text in self.user_text)
