@@ -27,6 +27,18 @@ Không chứa raw dataset, audio hay weights.
   đối chiếu dev (thiếu giờ → hỏi; trùng contact → hỏi trừ khi có
   yếu tố phân biệt; bị hủy / app không cài / history giải quyết →
   empty) kèm ngoại lệ và mâu thuẫn label.
+- `CONTEXT_BUDGET_2026-10-28.md` + `measure_context_budget.py` —
+  Nhánh độc lập 2026-10-28: đo prompt bằng tokenizer thật
+  (Qwen3-4B-Instruct-2507 rev cdbee75) theo đúng code nhánh
+  `codex/lifemate-baseline-integration` commit e79f9722, trên toàn
+  bộ 1.237 mẫu dev. Kết luận: JSON compact đầy đủ vừa ngân sách
+  (0/4.080 bước vượt, max 9.415 token), trong khi `repr[:300]` làm
+  mất 312/1.168 giá trị bước sau cần dùng và 27,9% leaf phi-boolean.
+  Đề xuất tối thiểu: thay `repr[:300]` bằng JSON compact đầy đủ,
+  giữ nguyên guard raise khi vượt ngân sách. Script tái lập đã kiểm
+  chứng khớp byte-identical với code nhánh trên 30 mẫu. Ràng buộc
+  renderer vẫn giữ nguyên: không rút gọn list còn ID/tên, không xoá
+  field vì thuộc FREE_TEXT_KEYS, không đổi pipeline đang chạy.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
