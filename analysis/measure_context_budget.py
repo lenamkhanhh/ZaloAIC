@@ -239,11 +239,19 @@ def main() -> None:
         base_lines = base.split("\n")
         tools_start = next(i for i, ln in enumerate(base_lines) if ln.startswith("Tools you may call"))
         hist_start = next(i for i, ln in enumerate(base_lines) if ln == "Conversation history:")
+        # Corrected 2026-10-28: the request line is NOT the last line — the
+        # two config suffix lines follow it. The old slicing
+        # (history = lines[hist_start:-1], request = lines[-1]) put the
+        # request + selective lines inside "history" and reported the
+        # verify line as "request". The partition below reconstructs
+        # base exactly ("\n".join of the segments == base); full-prompt
+        # token counts are unaffected by this fix.
+        req_idx = next(i for i, ln in enumerate(base_lines) if ln.startswith("Current user request (transcript):"))
         seg_tot["instr_ctx"] += len(tok.encode("\n".join(base_lines[:tools_start]), add_special_tokens=False))
         seg_tot["catalog"] += len(tok.encode("\n".join(base_lines[tools_start:hist_start]), add_special_tokens=False))
-        seg_tot["history"] += len(tok.encode("\n".join(base_lines[hist_start:-1]), add_special_tokens=False))
-        seg_tot["request"] += len(tok.encode(base_lines[-1], add_special_tokens=False))
-        seg_tot["suffix"] += len(tok.encode(SELECTIVE_LINE + VERIFY_LINE, add_special_tokens=False))
+        seg_tot["history"] += len(tok.encode("\n".join(base_lines[hist_start:req_idx]), add_special_tokens=False))
+        seg_tot["request"] += len(tok.encode(base_lines[req_idx], add_special_tokens=False))
+        seg_tot["suffix"] += len(tok.encode("\n".join(base_lines[req_idx + 1:]), add_special_tokens=False))
 
         gold = sample["label"]["tool_calls"]
         env = zaic_tools.ToolEnv("train", sid, root=str(data_root))

@@ -65,15 +65,27 @@ nhất còn lại: 15.872 − 9.415 = **6.457 token**.
 |---|---|
 | Instruction + context | 488 |
 | Catalog (tool của riêng sample) | 3.899 (~75%) |
-| History | 501 |
-| Request hiện tại | 17 |
-| Dòng config | 33 |
+| History (header + các turn, không gồm request) | 448 |
+| Request hiện tại | 37 |
+| Dòng config (selective + verify) | 32 |
 | Observation (a) / (b) | 260 / 295 |
 
-Tổng các đoạn ≈ tổng prompt thực (chênh ~25 token là overhead template +
-hiệu ứng biên BPE). **Kết luận ngân sách: catalog mới là thứ tốn ngân sách,
-không phải observation (chỉ ~5–6%).** Nếu sau này ngân sách bị siết, đòn bẩy
-là lọc catalog, không bao giờ là cắt observation.
+Tổng các đoạn thấp hơn tổng prompt thực ~9 token, đúng bằng overhead
+template (các marker `im_start`/`im_end`/`assistant`); phần còn lại là hiệu
+ứng biên BPE khi đo từng đoạn độc lập. **Kết luận ngân sách: catalog mới
+là thứ tốn ngân sách, không phải observation (chỉ ~5–6%).** Nếu sau này
+ngân sách bị siết, đòn bẩy là lọc catalog, không bao giờ là cắt observation.
+
+Sửa 2026-10-28 (chỉ bảng breakdown, không đổi phép đo token toàn prompt):
+cách tách đoạn cũ lấy `base_lines[-1]` làm request và
+`lines[hist_start:-1]` làm history — nhưng dòng cuối thật là dòng config
+verify, còn request và dòng selective nằm trong đoạn history cũ. Bảng cũ
+ghi history 501 / request 17 / config 33 là sai quy chiếu (17 chính là
+dòng verify; 33 tính cả newline đầu dòng suffix). Cách tách mới neo theo
+dòng request (`Current user request (transcript):`), phân hoạch tái tạo
+đúng base trên toàn bộ 1.237 mẫu (kiểm chứng 0 lệch), và số token toàn
+prompt trong §2 giữ nguyên vì text prompt không hề thay đổi. Script
+`measure_context_budget.py` đã sửa theo cách tách mới.
 
 ### Observation nào bị cắt bởi [:300] hiện tại
 

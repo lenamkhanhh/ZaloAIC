@@ -66,9 +66,19 @@ train_0398 9.534, train_0256 9.470, train_1725 9.452, train_0236 9.391,
 train_0203 9.338.
 
 Token đến từ đâu (trung bình, prompt cuối): instruction + policy +
-context 947, catalog 3.899, history 501, request 17, dòng config 33,
-observation section 294 (max 1.289). Catalog vẫn chiếm phần lớn prompt;
-action policy tốn 455 token độc lập, observation vẫn chỉ là phần nhỏ.
+context 947, catalog 3.899, history 448 (header + các turn, không gồm
+request), request 37, dòng config 32, observation section 294 (max
+1.289). Catalog vẫn chiếm phần lớn prompt; action policy tốn 455 token
+độc lập, observation vẫn chỉ là phần nhỏ.
+
+Sửa 2026-10-28 (chỉ bảng breakdown, không đổi phép đo token toàn prompt):
+cùng lỗi tách đoạn như bản đối chứng — `base_lines[-1]` không phải
+request mà là dòng config verify, còn request và dòng selective nằm
+trong đoạn history cũ (bảng cũ ghi history 501 / request 17 / config 33).
+Cách tách mới neo theo dòng request, phân hoạch tái tạo đúng base trên
+toàn bộ 1.237 mẫu (kiểm chứng 0 lệch); số token toàn prompt trong §2 giữ
+nguyên vì text prompt không hề thay đổi. Script
+`measure_context_budget_a2e832b.py` đã sửa theo cách tách mới.
 
 ## 3. Đối chứng e79f9722 — bảng riêng, không ghép
 
