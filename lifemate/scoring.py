@@ -12,7 +12,7 @@ written and labels everything beyond it UNVERIFIED:
 - Tool-call F1: calls match when tool names are equal; non-fuzzy params
   must be exactly equal; fuzzy params (catalog x-match: fuzzy) match
   when token-F1 > 0.6 after lowercase + Unicode NFC; order is ignored;
-  each call matches at most one call (greedy by match quality).
+   each call matches at most one call (maximum bipartite matching).
   Token-F1 here means F1 over whitespace tokens of the two strings.
 - Empty gold scores 1 ONLY if the submitted list is also empty.
 - Final score = mean over samples. Per-class breakdowns (empty /
@@ -78,16 +78,24 @@ def tool_f1(submitted: list[dict], gold: list[dict], fuzzy_by_tool: dict[str, se
         return 1.0
     if not gold or not submitted:
         return 0.0
-    used = set()
-    matched = 0
-    for s in submitted:
-        for i, g in enumerate(gold):
-            if i in used:
+    # Fuzzy calls can match several references. First-fit greedy depends on
+    # trace order and can miss a larger valid one-to-one matching.
+    edges = [[i for i, g in enumerate(gold)
+              if calls_match(s, g, fuzzy_by_tool.get(g["name"], set()))]
+             for s in submitted]
+    owners = {}
+
+    def augment(index, visited):
+        for target in edges[index]:
+            if target in visited:
                 continue
-            if calls_match(s, g, fuzzy_by_tool.get(g["name"], set())):
-                used.add(i)
-                matched += 1
-                break
+            visited.add(target)
+            if target not in owners or augment(owners[target], visited):
+                owners[target] = index
+                return True
+        return False
+
+    matched = sum(augment(i, set()) for i in range(len(submitted)))
     precision = matched / len(submitted)
     recall = matched / len(gold)
     if precision + recall == 0:

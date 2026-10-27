@@ -27,6 +27,8 @@ deep-dive remains the research prototype. Behavioural contract:
 from __future__ import annotations
 
 import re
+import copy
+import math
 import unicodedata
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -183,3 +185,76 @@ def ground_name(span: str, candidates: list) -> GroundingResult:
     return GroundingResult("UNKNOWN", None,
                            f"best score {best_score:.1f} below threshold",
                            backend=FUZZY_BACKEND)
+
+
+def ground_arguments(call: dict, tools: dict, executed: list[dict], results: list[dict]):
+    """Normalize only supplied slots; never invent a missing argument.
+
+    Names for x-ref slots can resolve only against entities returned by read
+    tools in the referenced app. Keep the exact id from the observation;
+    never apply punctuation/case normalization to a tool-internal identifier.
+    Ambiguity goes back to the model as a validation error, not an auto-ask.
+    """
+    call = copy.deepcopy(call)
+    args = call.get("arguments")
+    if not isinstance(args, dict):
+        return call, ["arguments must be an object"]
+    properties = tools.get(call.get("name"), {}).get("parameters", {}).get("properties", {})
+    errors = []
+
+    def entities(value):
+        if isinstance(value, dict):
+            if isinstance(value.get("id"), str):
+                display = next((value[k] for k in ("name", "display_name", "title", "label")
+                                if isinstance(value.get(k), str)), None)
+                if display is not None:
+                    yield (value["id"], display)
+            for child in value.values():
+                yield from entities(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from entities(child)
+
+    for name, value in list(args.items()):
+        schema = properties.get(name, {})
+        kind = schema.get("type")
+        if kind in ("integer", "number") and isinstance(value, str):
+            if re.search(r"amount|price|cost|fee|balance|total", name, re.I):
+                number = parse_money(value)
+            else:
+                try:
+                    number = Decimal(value) if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", value) else None
+                except InvalidOperation:
+                    number = None
+            if number is None or not number.is_finite():
+                errors.append(f"{name}: ambiguous or invalid numeric value; use the schema's numeric type")
+            elif kind == "integer" and number != number.to_integral_value():
+                errors.append(f"{name}: integer required, not a fractional value")
+            else:
+                numeric = int(number) if number == number.to_integral_value() else float(number)
+                if isinstance(numeric, float) and not math.isfinite(numeric):
+                    errors.append(f"{name}: numeric value is out of range")
+                else:
+                    args[name] = numeric
+        elif isinstance(value, str) and schema.get("format") == "date":
+            date = parse_date(value)
+            if date is None:
+                errors.append(f"{name}: unresolved date; supply an explicit calendar-valid date")
+            else:
+                args[name] = date
+        elif isinstance(value, str) and schema.get("x-ref"):
+            app = str(schema["x-ref"]).split(".")[0]
+            candidates = {}
+            for previous, result in zip(executed, results):
+                spec = tools.get(previous["name"], {})
+                if (spec.get("kind") == "read" and previous["name"].startswith(app + ".")
+                        and result.get("ok")):
+                    candidates.update(entities(result))
+            if not candidates or value in candidates:
+                continue  # No repair without read evidence. Official validate remains authoritative.
+            grounded = ground_name(value, list(candidates.items()))
+            if grounded.status in ("EXACT", "FUZZY_GROUNDED"):
+                args[name] = grounded.candidate
+            else:
+                errors.append(f"{name}: {grounded.status}; select an observed id or obtain distinguishing information")
+    return call, errors

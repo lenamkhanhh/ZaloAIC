@@ -36,6 +36,7 @@ from typing import Callable
 
 from .adapter import ZaicEnv
 from .loader import Sample, catalog_tools_for_sample
+from .grounding import ground_arguments
 
 
 @dataclass
@@ -91,18 +92,22 @@ def build_base_prompt(sample: Sample, transcript: str, tools: dict) -> str:
         "previous tool results in this conversation.",
         f"Current time: {ctx.get('current_time')} ({ctx.get('timezone')}).",
         f"User: {profile.get('name', '')}, city {profile.get('city', '')}.",
+        "User-provided context: " + json.dumps(ctx, ensure_ascii=False),
         "Tools you may call (this sample only):",
     ]
     for name, spec in sorted(tools.items()):
-        req = spec["parameters"].get("required", [])
-        lines.append(f"- {name} ({spec['kind']}): {spec.get('description', '')} required={req}")
+        lines.append(json.dumps({"name": name, "kind": spec["kind"],
+                                 "description": spec.get("description", ""),
+                                 "parameters": spec["parameters"],
+                                 "returns": spec.get("returns", "")}, ensure_ascii=False))
     lines.append("Conversation history:")
     for turn in sample.history:
         if turn.role == "user":
             text = turn.audio_text if turn.audio_text is not None else "[audio, no transcript available]"
             lines.append(f"user: {text}")
         else:
-            lines.append(f"assistant: {turn.text or ''} calls={json.dumps(turn.tool_calls, ensure_ascii=False)}")
+            lines.append(f"assistant: {turn.text or ''} calls={json.dumps(turn.tool_calls, ensure_ascii=False)} "
+                         f"results={turn.tool_results!r}")
     lines.append(f"Current user request (transcript): {transcript}")
     return "\n".join(lines)
 
@@ -123,6 +128,10 @@ class AgentLoop:
     ) -> dict:
         """Run one sample. Returns the submission line (env material)."""
         base = build_base_prompt(sample, transcript, self.tools)
+        if self.config.selective_reads:
+            base += "\nRead only to resolve a missing entity or precondition; reuse still-valid observations."
+        if not self.config.verification_read_after_write:
+            base += "\nDo not add a verification read after a write unless the next action needs its result."
         prompt = base
         executed: list[dict] = []
         results: list[dict] = []
@@ -140,7 +149,12 @@ class AgentLoop:
                     prompt = base + "\n\nYour last output was not a valid tool call JSON. Output one tool call or {\"stop\": true}."
                     continue
                 call = {"name": gen["name"], "arguments": gen.get("arguments", {}) or {}}
-                check = env.validate(call["name"], call["arguments"])
+                if self.config.grounding:
+                    call, errors = ground_arguments(call, self.tools, executed, results)
+                else:
+                    errors = []
+                check = ({"ok": False, "error": "; ".join(errors)} if errors else
+                         env.validate(call["name"], call["arguments"]))
                 if check.get("ok"):
                     break
                 prompt = render_observation_prompt(

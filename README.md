@@ -1,5 +1,10 @@
 # Zalo AI Challenge 2026 — Tài liệu nghiên cứu và triển khai
 
+Executable LifeMate handoff: [RUN_LIFEMATE.md](RUN_LIFEMATE.md).
+Integration fixes, actual CPU checks and remaining GPU limitations:
+[VALIDATION_LIFEMATE.md](VALIDATION_LIFEMATE.md). Research proposals below
+are not evidence of model performance on ZAIC.
+
 > **Trạng thái:** Tài liệu nghiên cứu, chưa phải code thi đấu. Chưa có thực nghiệm nào
 > chạy trên dữ liệu ZAIC 2026 trong bộ tài liệu này — mọi phương pháp dưới đây là
 > **giả thuyết chuyển giao** cho tới khi được đo trên train held-out chính thức (public test không có đáp án kèm theo theo ghi nhận 2026-10-26 — xem competition/datamate.md và gaps.md).

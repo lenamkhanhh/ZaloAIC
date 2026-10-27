@@ -43,6 +43,49 @@ from lifemate.scoring import score_sample, summarise  # noqa: E402
 from lifemate.split import load_split_assignment, make_split, split_report, write_split  # noqa: E402
 
 
+DEFAULT_SPLIT_FILE = Path(__file__).resolve().parent / "splits" / "train_dev_heldout.json"
+
+
+def select_samples(samples, split, subset="all", split_file=None, limit=None):
+    """Use the committed assignment before applying a smoke-test limit."""
+    if subset not in ("all", "dev", "heldout"):
+        raise ValueError(f"Unknown subset: {subset}")
+    if subset != "all":
+        if split != "train":
+            raise ValueError("dev/heldout selection is supported only for train")
+        assignment = load_split_assignment(split_file or DEFAULT_SPLIT_FILE)
+        ids = {sample.id for sample in samples}
+        if set(assignment) != ids:
+            raise ValueError("Split assignment does not match the loaded dataset IDs")
+        if set(assignment.values()) - {"dev", "heldout"}:
+            raise ValueError("Split assignment contains invalid subset names")
+        samples = [s for s in samples if assignment[s.id] == subset]
+    if limit is not None:
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        samples = samples[:limit]
+    if not samples:
+        raise ValueError("No samples selected")
+    return samples
+
+
+def _selected(args):
+    return select_samples(load_split(Path(args.data), args.split), args.split,
+                          getattr(args, "subset", "all"), getattr(args, "split_file", None),
+                          getattr(args, "limit", None))
+
+
+def _submission_lines(path, expected_ids):
+    with open(path, encoding="utf-8") as stream:
+        lines = [json.loads(line) for line in stream if line.strip()]
+    ids = [line["id"] for line in lines]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Submission contains duplicate IDs")
+    if set(ids) != set(expected_ids):
+        raise ValueError("Submission IDs do not match the selected subset/limit")
+    return lines
+
+
 def _gold_hash(data_root: Path, split: str, sample) -> str:
     """Diagnostic-only gold replay: fresh env, label calls, hash out.
     Never used as agent input and never merged into a submission."""
@@ -83,7 +126,7 @@ def cmd_replay_gold(args) -> int:
 
 def cmd_fake_run(args) -> int:
     root = Path(args.data)
-    samples = load_split(root, args.split)[: args.limit] if args.limit else load_split(root, args.split)
+    samples = _selected(args)
     out = Path(args.out)
     with open(out, "w", encoding="utf-8") as fout:
         for sample in samples:
@@ -97,7 +140,8 @@ def cmd_fake_run(args) -> int:
 
 def cmd_check_submission(args) -> int:
     root = Path(args.data)
-    lines = [json.loads(l) for l in open(args.submission, encoding="utf-8") if l.strip()]
+    selected = _selected(args)
+    lines = _submission_lines(args.submission, [s.id for s in selected])
     bad = 0
     for line in lines:
         env = ZaicEnv(root, args.split, line["id"])
@@ -115,17 +159,19 @@ def cmd_score(args) -> int:
     root = Path(args.data)
     catalog = load_catalog(root, args.split)
     fuzzy = fuzzy_params(catalog)
-    samples = {s.id: s for s in load_split(root, args.split)}
+    if args.split != "train":
+        raise ValueError("Local proxy scoring requires train labels")
+    samples = {s.id: s for s in _selected(args)}
     results, classes = [], []
-    for line in open(args.submission, encoding="utf-8"):
-        if not line.strip():
-            continue
-        line = json.loads(line)
+    for line in _submission_lines(args.submission, samples):
         sample = samples[line["id"]]
         gh = _gold_hash(root, args.split, sample)
         results.append(score_sample(line, sample, gh, fuzzy))
         classes.append(sample.label_class())
-    print(json.dumps(summarise(results, classes), indent=2, ensure_ascii=False))
+    summary = summarise(results, classes)
+    summary["evidence"] = "ENGINEERING_PROXY_NOT_OFFICIAL"
+    summary["subset"] = getattr(args, "subset", "all")
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
 
 
@@ -140,18 +186,16 @@ def cmd_make_split(args) -> int:
 
 
 def cmd_infer(args) -> int:
-    from lifemate.asr import FasterWhisperASR
-    from lifemate.llm import VLLMGenerator
+    from lifemate.asr import build_asr
+    from lifemate.llm import build_generator
 
     config = PipelineConfig.from_json(args.config)
     root = Path(args.data)
     catalog = load_catalog(root, args.split)
-    samples = load_split(root, args.split)
-    if args.limit:
-        samples = samples[: args.limit]
-    asr = FasterWhisperASR(config.asr_checkpoint, device="cuda",
-                           compute_type="float16")
-    llm = VLLMGenerator(config.llm_checkpoint, config.llm_revision, seed=config.llm_seed)
+    samples = _selected(args)
+    device = getattr(args, "device", "cuda")
+    asr = build_asr(config, device=device)
+    llm = build_generator(config, device=device)
     out = Path(args.out)
     with open(out, "w", encoding="utf-8") as fout:
         for sample in samples:
@@ -187,7 +231,6 @@ def main(argv=None) -> int:
         p.add_argument("--data", required=True, help="extracted train+public_test/ dir")
         if name in ("fake-run", "infer"):
             p.add_argument("--split", default="public_test")
-            p.add_argument("--limit", type=int, default=None)
             p.add_argument("--out", required=True)
         if name == "check-submission":
             p.add_argument("--split", required=True)
@@ -201,6 +244,11 @@ def main(argv=None) -> int:
             p.add_argument("--out", required=True)
         if name == "infer":
             p.add_argument("--config", default="lifemate/configs/recommended.json")
+            p.add_argument("--device", default="cuda", help="cuda or cpu (Transformers backend)")
+        if name in ("fake-run", "infer", "score", "check-submission"):
+            p.add_argument("--subset", choices=("all", "dev", "heldout"), default="all")
+            p.add_argument("--split-file", default=str(DEFAULT_SPLIT_FILE))
+            p.add_argument("--limit", type=int, default=None, help="Apply after subset selection; use same value when checking/scoring")
         p.set_defaults(func=func)
     args = parser.parse_args(argv)
     return args.func(args)

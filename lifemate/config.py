@@ -7,9 +7,8 @@ Two named configs ship in ``configs/``:
   guard, observation after every call. No grounding repair, no
   acoustic rescoring, no contextual decoding, no SFT.
 - ``recommended.json`` (main config): baseline + typed grounding
-  (rule-based, zero extra model parameters) + the selective-read
-  policy (reads only for grounding/precondition, no verification read
-  after a write by default, duplicate reads cache-blocked).
+    (rule-based, zero extra model parameters) + a selective-read prompt
+    policy. Duplicate calls are bounded by the loop guard, not a cache.
 
 Acoustic rescoring, contextual decoding (initial_prompt/hotwords) and
 SFT are NOT in either config: they are proposals from the round-3
@@ -28,7 +27,7 @@ from pathlib import Path
 class PipelineConfig:
     # ASR
     asr_checkpoint: str = "vinai/PhoWhisper-small"
-    asr_backend: str = "faster-whisper"  # or "transformers"
+    asr_backend: str = "transformers"  # original PhoWhisper weights; CT2 needs conversion
     asr_language: str = "vi"
     asr_greedy: bool = True
     # LLM
@@ -38,6 +37,8 @@ class PipelineConfig:
     llm_max_context_tokens: int = 16384
     llm_temperature: float = 0.0
     llm_seed: int = 42
+    llm_max_new_tokens: int = 512
+    local_files_only: bool = True  # pre-download weights; inference stays offline
     # Agent
     max_steps: int = 12
     max_repeats: int = 2  # a call seen this many times is pre-blocked
@@ -56,6 +57,7 @@ class PipelineConfig:
         assert self.total_params_b < 6.0, "whole system must be < 6B params"
         assert self.llm_params_b < 5.0, "LifeMate LLM must be < 5B params"
         assert self.llm_max_context_tokens <= 16384, "context must be <= 16,384"
+        assert 0 < self.llm_max_new_tokens < self.llm_max_context_tokens
 
     @classmethod
     def from_json(cls, path: str | Path) -> "PipelineConfig":
