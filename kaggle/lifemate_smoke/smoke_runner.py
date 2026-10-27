@@ -3,7 +3,7 @@
 The notebook embeds this file verbatim. No training or competition submission.
 """
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import dataclasses
 import hashlib
 import json
@@ -132,7 +132,24 @@ def attention_preflight(torch):
     return results
 
 
-def main():
+def paired_transcript(sample, cached, arm):
+    """Current-turn oracle only; history always uses the exact v3 ASR text."""
+    if arm not in ("cached_asr", "gold_current"):
+        raise ValueError(f"Unknown diagnostic arm: {arm}")
+    used = set()
+    for turn in sample.history:
+        if turn.role == "user" and turn.audio:
+            turn.audio_text = cached["history_asr"][turn.audio]
+            used.add(turn.audio)
+    if used != set(cached["history_asr"]):
+        raise ValueError("Cached history audio does not match this sample")
+    transcript = cached["current_asr"] if arm == "cached_asr" else sample.audio_text
+    if not isinstance(transcript, str) or not transcript.strip():
+        raise ValueError("Missing diagnostic current transcript")
+    return transcript
+
+
+def main(paired_inputs=None):
     work = Path(os.environ.get("LIFEMATE_SMOKE_INPUTS", "/kaggle/temp/lifemate-smoke"))
     output = Path(os.environ.get("LIFEMATE_SMOKE_OUTPUT", "/kaggle/working/lifemate_smoke"))
     work.mkdir(parents=True, exist_ok=True)
@@ -141,6 +158,13 @@ def main():
                "source_commit": REPO_COMMIT, "sample_plan": SAMPLE_PLAN,
                "seed": 42, "history_policy": "ASR for all user audio, including train history",
                "hardware_is_a30": False, "records": []}
+    if paired_inputs is not None:
+        if set(paired_inputs["inputs"]) != {s["id"] for s in SAMPLE_PLAN}:
+            raise ValueError("Paired input IDs must match the five fixed dev samples")
+        summary.update({"evidence": "PAIRED_CURRENT_TRANSCRIPT_DIAGNOSTIC_NOT_BENCHMARK",
+                        "history_policy": "exact cached v3 ASR history in both arms",
+                        "diagnostic_inputs_sha256": hashlib.sha256(json.dumps(paired_inputs, sort_keys=True).encode()).hexdigest()})
+        write_json(output / "paired_inputs.json", paired_inputs)
     write_json(output / "summary.json", summary)
     started = time.perf_counter()
 
@@ -264,9 +288,14 @@ def main():
             return text
         llm.tokenizer.decode = traced_decode
 
-        phase("inference_dev5")
-        with open(output / "submission.jsonl", "w", encoding="utf-8") as submission:
-            for item in SAMPLE_PLAN:
+        phase("inference_dev5" if paired_inputs is None else "paired_dev5_current_transcript")
+        arms = ["live_asr"] if paired_inputs is None else ["cached_asr", "gold_current"]
+        with ExitStack() as stack:
+            submissions = {arm: stack.enter_context(open(output / ("submission.jsonl" if arm == "live_asr" else f"submission_{arm}.jsonl"), "w", encoding="utf-8")) for arm in arms}
+            trials = [{**item, "arm": arm} for item in SAMPLE_PLAN for arm in arms]
+            for item in trials:
+                arm = item["arm"]
+                submission = submissions[arm]
                 sample = copy.deepcopy(by_id[item["id"]])
                 record = {**item, "trace": [], "history_asr": [], "gold_transcript": sample.audio_text}
                 env = ZaicEnv(data, "train", sample.id)
@@ -276,16 +305,24 @@ def main():
                         torch.cuda.empty_cache()
                         torch.cuda.reset_peak_memory_stats(device)
                 try:
-                    tick = time.perf_counter()
-                    transcript = asr.transcribe(data / "train" / sample.audio)
-                    record.update({"asr_transcript": transcript, "asr_current_seconds": time.perf_counter() - tick})
-                    for turn in sample.history:
-                        if turn.role == "user" and turn.audio:
-                            tick = time.perf_counter()
-                            gold_text = turn.audio_text
-                            turn.audio_text = asr.transcribe(data / "train" / turn.audio)
-                            record["history_asr"].append({"audio": turn.audio, "gold": gold_text,
-                                                          "asr": turn.audio_text, "seconds": time.perf_counter() - tick})
+                    if paired_inputs is None:
+                        tick = time.perf_counter()
+                        transcript = asr.transcribe(data / "train" / sample.audio)
+                        record.update({"asr_transcript": transcript, "asr_current_seconds": time.perf_counter() - tick})
+                        for turn in sample.history:
+                            if turn.role == "user" and turn.audio:
+                                tick = time.perf_counter()
+                                gold_text = turn.audio_text
+                                turn.audio_text = asr.transcribe(data / "train" / turn.audio)
+                                record["history_asr"].append({"audio": turn.audio, "gold": gold_text,
+                                                              "asr": turn.audio_text, "seconds": time.perf_counter() - tick})
+                    else:
+                        cached = paired_inputs["inputs"][sample.id]
+                        transcript = paired_transcript(sample, cached, arm)
+                        record.update({"asr_transcript": cached["current_asr"],
+                                       "model_current_transcript": transcript,
+                                       "history_asr": cached["history_asr"],
+                                       "timing_includes_asr": False})
                     tools = catalog_tools_for_sample(catalog, sample)
                     original_call, original_validate = env.call, env.validate
 
@@ -308,6 +345,10 @@ def main():
                             raise TimeoutError("180-second smoke debug budget exceeded (not an A30 timing claim)")
                         tick = time.perf_counter()
                         raw_text["value"] = None
+                        if "initial_prompt_sha256" not in record:
+                            record["initial_prompt_sha256"] = hashlib.sha256(prompt.encode()).hexdigest()
+                            if paired_inputs is not None and arm == "cached_asr" and record["initial_prompt_sha256"] != cached["v3_initial_prompt_sha256"]:
+                                raise RuntimeError("Cached-ASR initial prompt differs from v3; abort diagnostic")
                         try:
                             with t4_efficient_attention():
                                 result = llm(prompt, tools)
@@ -335,13 +376,15 @@ def main():
                 record["submission"] = line
                 submission.write(json.dumps(line, ensure_ascii=False) + "\n")
                 submission.flush()
-                write_json(output / f"{sample.id}.json", record)
-                summary["records"].append({k: record[k] for k in ("id", "group", "status", "inference_seconds", "proxy")})
+                write_json(output / (f"{sample.id}.json" if arm == "live_asr" else f"{arm}_{sample.id}.json"), record)
+                summary["records"].append({k: record[k] for k in ("id", "group", "arm", "status", "inference_seconds", "proxy")})
                 write_json(output / "summary.json", summary)
-                print(f"SAMPLE {sample.id} {record['status']} proxy={record['proxy']['score']:.4f} seconds={record['inference_seconds']:.1f}", flush=True)
+                print(f"SAMPLE {arm} {sample.id} {record['status']} proxy={record['proxy']['score']:.4f} seconds={record['inference_seconds']:.1f}", flush=True)
 
         summary["status"] = "SMOKE_COMPLETED" if all(r["status"] == "INFERRED" for r in summary["records"]) else "SMOKE_HAS_ERRORS"
-        summary["proxy_mean"] = sum(r["proxy"]["score"] for r in summary["records"]) / len(SAMPLE_PLAN)
+        summary["proxy_mean_by_arm"] = {arm: sum(r["proxy"]["score"] for r in summary["records"] if r["arm"] == arm) / len(SAMPLE_PLAN) for arm in arms}
+        if paired_inputs is None:
+            summary["proxy_mean"] = summary["proxy_mean_by_arm"]["live_asr"]
         summary["is_official_score"] = False
         summary["is_baseline_quality_estimate"] = False
         summary["phase"] = "finished"

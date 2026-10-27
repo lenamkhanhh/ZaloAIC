@@ -1,10 +1,13 @@
 """Build the self-contained Kaggle notebook; no remote execution here."""
 import json
+import argparse
 from pathlib import Path
 
 
-def build():
+def build(output_dir=None, paired_inputs=None):
     root = Path(__file__).resolve().parent
+    destination = Path(output_dir) if output_dir else root
+    destination.mkdir(parents=True, exist_ok=True)
     source = (root / "smoke_runner.py").read_text(encoding="utf-8")
     definitions = source.rsplit('\nif __name__ == "__main__":', 1)[0]
     def code(text, cell_id):
@@ -21,10 +24,19 @@ def build():
                 "ASR uses cuda:0; FP16 LLM is balanced across two T4s. Timing is not A30 timing.\n",
                 "Outputs: summary, raw model text, ASR, tool traces and proxy scores in smoke_artifacts.zip.\n",
             ]},
-            code(definitions, "runner"), code("main()\n", "launch"),
+            code(definitions, "runner"), code("main()\n" if paired_inputs is None else
+                "main(paired_inputs=" + repr(paired_inputs) + ")\n", "launch"),
         ],
     }
-    (root / "lifemate_smoke.ipynb").write_text(json.dumps(notebook, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    if paired_inputs is not None:
+        notebook["cells"][0]["source"] = [
+            "# LifeMate paired current-transcript diagnostic\n",
+            "Five fixed dev IDs, two arms: cached v3 ASR vs gold current transcript.\n",
+            "Exact cached v3 ASR history in both arms. No prompt/model/seed changes.\n",
+            "Gold is diagnostic only; not a deployable pipeline or benchmark.\n",
+            "ASR model remains resident for matching placement; no ASR timing comparison.\n",
+        ]
+    (destination / "lifemate_smoke.ipynb").write_text(json.dumps(notebook, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     metadata = {
         "id": "khanhss/lifemate-smoke-dev5-20261027", "title": "LifeMate Smoke Dev5 20261027",
         "code_file": "lifemate_smoke.ipynb", "language": "python", "kernel_type": "notebook",
@@ -32,8 +44,13 @@ def build():
         "machine_shape": "NvidiaTeslaT4", "dataset_sources": [], "competition_sources": [],
         "kernel_sources": [], "model_sources": [],
     }
-    (root / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    (destination / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir")
+    parser.add_argument("--paired-inputs", help="Local v3 ASR inputs JSON, embedded only in private diagnostic output")
+    args = parser.parse_args()
+    inputs = json.loads(Path(args.paired_inputs).read_text(encoding="utf-8")) if args.paired_inputs else None
+    build(args.output_dir, inputs)

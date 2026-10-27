@@ -47,3 +47,21 @@ kaggle kernels status khanhss/lifemate-smoke-dev5-20261027
 
 CPU preflight:
 `python -m unittest discover -s kaggle/lifemate_smoke -p test_smoke.py`.
+
+## Paired current-transcript diagnostic
+
+The optional builder flags `--paired-inputs <local-json> --output-dir <artifact-directory>`
+create a private diagnostic notebook outside the source tree. Its input JSON
+contains the five cached v3 current/history ASR transcripts and the initial
+prompt SHA256 for each ID. Do not commit those data-derived inputs/notebooks.
+The ordinary notebook remains a live-ASR five-sample smoke.
+
+The diagnostic runs ten trials: each fixed dev ID with cached ASR current text
+and with gold current text from the verified train data. Both arms use exactly
+the cached v3 ASR history, the same prompt/model settings, fresh ToolEnv, and
+the same efficient-attention kernel. Cached-ASR initial prompt hashes must
+match v3. This measures the effect of replacing the current transcript only;
+it does not remove history-ASR errors or represent a deployable pipeline.
+ASR stays resident for matching placement but is not called; timings exclude
+ASR. Separate per-arm submission files avoid duplicate IDs within a file;
+per-arm proxy means remain diagnostic, not official scores.

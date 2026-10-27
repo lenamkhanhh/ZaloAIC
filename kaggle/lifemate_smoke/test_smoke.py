@@ -15,6 +15,23 @@ spec.loader.exec_module(runner)
 
 
 class SmokePreflight(unittest.TestCase):
+    def test_paired_changes_current_only_and_rejects_history_mismatch(self):
+        import copy
+        sample = SimpleNamespace(audio_text="gold current", history=[
+            SimpleNamespace(role="user", audio="a.wav", audio_text="gold history"),
+            SimpleNamespace(role="assistant", audio=None, text="same assistant")])
+        cached = {"current_asr": "asr current", "history_asr": {"a.wav": "cached history"}}
+        first, second = copy.deepcopy(sample), copy.deepcopy(sample)
+        self.assertEqual(runner.paired_transcript(first, cached, "cached_asr"), "asr current")
+        self.assertEqual(runner.paired_transcript(second, cached, "gold_current"), "gold current")
+        self.assertEqual(vars(first.history[0]), vars(second.history[0]))
+        self.assertEqual(first.history[0].audio_text, "cached history")
+        self.assertEqual(vars(first.history[1]), vars(second.history[1]))
+        with self.assertRaises(KeyError):
+            runner.paired_transcript(copy.deepcopy(sample), {"history_asr": {}}, "gold_current")
+        with self.assertRaisesRegex(ValueError, "Cached history"):
+            runner.paired_transcript(copy.deepcopy(sample), {"history_asr": {"a.wav": "a", "extra.wav": "x"}}, "gold_current")
+
     def test_attention_override_restores_helper_even_on_failure(self):
         original = lambda mask, key: True
         helper = SimpleNamespace(use_gqa_in_sdpa=original)
