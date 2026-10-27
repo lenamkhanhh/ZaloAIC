@@ -119,6 +119,23 @@ python -m lifemate.run check-submission --data <data> --split public_test --subm
 python -m unittest discover -s lifemate/tests
 python -m unittest discover -s deep-dives/tests
 
+# Chạy đúng mẫu theo ID (thay cho --limit khi cần đúng tập mẫu):
+#   --ids: danh sách id, giữ đúng thứ tự liệt kê; id lạ -> lỗi, không chạy lặng.
+#   --ids-file: file JSON — danh sách trần, hoặc dict có smoke_ids / ids / probes.
+#   --limit (nếu có) cắt ngắn SAU khi chọn theo ID.
+python -m lifemate.run infer --data <data> --split train \
+  --config lifemate/configs/recommended.json \
+  --ids train_0025,train_0016,train_0049,train_0004,train_0019 \
+  --out smoke_submission.jsonl
+# Cùng nhóm smoke-5 (bộ probe dev của ZAIC2) qua file probe:
+python -m lifemate.run infer --data <data> --split train \
+  --config lifemate/configs/recommended.json \
+  --ids-file dev_probe_ids.json --out smoke_submission.jsonl
+# Lọc điểm theo ID (score chỉ tính các dòng có id trong danh sách):
+python -m lifemate.run score --data <data> --split train \
+  --submission smoke_submission.jsonl \
+  --ids train_0025,train_0016,train_0049,train_0004,train_0019
+
 # Chạy inference thật (cần GPU + backend §3):
 python -m lifemate.run infer --data <data> --split public_test \
   --config lifemate/configs/recommended.json --out submission.jsonl

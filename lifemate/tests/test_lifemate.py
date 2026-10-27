@@ -19,7 +19,8 @@ from lifemate.adapter import ZaicEnv
 from lifemate.agent import AgentLoop
 from lifemate.config import PipelineConfig
 from lifemate.grounding import ground_name, parse_date, parse_money, normalise_id
-from lifemate.loader import catalog_tools_for_sample, load_catalog, load_split
+from lifemate.loader import Sample, catalog_tools_for_sample, load_catalog, load_split
+from lifemate.run import parse_ids_file, select_samples
 from lifemate.scoring import score_sample, token_f1, tool_f1
 from lifemate.split import make_split
 
@@ -155,6 +156,44 @@ class TestScoring(unittest.TestCase):
         line = {"id": "x", "tool_calls": [], "state_hash": "abc"}
         self.assertEqual(score_sample(line, sample, "abc", {})["score"], 1.0)
         self.assertEqual(score_sample(line, sample, "zzz", {})["score"], 0.0)
+
+
+class TestSelectSamples(unittest.TestCase):
+    """Pure (no data needed): --ids/--ids-file selection semantics."""
+
+    def _samples(self):
+        return [Sample(id=f"train_{i:04d}", split="train", audio="",
+                       context={}, history=[]) for i in range(5)]
+
+    def test_ids_preserve_listed_order_not_file_order(self):
+        out = select_samples(self._samples(), ids="train_0004,train_0000")
+        self.assertEqual([s.id for s in out], ["train_0004", "train_0000"])
+
+    def test_unknown_id_fails_fast(self):
+        with self.assertRaises(ValueError):
+            select_samples(self._samples(), ids="train_0001,train_9999")
+
+    def test_no_ids_returns_unchanged(self):
+        samples = self._samples()
+        self.assertEqual(select_samples(samples), samples)
+
+    def test_ids_file_shapes(self):
+        import tempfile
+        cases = [
+            (["train_0002", "train_0000"], ["train_0002", "train_0000"]),
+            ({"smoke_ids": ["train_0001"]}, ["train_0001"]),
+            ({"probes": [{"id": "train_0003"}, {"id": "train_0000"}]},
+             ["train_0003", "train_0000"]),
+            ({"ids": ["train_0004"]}, ["train_0004"]),
+        ]
+        for payload, expected in cases:
+            with tempfile.NamedTemporaryFile("w", suffix=".json",
+                                             delete=False) as f:
+                json.dump(payload, f)
+                path = f.name
+            self.assertEqual(parse_ids_file(path), expected)
+            out = select_samples(self._samples(), ids_file=path)
+            self.assertEqual([s.id for s in out], expected)
 
 
 @unittest.skipUnless(HAS_DATA, "LifeMate data not extracted (set LIFEMATE_DATA)")

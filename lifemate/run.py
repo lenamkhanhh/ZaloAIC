@@ -43,6 +43,42 @@ from lifemate.scoring import score_sample, summarise  # noqa: E402
 from lifemate.split import load_split_assignment, make_split, split_report, write_split  # noqa: E402
 
 
+def parse_ids_file(path: str | Path) -> list[str]:
+    """Read ids from a JSON file. Accepted shapes (in priority order):
+    a bare list of ids (or of {"id": ...} objects), a dict with
+    "smoke_ids", a dict with "probes" ([{"id": ...}, ...]), or a dict
+    with "ids". This is how the ZAIC2 probe file
+    (dev_probe_ids.json, "smoke_ids") is consumed without hard-coding
+    its ids into the pipeline."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(data, list):
+        return [item["id"] if isinstance(item, dict) else str(item) for item in data]
+    if isinstance(data, dict):
+        for key in ("smoke_ids", "ids"):
+            if key in data:
+                return [str(x) for x in data[key]]
+        if "probes" in data:
+            return [str(p["id"]) for p in data["probes"]]
+    raise ValueError(f"unrecognised ids file shape in {path}")
+
+
+def select_samples(samples, ids=None, ids_file=None):
+    """Filter samples to an explicit id list, preserving the LISTED
+    order (not file order) and failing fast on unknown ids — so
+    `--ids train_0025,...` can never silently run the wrong samples.
+    With neither argument, returns samples unchanged."""
+    if ids is None and ids_file is None:
+        return samples
+    if isinstance(ids, str):
+        ids = [x for x in (part.strip() for part in ids.split(",")) if x]
+    wanted = list(ids) if ids is not None else parse_ids_file(ids_file)
+    by_id = {s.id: s for s in samples}
+    missing = [i for i in wanted if i not in by_id]
+    if missing:
+        raise ValueError(f"ids not found in this split: {missing}")
+    return [by_id[i] for i in wanted]
+
+
 def _gold_hash(data_root: Path, split: str, sample) -> str:
     """Diagnostic-only gold replay: fresh env, label calls, hash out.
     Never used as agent input and never merged into a submission."""
@@ -83,7 +119,9 @@ def cmd_replay_gold(args) -> int:
 
 def cmd_fake_run(args) -> int:
     root = Path(args.data)
-    samples = load_split(root, args.split)[: args.limit] if args.limit else load_split(root, args.split)
+    samples = select_samples(load_split(root, args.split), args.ids, args.ids_file)
+    if args.limit:
+        samples = samples[: args.limit]
     out = Path(args.out)
     with open(out, "w", encoding="utf-8") as fout:
         for sample in samples:
@@ -116,11 +154,16 @@ def cmd_score(args) -> int:
     catalog = load_catalog(root, args.split)
     fuzzy = fuzzy_params(catalog)
     samples = {s.id: s for s in load_split(root, args.split)}
+    wanted = None
+    if args.ids or args.ids_file:
+        wanted = {s.id for s in select_samples(list(samples.values()), args.ids, args.ids_file)}
     results, classes = [], []
     for line in open(args.submission, encoding="utf-8"):
         if not line.strip():
             continue
         line = json.loads(line)
+        if wanted is not None and line["id"] not in wanted:
+            continue
         sample = samples[line["id"]]
         gh = _gold_hash(root, args.split, sample)
         results.append(score_sample(line, sample, gh, fuzzy))
@@ -146,7 +189,7 @@ def cmd_infer(args) -> int:
     config = PipelineConfig.from_json(args.config)
     root = Path(args.data)
     catalog = load_catalog(root, args.split)
-    samples = load_split(root, args.split)
+    samples = select_samples(load_split(root, args.split), args.ids, args.ids_file)
     if args.limit:
         samples = samples[: args.limit]
     asr = FasterWhisperASR(config.asr_checkpoint, device="cuda",
@@ -189,12 +232,23 @@ def main(argv=None) -> int:
             p.add_argument("--split", default="public_test")
             p.add_argument("--limit", type=int, default=None)
             p.add_argument("--out", required=True)
+            p.add_argument("--ids", default=None,
+                           help="comma-separated sample ids, in run order "
+                                "(overrides positional selection; --limit "
+                                "then truncates)")
+            p.add_argument("--ids-file", default=None,
+                           help="JSON file of ids: bare list, or dict with "
+                                "smoke_ids / ids / probes")
         if name == "check-submission":
             p.add_argument("--split", required=True)
             p.add_argument("--submission", required=True)
         if name == "score":
             p.add_argument("--split", default="train")
             p.add_argument("--submission", required=True)
+            p.add_argument("--ids", default=None,
+                           help="comma-separated sample ids to score")
+            p.add_argument("--ids-file", default=None,
+                           help="JSON file of ids (see fake-run --ids-file)")
         if name == "replay-gold":
             p.add_argument("--n", type=int, default=50)
         if name == "make-split":
@@ -203,7 +257,11 @@ def main(argv=None) -> int:
             p.add_argument("--config", default="lifemate/configs/recommended.json")
         p.set_defaults(func=func)
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
