@@ -58,6 +58,12 @@ Không chứa raw dataset, audio hay weights.
   E2 ví dụ condition-before-write; E3 small-vs-medium ASR; E4 guard/
   completion; E5 disambiguation nhắc-vs-gọi). Không sửa code, không
   chạy model, không held-out.
+- `runtime/EXPERIMENT_BRIEF_E0_E5_2026-10-28.md` — Brief giao cho Codex
+  chạy E0–E5: giao thức chung, từng arm, mẫu cố định (E5: 20 mẫu
+  ask_only dev; E4: 2 mẫu đối chứng lặp hợp lệ 0922/1447), metric,
+  tiêu chí falsify, thứ tự chạy, checklist trả về. Brief không chứa
+  gold (tra theo ID từ train release) và không cho phép held-out,
+  training, đổi model hay merge main.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
