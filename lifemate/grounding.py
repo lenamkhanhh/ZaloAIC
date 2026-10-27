@@ -205,7 +205,7 @@ def ground_arguments(call: dict, tools: dict, executed: list[dict], results: lis
     properties = tools.get(call.get("name"), {}).get("parameters", {}).get("properties", {})
     errors = []
 
-    from .evidence import EvidenceLedger, _phone
+    from .evidence import EvidenceLedger
     evidence = EvidenceLedger(tools, executed, results, history, transcript, context)
 
     for name, value in list(args.items()):
@@ -250,7 +250,7 @@ def ground_arguments(call: dict, tools: dict, executed: list[dict], results: lis
                 errors.append(f"{name}: no supported ID for {ref}; use observed evidence or read via {reads}; "
                               "ask only if the user must supply missing/disambiguating information")
         elif name in ("phone", "phone_number") and isinstance(value, str):
-            if _phone(value) not in evidence.phones:
+            if not evidence.supports_phone(value):
                 errors.append(f"{name}: no supporting phone in user input/context or successful tool results; "
                               "resolve the person through contacts.search or ask for the missing phone")
     return call, errors

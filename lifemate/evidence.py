@@ -87,6 +87,15 @@ class EvidenceLedger:
         app = call.get("name", "").split(".")[0]
         refs = self.refs_by_app.get(app, set())
         aliases = {_singular(ref.split(".", 1)[1]): ref for ref in refs}
+        global_aliases = {}
+        for collection_refs in self.refs_by_app.values():
+            for target in collection_refs:
+                global_aliases.setdefault(_singular(target.split(".", 1)[1]), set()).add(target)
+        # A typed nested object can cross app boundaries, e.g. a contact in
+        # phone.recent_calls. Ambiguous collection names do not cross-bind.
+        for alias, candidates in global_aliases.items():
+            if len(candidates) == 1:
+                aliases.setdefault(alias, next(iter(candidates)))
         default = next(iter(refs)) if len(refs) == 1 else None
 
         def visit(value, ref):
@@ -115,12 +124,47 @@ class EvidenceLedger:
         return any(re.search(labelled, text, re.I) or (shaped_id and re.search(literal, text))
                    for text in self.user_text)
 
+    def supports_phone(self, value):
+        number = _phone(value)
+        if number in self.phones:
+            return True
+        # Allow explicit suffix corrections without inventing a whole number.
+        # Both the old suffix and unchanged prefix must be backed by evidence.
+        match = re.search(r"\b(?:đuôi|suffix)\s*(?:là|is)?\s*(.*?)\s+(?:chứ\s+)?(?:không\s+phải|not)\s+(.+)",
+                          self.user_text[0], re.I)
+        if not match or number is None:
+            return False
+        new, old = _digit_phrase(match[1]), _digit_phrase(match[2], prefix_only=True)
+        return bool(new and old and len(new) == len(old) <= 6 and
+                    any(p.endswith(old) and number == p[:-len(old)] + new for p in self.phones))
+
 
 def _phone(value):
     if not isinstance(value, str) or re.search(r"[^\d\s+().-]", value):
         return None
     number = re.sub(r"\D", "", value)
     return number if 7 <= len(number) <= 15 else None
+
+
+DIGITS = {"không": "0", "một": "1", "hai": "2", "ba": "3", "bốn": "4",
+          "tư": "4", "năm": "5", "sáu": "6", "bảy": "7", "bẩy": "7",
+          "tám": "8", "chín": "9"}
+
+
+def _digit_phrase(text, prefix_only=False):
+    digits = ""
+    for word in re.findall(r"\w+|[^\w\s]", text.lower()):
+        if word in DIGITS:
+            digits += DIGITS[word]
+        elif word.isdigit():
+            digits += word
+        elif word in (",", "-", "/"):
+            continue
+        elif prefix_only:
+            break
+        else:
+            return ""
+    return digits
 
 
 def _text_phones(text):
@@ -131,13 +175,10 @@ def _text_phones(text):
             numbers.add(number)
     # Individual spoken digits only, not cardinal-number arithmetic. The
     # minimum length avoids interpreting ordinary amounts/times as phones.
-    digits = {"không": "0", "một": "1", "hai": "2", "ba": "3", "bốn": "4",
-              "tư": "4", "năm": "5", "sáu": "6", "bảy": "7", "bẩy": "7",
-              "tám": "8", "chín": "9"}
     run = ""
     for word in re.findall(r"\w+|[^\w\s]", text.lower()) + [""]:
-        if word in digits:
-            run += digits[word]
+        if word in DIGITS:
+            run += DIGITS[word]
         elif word in (",", "-", "/") and run:
             continue  # Spoken digit groups may be separated by short pauses.
         else:
