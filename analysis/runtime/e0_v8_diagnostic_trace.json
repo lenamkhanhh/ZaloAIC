@@ -1,0 +1,1533 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "note": "Current gold transcript and gold calls/full prompts are excluded; use verified train labels by ID to inspect references. History ASR is identical to V7.",
+  "summary": {
+    "status": "SMOKE_COMPLETED",
+    "evidence": "E0_CURRENT_ORACLE_DIAGNOSTIC_NOT_BENCHMARK",
+    "source_commit": "a2e832b9bdbef63d6d7b5d1573a8d303a48f2664",
+    "sample_plan": [
+      {
+        "id": "train_0019",
+        "group": "empty"
+      },
+      {
+        "id": "train_0116",
+        "group": "ask_only"
+      },
+      {
+        "id": "train_0025",
+        "group": "ask_after"
+      },
+      {
+        "id": "train_0003",
+        "group": "multi_step"
+      },
+      {
+        "id": "train_0008",
+        "group": "history"
+      },
+      {
+        "id": "train_0016",
+        "group": "conditional_positive"
+      },
+      {
+        "id": "train_0049",
+        "group": "balance_fallback"
+      },
+      {
+        "id": "train_0004",
+        "group": "device_grounding"
+      }
+    ],
+    "seed": 42,
+    "models": {
+      "asr": "vinai/PhoWhisper-small",
+      "asr_revision": "a86b604c346caf7148c37512eafe783a16420adb",
+      "llm": "Qwen/Qwen3-4B-Instruct-2507",
+      "llm_snapshot": "cdbee75f17c01a7cc42f958dc650907174af0554"
+    },
+    "dataset": {
+      "bytes": 876430231,
+      "sha256": "57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320",
+      "version": "release: v3.2.0\nbuilt: 2026-10-24T23:35:25+0700\ntrain 1545 / public_test 634\n"
+    },
+    "elapsed_seconds": 453.92627824000004,
+    "proxy_mean_by_arm": {
+      "gold_current": 0.125
+    },
+    "source_archive_sha256": "75dfc6c5a400dcae0a520c95eebf80d9aa37d7ece48f3e3805bfb904784c7000",
+    "split_assignment_sha256": "eefd0faa163285b23d2634bc4cc04f515b58367a2344599e46e85d48818280aa"
+  },
+  "traces": [
+    {
+      "id": "train_0003",
+      "arm": "gold_current",
+      "group": "multi_step",
+      "status": "INFERRED",
+      "seconds": 81.990670238,
+      "history_asr": {},
+      "control_current_asr": "ê nạn kíp mình năm mươi ngàn tiền điện thoại cho bác ba với chuyển ví cho cô mai số tiền điện thánh là nhé.",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.22222222222222224,
+        "n_submitted": 4,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0003",
+        "tool_calls": [
+          {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "bác Ba"
+            }
+          },
+          {
+            "name": "ewallet.topup_mobile",
+            "arguments": {
+              "phone": "09919377320",
+              "amount": 50000
+            }
+          },
+          {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "cô Mai"
+            }
+          },
+          {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "cô Mai"
+            }
+          }
+        ],
+        "state_hash": "f55ae5eb3a4898428765a65e3cda21aa0bae8b357e761324c04ce6a3559d9d05"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "ewallet.topup_mobile",
+            "arguments": {
+              "phone": "0901234567",
+              "amount": 50000
+            }
+          },
+          "raw_text": "{\"name\": \"ewallet.topup_mobile\", \"arguments\": {\"phone\": \"0901234567\", \"amount\": 50000}}",
+          "seconds": 9.017287121000038
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "bác Ba"
+            }
+          },
+          "raw_text": "{\"name\": \"contacts.search\", \"arguments\": {\"query\": \"bác Ba\"}}",
+          "seconds": 7.256039547
+        },
+        {
+          "event": "tool",
+          "name": "contacts.search",
+          "arguments": {
+            "query": "bác Ba"
+          },
+          "result": {
+            "ok": true,
+            "contacts": [
+              {
+                "id": "c_02",
+                "name": "Bác Ba",
+                "relation": "hàng xóm",
+                "phone": "09919377320"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "ewallet.topup_mobile",
+            "arguments": {
+              "phone": "09919377320",
+              "amount": 50000
+            }
+          },
+          "raw_text": "{\"name\": \"ewallet.topup_mobile\", \"arguments\": {\"phone\": \"09919377320\", \"amount\": 50000}}",
+          "seconds": 9.392601839000008
+        },
+        {
+          "event": "tool",
+          "name": "ewallet.topup_mobile",
+          "arguments": {
+            "phone": "09919377320",
+            "amount": 50000
+          },
+          "result": {
+            "ok": true,
+            "transaction": {
+              "id": "tx_01",
+              "type": "topup_mobile",
+              "phone": "09919377320",
+              "amount": -50000
+            },
+            "balance": 4950000
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "c_03",
+              "amount": 500000,
+              "note": "điện tháng này"
+            }
+          },
+          "raw_text": "{\"name\": \"ewallet.transfer\", \"arguments\": {\"contact_id\": \"c_03\", \"amount\": 500000, \"note\": \"điện tháng này\"}}",
+          "seconds": 9.585250330999997
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "cô Mai"
+            }
+          },
+          "raw_text": "{\"name\": \"contacts.search\", \"arguments\": {\"query\": \"cô Mai\"}}",
+          "seconds": 7.253297761999988
+        },
+        {
+          "event": "tool",
+          "name": "contacts.search",
+          "arguments": {
+            "query": "cô Mai"
+          },
+          "result": {
+            "ok": true,
+            "contacts": []
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "tool_name": "contacts.search",
+            "params": [
+              "query"
+            ]
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"tool_name\": \"contacts.search\", \"params\": [\"query\"]}",
+          "seconds": 7.56188832700002
+        },
+        {
+          "event": "validation_rejected",
+          "name": "sys.ask_missing_info",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: tool_name, params"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "cô Mai"
+            }
+          },
+          "raw_text": "{\"name\": \"contacts.search\", \"arguments\": {\"query\": \"cô Mai\"}}",
+          "seconds": 7.079527153000015
+        },
+        {
+          "event": "tool",
+          "name": "contacts.search",
+          "arguments": {
+            "query": "cô Mai"
+          },
+          "result": {
+            "ok": true,
+            "contacts": []
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "tool_name": "contacts.search",
+            "params": [
+              "query"
+            ]
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"tool_name\": \"contacts.search\", \"params\": [\"query\"]}",
+          "seconds": 7.571347696999965
+        },
+        {
+          "event": "validation_rejected",
+          "name": "sys.ask_missing_info",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: tool_name, params"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "phone",
+              "amount"
+            ]
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"tool_name\": \"ewallet.transfer\", \"params\": [\"contact_id\", \"phone\", \"amount\"]}",
+          "seconds": 8.575183503000005
+        },
+        {
+          "event": "validation_rejected",
+          "name": "sys.ask_missing_info",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: tool_name, params"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "phone",
+              "amount"
+            ]
+          },
+          "raw_text": "{\"name\": \"sys.ask_missing_info\", \"tool_name\": \"ewallet.transfer\", \"params\": [\"contact_id\", \"phone\", \"amount\"]}",
+          "seconds": 8.58608246
+        },
+        {
+          "event": "validation_rejected",
+          "name": "sys.ask_missing_info",
+          "arguments": {},
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: tool_name, params"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0004",
+      "arm": "gold_current",
+      "group": "device_grounding",
+      "status": "INFERRED",
+      "seconds": 23.06296513199993,
+      "history_asr": {},
+      "control_current_asr": "trợ lý ơi giảm độ sáng đèn phòng ngủ nhỏ xuống còn một nửa nhé.",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 3,
+        "n_gold": 2
+      },
+      "submitted": {
+        "id": "train_0004",
+        "tool_calls": [
+          {
+            "name": "smart_home.get_status",
+            "arguments": {
+              "room": "phòng ngủ nhỏ"
+            }
+          },
+          {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          },
+          {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          }
+        ],
+        "state_hash": "fb27db99fbbb7964fb66a3e695ddb584304b2b2a2d1bfff13e027916e1719329"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "smart_home.get_status",
+            "arguments": {
+              "room": "phòng ngủ nhỏ"
+            }
+          },
+          "raw_text": "{\"name\": \"smart_home.get_status\", \"arguments\": {\"room\": \"phòng ngủ nhỏ\"}}",
+          "seconds": 5.375264602000016
+        },
+        {
+          "event": "tool",
+          "name": "smart_home.get_status",
+          "arguments": {
+            "room": "phòng ngủ nhỏ"
+          },
+          "result": {
+            "ok": true,
+            "devices": [
+              {
+                "id": "light_bedroom2",
+                "name": "đèn phòng ngủ nhỏ",
+                "type": "light",
+                "room": "phòng ngủ nhỏ",
+                "floor": 2,
+                "state": {
+                  "power": "on",
+                  "brightness": 100
+                }
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          },
+          "raw_text": "{\"name\": \"smart_home.light_set\", \"arguments\": {\"device_id\": \"light_bedroom2\", \"power\": \"on\", \"brightness\": 50}}",
+          "seconds": 6.639241827999967
+        },
+        {
+          "event": "tool",
+          "name": "smart_home.light_set",
+          "arguments": {
+            "device_id": "light_bedroom2",
+            "power": "on",
+            "brightness": 50
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "light_bedroom2",
+              "name": "đèn phòng ngủ nhỏ",
+              "type": "light",
+              "room": "phòng ngủ nhỏ",
+              "floor": 2,
+              "state": {
+                "power": "on",
+                "brightness": 50
+              }
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "smart_home.light_set",
+            "arguments": {
+              "device_id": "light_bedroom2",
+              "power": "on",
+              "brightness": 50
+            }
+          },
+          "raw_text": "{\"name\": \"smart_home.light_set\", \"arguments\": {\"device_id\": \"light_bedroom2\", \"power\": \"on\", \"brightness\": 50}}",
+          "seconds": 6.712635811000041
+        },
+        {
+          "event": "tool",
+          "name": "smart_home.light_set",
+          "arguments": {
+            "device_id": "light_bedroom2",
+            "power": "on",
+            "brightness": 50
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "light_bedroom2",
+              "name": "đèn phòng ngủ nhỏ",
+              "type": "light",
+              "room": "phòng ngủ nhỏ",
+              "floor": 2,
+              "state": {
+                "power": "on",
+                "brightness": 50
+              }
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 4.244905772999914
+        }
+      ]
+    },
+    {
+      "id": "train_0008",
+      "arm": "gold_current",
+      "group": "history",
+      "status": "INFERRED",
+      "seconds": 33.14566790700002,
+      "history_asr": {
+        "audio/train_0008/train_0008_u1.wav": "mai tôi có những báo thức nào vậy.",
+        "audio/train_0008/train_0008_u2.wav": "sái thái sớm nhất giúp tôi nhé."
+      },
+      "control_current_asr": "cái còn lại nếu may mưa thì dời muộn nửa tiếng không mưa rửa hoen.",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 3,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0008",
+        "tool_calls": [
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm"
+            }
+          },
+          {
+            "name": "weather.get_current",
+            "arguments": {
+              "location": "TP.HCM"
+            }
+          },
+          {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm"
+            }
+          }
+        ],
+        "state_hash": "ed0526f8f31d68e125fcd4eb2ac8aaee30db069f12415d6ca3ed05c38d764087"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\", \"label\": \"họp sớm\"}}",
+          "seconds": 8.94671887200002
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00",
+            "label": "họp sớm"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_current",
+            "arguments": {
+              "location": "TP.HCM"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_current\", \"arguments\": {\"location\": \"TP.HCM\"}}",
+          "seconds": 5.634117482000022
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_current",
+          "arguments": {
+            "location": "TP.HCM"
+          },
+          "result": {
+            "ok": true,
+            "current": [
+              {
+                "location": "TP.HCM",
+                "temperature_c": 30,
+                "condition": "mưa rào"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\", \"label\": \"họp sớm\"}}",
+          "seconds": 9.201500735000025
+        },
+        {
+          "event": "tool",
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00",
+            "label": "họp sớm"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm",
+              "repeat": "daily",
+              "enabled": true
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "alarm.update",
+            "arguments": {
+              "alarm_id": "alm_02",
+              "time": "2026-11-14T07:30:00+07:00",
+              "label": "họp sớm"
+            }
+          },
+          "raw_text": "{\"name\": \"alarm.update\", \"arguments\": {\"alarm_id\": \"alm_02\", \"time\": \"2026-11-14T07:30:00+07:00\", \"label\": \"họp sớm\"}}",
+          "seconds": 9.290232704000061
+        }
+      ]
+    },
+    {
+      "id": "train_0016",
+      "arm": "gold_current",
+      "group": "conditional_positive",
+      "status": "INFERRED",
+      "seconds": 49.19541274599999,
+      "history_asr": {},
+      "control_current_asr": "nếu mưa thì dò lệch đau bóng song hãy mệt nãy tiếng với nhẫn ét mét cho mẹ lập báo giờ mới hoặc không mưa thì thôi.",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.20000000000000004,
+        "n_submitted": 5,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0016",
+        "tool_calls": [
+          {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "TP.HCM",
+              "date": "2026-11-25"
+            }
+          },
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Dời lịch đá bóng sáng mai muộn hai tiếng",
+              "time": "2026-11-25T15:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "Mẹ"
+            }
+          },
+          {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          {
+            "name": "sms.send",
+            "arguments": {
+              "contact_id": "c_01",
+              "content": "Con đã dời lịch đá bóng sang 15h hôm nay, mẹ ơi."
+            }
+          }
+        ],
+        "state_hash": "f04183ebf9d118b7b8121595de0f82862e3cfae6b422a73cbabc2df0da8d9578"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "TP.HCM",
+              "date": "2026-11-25"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_forecast\", \"arguments\": {\"location\": \"TP.HCM\", \"date\": \"2026-11-25\"}}",
+          "seconds": 8.347550898000009
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_forecast",
+          "arguments": {
+            "location": "TP.HCM",
+            "date": "2026-11-25"
+          },
+          "result": {
+            "ok": true,
+            "forecast": [
+              {
+                "location": "TP.HCM",
+                "date": "2026-11-25",
+                "condition": "mưa rào",
+                "rain": true,
+                "temp_min": 21,
+                "temp_max": 29
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Dời lịch đá bóng sáng mai muộn hai tiếng",
+              "time": "2026-11-25T15:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"Dời lịch đá bóng sáng mai muộn hai tiếng\", \"time\": \"2026-11-25T15:00:00+07:00\", \"repeat\": \"once\"}}",
+          "seconds": 11.216293981999911
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "Dời lịch đá bóng sáng mai muộn hai tiếng",
+            "time": "2026-11-25T15:00:00+07:00",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "Dời lịch đá bóng sáng mai muộn hai tiếng",
+              "time": "2026-11-25T15:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "Mẹ"
+            }
+          },
+          "raw_text": "{\"name\": \"contacts.search\", \"arguments\": {\"query\": \"Mẹ\"}}",
+          "seconds": 6.767494651999982
+        },
+        {
+          "event": "tool",
+          "name": "contacts.search",
+          "arguments": {
+            "query": "Mẹ"
+          },
+          "result": {
+            "ok": true,
+            "contacts": [
+              {
+                "id": "c_01",
+                "name": "Mẹ",
+                "relation": "mẹ",
+                "phone": "09916351161"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.complete",
+            "arguments": {
+              "reminder_id": "rem_01"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.complete\", \"arguments\": {\"reminder_id\": \"rem_01\"}}",
+          "seconds": 7.199943613000073
+        },
+        {
+          "event": "tool",
+          "name": "reminders.complete",
+          "arguments": {
+            "reminder_id": "rem_01"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": true,
+              "content": "Dời lịch đá bóng sáng mai muộn hai tiếng",
+              "time": "2026-11-25T15:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "sms.send",
+            "arguments": {
+              "contact_id": "c_01",
+              "content": "Con đã dời lịch đá bóng sang 15h hôm nay, mẹ ơi."
+            }
+          },
+          "raw_text": "{\"name\": \"sms.send\", \"arguments\": {\"contact_id\": \"c_01\", \"content\": \"Con đã dời lịch đá bóng sang 15h hôm nay, mẹ ơi.\"}}",
+          "seconds": 9.809274824999989
+        },
+        {
+          "event": "tool",
+          "name": "sms.send",
+          "arguments": {
+            "contact_id": "c_01",
+            "content": "Con đã dời lịch đá bóng sang 15h hôm nay, mẹ ơi."
+          },
+          "result": {
+            "ok": true,
+            "message": {
+              "id": "msg_01",
+              "contact_id": "c_01",
+              "phone_number": "09916351161",
+              "direction": "outgoing",
+              "content": "Con đã dời lịch đá bóng sang 15h hôm nay, mẹ ơi."
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 5.79441835800003
+        }
+      ]
+    },
+    {
+      "id": "train_0019",
+      "arm": "gold_current",
+      "group": "empty",
+      "status": "INFERRED",
+      "seconds": 2.38069992100003,
+      "history_asr": {},
+      "control_current_asr": "chị hở ạ tôi cần đặt phòng khách sạn ở đà lạt với anh ạ.",
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 0,
+        "n_gold": 0
+      },
+      "submitted": {
+        "id": "train_0019",
+        "tool_calls": [],
+        "state_hash": "a16a52c2f7ec4e57bc4cdeafb901ef8547ba66115c501273721efa196d1de72a"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 2.3800855970000043
+        }
+      ]
+    },
+    {
+      "id": "train_0025",
+      "arm": "gold_current",
+      "group": "ask_after",
+      "status": "INFERRED",
+      "seconds": 66.56806740300004,
+      "history_asr": {},
+      "control_current_asr": "nếu may vừa thì nghĩ dịch đá bóng sáy may phơi lợi cho đảng minh nhé còn không vui vì thôi hàng.",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.5454545454545454,
+        "n_submitted": 6,
+        "n_gold": 5
+      },
+      "submitted": {
+        "id": "train_0025",
+        "tool_calls": [
+          {
+            "name": "calendar.list_events",
+            "arguments": {}
+          },
+          {
+            "name": "calendar.update_event",
+            "arguments": {
+              "event_id": "evt_01",
+              "title": "đá bóng (nếu không mưa)"
+            }
+          },
+          {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "Hà Nội",
+              "date": "2026-11-28"
+            }
+          },
+          {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "evt_01"
+            }
+          },
+          {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "Minh"
+            }
+          },
+          {
+            "name": "phone.call",
+            "arguments": {
+              "contact_id": "c_05",
+              "phone_number": "09489210373"
+            }
+          }
+        ],
+        "state_hash": "36f44ad661402696fe4f3331693524250c8219e4352f963a29c2bd20b5d31dcf"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.list_events",
+            "kind": "read",
+            "parameters": {
+              "date_from": "2026-11-28",
+              "date_to": "2026-11-28"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.list_events\", \"kind\": \"read\", \"parameters\": {\"date_from\": \"2026-11-28\", \"date_to\": \"2026-11-28\"}}",
+          "seconds": 11.090824327999997
+        },
+        {
+          "event": "tool",
+          "name": "calendar.list_events",
+          "arguments": {},
+          "result": {
+            "ok": true,
+            "events": [
+              {
+                "id": "evt_01",
+                "title": "đá bóng",
+                "start": "2026-11-28T09:00:00+07:00",
+                "end": "2026-11-28T10:00:00+07:00",
+                "location": "Văn phòng",
+                "status": "confirmed"
+              },
+              {
+                "id": "evt_02",
+                "title": "đi chơi công viên",
+                "start": "2026-11-30T15:30:00+07:00",
+                "end": "2026-11-30T16:30:00+07:00",
+                "location": "Sân bóng Mini",
+                "status": "confirmed"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.update_event",
+            "arguments": {
+              "event_id": "evt_01",
+              "title": "đá bóng (nếu không mưa)"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.update_event\", \"arguments\": {\"event_id\": \"evt_01\", \"title\": \"đá bóng (nếu không mưa)\"}}",
+          "seconds": 9.819377295000038
+        },
+        {
+          "event": "tool",
+          "name": "calendar.update_event",
+          "arguments": {
+            "event_id": "evt_01",
+            "title": "đá bóng (nếu không mưa)"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "evt_01",
+              "title": "đá bóng (nếu không mưa)",
+              "start": "2026-11-28T09:00:00+07:00",
+              "end": "2026-11-28T10:00:00+07:00",
+              "location": "Văn phòng",
+              "status": "confirmed"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "weather.get_forecast",
+            "arguments": {
+              "location": "Hà Nội",
+              "date": "2026-11-28"
+            }
+          },
+          "raw_text": "{\"name\": \"weather.get_forecast\", \"arguments\": {\"location\": \"Hà Nội\", \"date\": \"2026-11-28\"}}",
+          "seconds": 10.168445393000013
+        },
+        {
+          "event": "tool",
+          "name": "weather.get_forecast",
+          "arguments": {
+            "location": "Hà Nội",
+            "date": "2026-11-28"
+          },
+          "result": {
+            "ok": true,
+            "forecast": [
+              {
+                "location": "Hà Nội",
+                "date": "2026-11-28",
+                "condition": "mưa rào",
+                "rain": true,
+                "temp_min": 21,
+                "temp_max": 32
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "calendar.cancel_event",
+            "arguments": {
+              "event_id": "evt_01"
+            }
+          },
+          "raw_text": "{\"name\": \"calendar.cancel_event\", \"arguments\": {\"event_id\": \"evt_01\"}}",
+          "seconds": 8.658779660999983
+        },
+        {
+          "event": "tool",
+          "name": "calendar.cancel_event",
+          "arguments": {
+            "event_id": "evt_01"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "evt_01",
+              "title": "đá bóng (nếu không mưa)",
+              "start": "2026-11-28T09:00:00+07:00",
+              "end": "2026-11-28T10:00:00+07:00",
+              "location": "Văn phòng",
+              "status": "cancelled"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "Minh"
+            }
+          },
+          "raw_text": "{\"name\": \"contacts.search\", \"arguments\": {\"query\": \"Minh\"}}",
+          "seconds": 8.296043039999972
+        },
+        {
+          "event": "tool",
+          "name": "contacts.search",
+          "arguments": {
+            "query": "Minh"
+          },
+          "result": {
+            "ok": true,
+            "contacts": [
+              {
+                "id": "c_05",
+                "name": "Minh",
+                "relation": "đồng nghiệp",
+                "phone": "09489210373"
+              },
+              {
+                "id": "c_08",
+                "name": "Minh",
+                "relation": "khách hàng",
+                "phone": "09686582183"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "phone.call",
+            "arguments": {
+              "contact_id": "c_05",
+              "phone_number": "09489210373"
+            }
+          },
+          "raw_text": "{\"name\": \"phone.call\", \"arguments\": {\"contact_id\": \"c_05\", \"phone_number\": \"09489210373\"}}",
+          "seconds": 11.200666041999966
+        },
+        {
+          "event": "tool",
+          "name": "phone.call",
+          "arguments": {
+            "contact_id": "c_05",
+            "phone_number": "09489210373"
+          },
+          "result": {
+            "ok": true,
+            "call": {
+              "id": "call_01",
+              "contact_id": "c_05",
+              "phone_number": "09489210373",
+              "status": "dialing"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 7.278610265999987
+        }
+      ]
+    },
+    {
+      "id": "train_0049",
+      "arm": "gold_current",
+      "group": "balance_fallback",
+      "status": "INFERRED",
+      "seconds": 68.76343164100001,
+      "history_asr": {},
+      "control_current_asr": "ờ à chuyện tim mạng thấy hành gia trỗi gà phản hồn nghé nếu tài khoản thanh toán không đủ thì lấy thử tiết kiệm giúp tôi.",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.18181818181818182,
+        "n_submitted": 7,
+        "n_gold": 4
+      },
+      "submitted": {
+        "id": "train_0049",
+        "tool_calls": [
+          {
+            "name": "banking.get_balance",
+            "arguments": {
+              "account_id": "acc_123"
+            }
+          },
+          {
+            "name": "banking.list_beneficiaries",
+            "arguments": {}
+          },
+          {
+            "name": "banking.transfer",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "beneficiary_id": "ben_03",
+              "amount": 1200000
+            }
+          },
+          {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 1200000,
+              "term_months": 12
+            }
+          },
+          {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 1200000,
+              "term_months": 12
+            }
+          },
+          {
+            "name": "banking.get_balance",
+            "arguments": {
+              "account_id": "acc_02"
+            }
+          },
+          {
+            "name": "banking.transfer",
+            "arguments": {
+              "from_account_id": "acc_02",
+              "beneficiary_id": "ben_03",
+              "amount": 1200000
+            }
+          }
+        ],
+        "state_hash": "5ecbfd4f888f5a6af29a838c2b5ba074498793f78faee997c09226dce9a1ffa6"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.get_balance",
+            "arguments": {
+              "account_id": "acc_123"
+            }
+          },
+          "raw_text": "{\"name\": \"banking.get_balance\", \"arguments\": {\"account_id\": \"acc_123\"}}",
+          "seconds": 6.262350308000009
+        },
+        {
+          "event": "tool",
+          "name": "banking.get_balance",
+          "arguments": {
+            "account_id": "acc_123"
+          },
+          "result": {
+            "ok": true,
+            "accounts": [
+              {
+                "id": "acc_01",
+                "name": "Tài khoản thanh toán",
+                "balance": 129450
+              },
+              {
+                "id": "acc_02",
+                "name": "Tài khoản tiết kiệm",
+                "balance": 50000000
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.transfer",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "beneficiary_id": "ben_001",
+              "amount": 1200000,
+              "note": "mạng tháng này"
+            }
+          },
+          "raw_text": "{\"name\": \"banking.transfer\", \"arguments\": {\"from_account_id\": \"acc_01\", \"beneficiary_id\": \"ben_001\", \"amount\": 1200000, \"note\": \"mạng tháng này\"}}",
+          "seconds": 9.267295930000046
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.list_beneficiaries",
+            "arguments": {}
+          },
+          "raw_text": "{\"name\": \"banking.list_beneficiaries\", \"arguments\": {}}",
+          "seconds": 6.164046419999977
+        },
+        {
+          "event": "tool",
+          "name": "banking.list_beneficiaries",
+          "arguments": {},
+          "result": {
+            "ok": true,
+            "beneficiaries": [
+              {
+                "id": "ben_01",
+                "name": "Lê Minh",
+                "bank": "Quân Việt Bank",
+                "account_number": "0123456789"
+              },
+              {
+                "id": "ben_02",
+                "name": "Nguyễn Thị Lan",
+                "bank": "Đại Việt Bank",
+                "account_number": "0071000123456"
+              },
+              {
+                "id": "ben_03",
+                "name": "Chủ nhà - Phạm Hùng",
+                "bank": "An Phát Bank",
+                "account_number": "31410001234567"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.transfer",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "beneficiary_id": "ben_03",
+              "amount": 1200000
+            }
+          },
+          "raw_text": "{\"name\": \"banking.transfer\", \"arguments\": {\"from_account_id\": \"acc_01\", \"beneficiary_id\": \"ben_03\", \"amount\": 1200000}}",
+          "seconds": 8.670239056000014
+        },
+        {
+          "event": "tool",
+          "name": "banking.transfer",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "beneficiary_id": "ben_03",
+            "amount": 1200000
+          },
+          "result": {
+            "ok": true,
+            "done": false,
+            "message": "số dư không đủ"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 1200000,
+              "term_months": 12
+            }
+          },
+          "raw_text": "{\"name\": \"banking.open_savings\", \"arguments\": {\"from_account_id\": \"acc_01\", \"amount\": 1200000, \"term_months\": 12}}",
+          "seconds": 8.611431504999928
+        },
+        {
+          "event": "tool",
+          "name": "banking.open_savings",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "amount": 1200000,
+            "term_months": 12
+          },
+          "result": {
+            "ok": true,
+            "done": false,
+            "message": "số dư không đủ"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.open_savings",
+            "arguments": {
+              "from_account_id": "acc_01",
+              "amount": 1200000,
+              "term_months": 12
+            }
+          },
+          "raw_text": "{\"name\": \"banking.open_savings\", \"arguments\": {\"from_account_id\": \"acc_01\", \"amount\": 1200000, \"term_months\": 12}}",
+          "seconds": 8.70708322500002
+        },
+        {
+          "event": "tool",
+          "name": "banking.open_savings",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "amount": 1200000,
+            "term_months": 12
+          },
+          "result": {
+            "ok": true,
+            "done": false,
+            "message": "số dư không đủ"
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.get_balance",
+            "arguments": {
+              "account_id": "acc_02"
+            }
+          },
+          "raw_text": "{\"name\": \"banking.get_balance\", \"arguments\": {\"account_id\": \"acc_02\"}}",
+          "seconds": 6.731532913000024
+        },
+        {
+          "event": "tool",
+          "name": "banking.get_balance",
+          "arguments": {
+            "account_id": "acc_02"
+          },
+          "result": {
+            "ok": true,
+            "accounts": [
+              {
+                "id": "acc_01",
+                "name": "Tài khoản thanh toán",
+                "balance": 129450
+              },
+              {
+                "id": "acc_02",
+                "name": "Tài khoản tiết kiệm",
+                "balance": 50000000
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "banking.transfer",
+            "arguments": {
+              "from_account_id": "acc_02",
+              "beneficiary_id": "ben_03",
+              "amount": 1200000
+            }
+          },
+          "raw_text": "{\"name\": \"banking.transfer\", \"arguments\": {\"from_account_id\": \"acc_02\", \"beneficiary_id\": \"ben_03\", \"amount\": 1200000}}",
+          "seconds": 8.965622524000082
+        },
+        {
+          "event": "tool",
+          "name": "banking.transfer",
+          "arguments": {
+            "from_account_id": "acc_02",
+            "beneficiary_id": "ben_03",
+            "amount": 1200000
+          },
+          "result": {
+            "ok": true,
+            "transaction": {
+              "id": "tx_01",
+              "account_id": "acc_02",
+              "beneficiary_id": "ben_03",
+              "amount": -1200000,
+              "note": null
+            },
+            "balance": 48800000
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 5.292368203000024
+        }
+      ]
+    },
+    {
+      "id": "train_0116",
+      "arm": "gold_current",
+      "group": "ask_only",
+      "status": "INFERRED",
+      "seconds": 12.492521274000012,
+      "history_asr": {
+        "audio/train_0116/train_0116_u1.wav": "ví của tôi giờ còn nhiều tiền dễ.",
+        "audio/train_0116/train_0116_u2.wav": "mai có hẹn gì trong lịch không.",
+        "audio/train_0116/train_0116_u3.wav": "mở dùm tôi bài có trách yêu là đây.",
+        "audio/train_0116/train_0116_u4.wav": "chào trợ lý hôm nay thế nào khỏe không.",
+        "audio/train_0116/train_0116_u5.wav": "gần đây quán cơm tấm nào ngon không.",
+        "audio/train_0116/train_0116_u6.wav": "bạn ké chelsea bữa nay nhiêu một lượng rồi."
+      },
+      "control_current_asr": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submitted": {
+        "id": "train_0116",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T10:30:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "78d722138981f6a0851b329f26f1b7d3f678891b305eb20ea9e0369de9e9881e"
+      },
+      "events": [
+        {
+          "event": "generation",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T10:30:00+07:00"
+            }
+          },
+          "raw_text": "{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"time\": \"2026-11-19T10:30:00+07:00\"}}",
+          "seconds": 8.110626259000014
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gọi điện cho mẹ",
+            "time": "2026-11-19T10:30:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "gọi điện cho mẹ",
+              "time": "2026-11-19T10:30:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "parsed": null,
+          "raw_text": "{\"stop\": true}",
+          "seconds": 4.351719565999986
+        }
+      ]
+    }
+  ]
+}
