@@ -17,45 +17,78 @@
 - **Áp dụng:** dùng ReAct ngắn gọn (1–2 câu thought) — thought chỉ để liệt kê tham
   số còn thiếu, chọn tool read tiếp theo, kiểm tra precondition. Thought dài chỉ
   tốn context (≤ 16K) và thời gian (≤ 30 s/mẫu).
-- **Chống lặp:** giới hạn số vòng; cùng tool + cùng argument 2 lần → dừng và chuyển
-  sang ask hoặc `[]`; đưa lỗi tool vào observation để model đổi hướng.
+- **Chống lặp (đã sửa theo deep-profiles §0.2):** giới hạn số vòng; phát hiện
+  loop → dừng lặp ngay, replan 1 lần từ dữ liệu đã đọc/cache; nếu không còn
+  hành động có căn cứ thì kết thúc trace nguyên trạng (không append ask/[]
+  giả, không lọc failed call). Đưa lỗi tool vào observation để model đổi hướng.
 
-## 2. Hammer — kỹ thuật đáng mượn, checkpoint thì không
+## 2. Hammer — kỹ thuật đáng mượn, checkpoint thì không (tách v1 / Hammer2.1)
 
-- **Paper (ICLR 2025):** https://arxiv.org/pdf/2410.04587 ;
+- **Paper (ICLR 2025, Hammer v1):** https://arxiv.org/pdf/2410.04587 ;
   https://proceedings.iclr.cc/paper_files/paper/2025/file/d45e0bfb5a39477d56b55c0824200008-Paper-Conference.pdf
-- **Hai kỹ thuật chuyển giao (secondary):**
+- **Hai kỹ thuật chuyển giao (paper, đã xác nhận):**
   1. **Irrelevance augmentation** — thêm 7.500 mẫu dạy model nhận biết khi không có
      function nào phù hợp: trực tiếp liên quan đến ngoài phạm vi → `[]` và thiếu
-     thông tin → `sys.ask_missing_info`.
+     thông tin → `sys.ask_missing_info`. Paper còn cảnh báo: fine-tune chỉ trên
+     dữ liệu function-calling có thể LÀM GIẢM khả năng irrelevance detection —
+     dữ liệu irrelevance phải trộn với dữ liệu execute theo tỉ lệ đo được trên
+     train, không phải cứ thêm nhiều là tốt.
   2. **Function masking** — che tên function/tham số lúc train để model buộc phải đọc
-     description, giảm lệ thuộc vào naming convention.
+     description, giảm lệ thuộc vào naming convention; mask quá cao làm chậm học
+     trong cùng scenario nhưng giúp generalization cross-scenario — bắt đầu mask
+     thấp (ví dụ 0,33) và đo trên train ZAIC.
 - **Kết quả (secondary, BFCL v2):** Hammer 7B được mô tả cạnh tranh được với
   GPT-4/GPT-4o — nhưng Hammer-7B **vượt trần LLM < 5B của LifeMate nên loại trực
   tiếp**; chỉ mượn kỹ thuật khi fine-tune model ≤ 5B của đội trên dữ liệu train ZAIC.
-- **Chưa xác minh:** license checkpoint `MadeAgents/Hammer-*`, HF repo chính thức —
-  kiểm tra trước khi dùng bất kỳ checkpoint nào.
+- **Hammer-4B:** nằm dưới trần 5B, nhưng base/licence/ngày/format/tiếng Việt chưa
+  đọc trên HF card → ứng viên A/B, chỉ thử sau khi đọc HF card và đo trên train.
+- **Hammer2.1-3b** (https://huggingface.co/MadeAgents/Hammer2.1-3b): thế hệ sau,
+  dựa trên Qwen2.5-Coder — **KHÔNG vào shortlist chính** cho tới khi đọc licence
+  trên card HF gốc, xác nhận ngày trước 26/10/2026, và xác nhận ảnh hưởng của
+  base licence Qwen Research (không phải Apache). Mirror Dataloop báo CC-BY-NC-4.0
+  cho bản 0.5b — chưa xác minh trên card gốc; nếu đúng là NC thì đó là rủi ro
+  pháp lý cho cuộc thi có giải tiền mặt. Chi tiết: deep-profiles.md §6.
 
-## 3. xLAM — mạnh về function-calling, phải kiểm tra kỹ
+## 3. xLAM — mạnh về function-calling, phải kiểm tra kỹ (đã sửa round 2)
 
-- **xLAM-2-3b-fc-r (~3B, base Qwen2.5-3B):** nguồn thứ cấp mô tả là model chuyên
-  function-calling; survey thứ cấp ghi 65,74% overall BFCL, Qwen3-4B (prompt)
-  62,04%. **Nhãn: số liệu thứ cấp, không phải leaderboard chính thức đã kiểm chứng.**
-- **Chưa xác minh:** HF repo, licence, ngày phát hành chính thức của xLAM-2 — nguồn
-  blog thứ cấp duy nhất ghi được là
-  https://aichina.news/blog/a-3b-agent-for-your-laptop-salesforce-s-xlam-2-tool-caller-lands-on-a1zrpd/
-  (không phải nguồn Salesforce chính thức). Để ở mục "để sau", không đưa vào
-  shortlist chính cho tới khi xác minh eligible trước 26/10/2026.
+- **xLAM-2-3b-fc-r (~3B, base Qwen2.5-3B):** series đã xác minh từ Salesforce +
+  APIGen-MT (arXiv 2504.03601, https://arxiv.org/html/2504.03601v4); bảng series
+  trong card GGUF https://huggingface.co/Salesforce/Llama-xLAM-2-8b-fc-r-gguf
+  liệt kê 3B, context 32k (max 128k bằng YaRN), `-fc` = fine-tune function
+  calling, `-r` = research release. **Nhưng checkpoint 3B cụ thể chưa xác minh:**
+  licence chưa đọc trên card gốc, ngày phát hành chính xác chưa xác minh
+  (bảng Salesforce ghi BFCL v3 tới 04/02/2025 cho họ 2 — không phải bằng chứng
+  trực tiếp về ngày của checkpoint 3B), tên repo gây nhầm lẫn (Qwen2.5-based
+  nhưng tên "Llama-xLAM-2" gợi Llama-based).
+- **Số BFCL:** survey thứ cấp ghi 65,74% overall BFCL (không rõ version — không
+  dùng để xếp hạng); số BFCL v4 83,7% trên trang Model Spend Arena là
+  **first-party của trang đo, không phải leaderboard chính thức**, và ngày
+  2026-10-23 trên trang đó là ngày của trang/bài đo, KHÔNG phải ngày phát hành
+  model — không được so hai số này với nhau.
+- **Rủi ro licence:** báo chí dẫn lời quản lý nghiên cứu Salesforce rằng
+  APIGen/xLAM phát hành dưới CC BY-NC 4.0 (SECONDARY) — CC BY-NC có được tính
+  là "mã nguồn mở" theo luật ZAIC hay không là câu hỏi phải hỏi BTC hoặc đọc
+  trực tiếp licence trên HF card của checkpoint 3B.
 - **xLAM-7b-r (~6,9–7,2B):** loại trực tiếp vì vượt trần LLM < 5B và hệ thống < 6B.
-- **Rủi ro riêng:** BFCL đo trên API tổng quát, không đo state cuối, tiếng Việt,
-  hay ask/refuse của LifeMate.
+- **Kết luận:** xLAM-2-3b ở ngoài shortlist chính cho tới khi licence + ngày +
+  tên repo được xác minh trên card gốc. BFCL đo trên API tổng quát, không đo
+  state cuối, tiếng Việt, hay ask/refuse của LifeMate.
 
-## 4. Qwen3-4B — LLM baseline hợp lý nhất hiện tại
+## 4. Qwen3-4B — LLM baseline hợp lý nhất hiện tại (đã xác minh một phần, round 2)
 
-- **Thông tin thứ cấp cần xác minh trên HF/official:** Qwen3-4B-Instruct-2507 được
-  nguồn thứ cấp ghi phát hành 06/08/2025, 4,0B tham số, Apache 2.0, native context
-  262K, có native tool calling; đa ngôn ngữ nên xử lý tiếng Việt tốt hơn model
-  chuyên function-calling chỉ huấn luyện tiếng Anh.
+- **Qwen3-4B-Instruct-2507 — HF card, commit `cdbee75`:** Apache 2.0 (metadata
+  card), **4,0B tổng / 3,6B non-embedding**, 36 layer, GQA 32 Q / 8 KV, context
+  native 262.144, chỉ non-thinking mode, cải thiện instruction following /
+  reasoning / tool usage so với Qwen3-4B gốc (author-reported trên card).
+  Series "2507" = tháng 7/2025 — chắc chắn trước 26/10/2026 và trước 01/10/2026
+  trong mọi trường hợp. **KDnuggets 06/08/2025 là ngày bài báo, không phải ngày
+  phát hành model** — sửa ghi chú cũ. URL card:
+  https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507
+- **Ngân sách (tổng, conservative):** 4,0B + PhoWhisper-small 0,244B = **4,244B**;
+  + medium 0,769B = **4,769B**; + large 1,55B = **5,55B** (sát trần, chỉ khi còn
+  dư latency). Đa ngôn ngữ nên xử lý tiếng Việt tốt hơn model chuyên
+  function-calling chỉ huấn luyện tiếng Anh — đây là giả thuyết từ family-level
+  (Qwen3 hỗ trợ 119 ngôn ngữ, author-reported), chưa phải số đo tiếng Việt riêng.
 - **Giới hạn LifeMate:** context của task ≤ 16K, nên phải cắt prompt/history/tool
   schemas xuống ≤ 16K — đừng nhồi toàn bộ history + toàn bộ catalog vào mọi vòng gọi.
 - **Thí nghiệm nhỏ nhất:** prompt Qwen3-4B với đúng schema ZAIC + 2–3 few-shot theo
@@ -81,7 +114,7 @@
 - **Rủi ro:** overfit format; mất khả năng hỏi lại/từ chối nếu dữ liệu execute áp
   đảo; teacher dùng để sinh dữ liệu phải ghi rõ để tránh tranh cãi về nguồn gốc.
 - **Thí nghiệm nhỏ nhất:** LoRA nhỏ trên 1.000–2.000 ví dụ tổng hợp đã verify qua
-  `zaic_tools`, đo trên public test thật; nếu không cải thiện state đúng thì dừng.
+  `zaic_tools`, đo trên train held-out; nếu không cải thiện điểm chính thức thì dừng.
 
 ## 6. Constrained decoding + validator — bắt buộc, nhưng hiểu đúng giới hạn
 
@@ -94,8 +127,10 @@
   việc" — phải kèm validator code.
 - **Pipeline:** constrained decoding → validator code (tên tool trong catalog, kiểu
   dữ liệu, enum, ID tồn tại trong candidate list, tham số bắt buộc) → nếu fail thì
-  cho LLM sửa 1 lần với thông báo lỗi cụ thể, nếu vẫn fail thì dừng an toàn (ask
-  hoặc `[]`) thay vì nộp trace lỗi.
+  cho LLM sửa 1 lần với thông báo lỗi cụ thể (chưa gọi ToolEnv nên không tính là
+  tool call ZAIC), nếu vẫn fail thì dừng an toàn theo deep-profiles §0.2 (kết thúc
+  trace nguyên trạng; ask chỉ khi chưa write gì, `[]` chỉ khi catalog cho thấy
+  không app nào xử lý được) thay vì nộp trace lỗi.
 - **Thí nghiệm nhỏ nhất:** A/B bật/tắt constrained decoding trên cùng model/prompt,
   đo parse-error, số vòng sửa, giây/sample, state đúng.
 
@@ -113,7 +148,7 @@
   ToolEnv đều phải xuất hiện trong submission theo luật ghi nhận, nên không tự ý
   lọc trace sau thực thi.
 - **Thí nghiệm nhỏ nhất:** viết validator từ catalog, chạy trên trajectory của
-  baseline trên public test, đếm số call vi phạm bị chặn và số mẫu đổi từ sai
+  baseline trên train held-out, đếm số call vi phạm bị chặn và số mẫu đổi từ sai
   thành đúng (qua state_hash mô phỏng lại bằng ToolEnv trên train).
 
 ## 8. Missing info vs out-of-scope — khung phân biệt
@@ -130,9 +165,9 @@
   - Trước khi ask, luôn thử ground bằng tool read. Trước khi refuse, kiểm tra lại
     catalog: có app nào tên/chức năng gần giống không; nếu có thì đó là ask/execute,
     không phải refuse.
-- **Cách đo:** confusion matrix riêng cho 3 lớp execute / ask / refuse trên public
-  test (hoặc tập gắn nhãn thủ công); báo cáo ask đúng, ask thừa, ask thiếu, refuse
-  đúng, refuse sai — không gộp thành một con số accuracy chung.
+- **Cách đo:** confusion matrix riêng cho 3 lớp execute / ask / refuse trên train
+  held-out (hoặc tập gắn nhãn thủ công); báo cáo ask đúng, ask thừa, ask thiếu,
+  refuse đúng, refuse sai — không gộp thành một con số accuracy chung.
 
 ## 9. Không khuyến nghị / loại trừ
 
