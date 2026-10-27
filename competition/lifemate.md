@@ -48,6 +48,11 @@ email) để lập kế hoạch và gọi tool đúng thứ tự, đạt trạng
 - Audio WAV 16 kHz mono 16-bit, ~100% giọng người thật, đủ Bắc–Trung–Nam, có từ
   tiếng Anh xen vào.
 - Train có thêm `audio_text` và nhãn gold `tool_calls`, `tool_results`, `final_state`.
+  **Public test chỉ có `sample_submission.jsonl` làm mẫu format theo ghi nhận
+  2026-10-26 — không khẳng định public_test có gold;** mọi thí nghiệm cần điểm
+  số phải chạy trên train held-out. Bước xác minh đầu tiên: mở 1–2 dòng
+  public_test jsonl, kiểm tra có field gold nào không; nếu có gold thì ghi chú
+  này phải viết lại theo thực tế của zip.
 - Mỗi split: `audio/<id>/<id>.wav`, `<split>.jsonl`, `<split>_tools_catalog.json`,
   `<split>_environment/<id>/state.json`, `zaic_tools/` riêng từng split;
   `sample_submission.jsonl` chỉ có ở public_test.
@@ -57,10 +62,22 @@ email) để lập kế hoạch và gọi tool đúng thứ tự, đạt trạng
 - **Chưa tải/giải nén để xác minh trong phiên này:** kích thước zip, catalog tool
   chính xác, Docker base image, inference script chính thức.
 
-## Cần đối chiếu trước khi chốt submission
+## Giả định làm việc về read/F1 — ASSUMPTION, chưa truy cập được evaluator
+
+- F1 được tính trên toàn bộ `tool_calls` đã nộp, mẫu số gồm cả call thừa;
+  `state_hash` do evaluator tự tính từ state cuối. Nếu F1 thực tế chỉ tính
+  trên call thành công hoặc bỏ qua read, phân tích read trong repo này phải
+  viết lại. Vì vậy: **không mặc định read trước và sau mọi write** — xem
+  bảng selective reads và loop guard trong
+  [../research/lifemate/deep-profiles.md](../research/lifemate/deep-profiles.md) §0.
+- Validator TRƯỚC khi gọi là an toàn; **lọc call SAU khi đã thực thi là rủi
+  ro** — không tự ý giấu failed call hay read call khỏi submission.
+
+## Cần đối chiếu trước khi chốt submission (xem gaps.md Q-L1..Q-L6)
 
 - Cách chấm chính xác của `sys.ask_missing_info` (đúng/sai/thừa/thiếu tính thế nào).
 - Failed call có được giữ trong trace nộp hay phải loại bỏ.
 - Cách tính tham số: total hay active (với MoE, giả định an toàn là total).
 - Mọi ToolEnv call có bắt buộc xuất hiện trong submission không, và validator lọc
   sau thực thi có vi phạm luật log không.
+- Read call có tính vào F1 không, và read thừa có bị trừ như write thừa không.
