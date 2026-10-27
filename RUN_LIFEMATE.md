@@ -1,6 +1,6 @@
 # RUN_LIFEMATE — executable handoff
 
-CPU harness verified; **GPU/model inference remains UNVALIDATED**. The local scorer is an ENGINEERING_PROXY, not the organiser evaluator. No simulator, dataset, model checkpoint or split assignment is changed by this integration fix.
+CPU harness verified. The prior pipeline ran on two T4s in v6; its five-sample paired diagnostic is not a quality benchmark. **The latest agent fix has not yet been tested with a real model**; see [agent change and verification notes](lifemate/AGENT_FIX_2026-10-28.md). The local scorer is an ENGINEERING_PROXY, not the organiser evaluator. No simulator, dataset, model checkpoint or split assignment is changed by this integration fix.
 
 ## 0. Dữ liệu nằm ở đâu — và làm sao lấy lại đúng phiên bản
 
@@ -36,7 +36,8 @@ Từ đây trong tài liệu, `<data>` = thư mục `extracted/train+public_test
 - `baseline.json`: identical settings, grounding disabled. The switch is now consumed before official tool validation.
 - **ASR backend changed to Transformers** for the original PhoWhisper weights. Faster-whisper requires an explicitly converted local directory containing `model.bin`; changing GPU cannot fix a checkpoint-format mismatch.
 - Prompts now include the full per-tool JSON schema (optional fields, types, enums, x-ref, descriptions), supplied context, history, and observations. This changes model inputs; old proxy/model results are not directly comparable.
-- Numeric/date normalization touches only supplied fields. Name-to-ID repair uses observed read results from the referenced app; it does not invent missing arguments or automatically call ask. The fuzzy thresholds 88/8 are inherited proposals, not validated ZAIC optima. Raw observed IDs retain their original spelling.
+- Numeric/date normalization touches only supplied fields. Name-to-ID repair uses successful observed results in the referenced collection, including history and created entities. Grounding now rejects unsupported reference IDs/phone numbers before execution; it does not invent missing arguments or automatically call ask. The fuzzy thresholds 88/8 are inherited proposals, not validated ZAIC optima. Raw observed IDs retain their original spelling.
+- Observations now retain full compact JSON; the policy explains condition-before-write, missing information and stopping. Successful ask ends the turn. These changes affect predictions; keep v6 as the frozen control. The existing Kaggle notebook still pins the old source and must be repinned deliberately before testing this fix.
 - Selective reads are a prompt policy; there is no semantic read cache. The loop guard limits repeated calls. XGrammar token masking is **not implemented** in this runner: generation uses validate-and-retry.
 - Both LLM backends reserve 512 output tokens inside the configured 16,384-token context. Oversize prompts fail explicitly; schemas/history are not silently truncated.
 - ASR/model initialization and native GPU calls have not been benchmarked. The code does not provide a hard preemptive 30-second GPU watchdog. Verify the complete per-sample runtime on A30 before submission.
