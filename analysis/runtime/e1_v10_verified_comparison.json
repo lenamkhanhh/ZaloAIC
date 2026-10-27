@@ -1,0 +1,585 @@
+{
+  "scope": "ENGINEERING_PROXY_NOT_OFFICIAL",
+  "verified_trials": 16,
+  "replay_and_proxy_matches": 16,
+  "text_v7_exact_trace_matches": 8,
+  "input_hash_matches": 16,
+  "elapsed_seconds": 406.08416913599996,
+  "means": {
+    "text": 0.125,
+    "native": 0.1875
+  },
+  "stats": {
+    "text": {
+      "generation": 20,
+      "tool": 11,
+      "validation_rejected": 3
+    },
+    "native": {
+      "generation": 18,
+      "native_legacy_stop": 3,
+      "native_tool_call": 11,
+      "native_plain_text": 4,
+      "pseudo_call_plain_text": 1,
+      "tool": 10
+    }
+  },
+  "prerequisite_pass": {
+    "text": 5,
+    "native": 4
+  },
+  "prerequisite_denominator": 21,
+  "details": [
+    {
+      "id": "train_0019",
+      "arm": "text",
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 0,
+        "n_gold": 0
+      },
+      "calls": [],
+      "relations": {
+        "R19.1": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0116",
+      "arm": "text",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "calls": [
+        {
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "phone.call",
+            "params": [
+              "contact_id"
+            ]
+          }
+        }
+      ],
+      "relations": {
+        "R116.1": {
+          "pass": false,
+          "secondary": "FAIL"
+        }
+      }
+    },
+    {
+      "id": "train_0025",
+      "arm": "text",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "calls": [],
+      "relations": {
+        "R25.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R25.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R25.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R25.4": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0003",
+      "arm": "text",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "calls": [],
+      "relations": {
+        "R03.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R03.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R03.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        }
+      }
+    },
+    {
+      "id": "train_0008",
+      "arm": "text",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "calls": [
+        {
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00"
+          }
+        },
+        {
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00"
+          }
+        }
+      ],
+      "relations": {
+        "R08.1": {
+          "pass": false,
+          "secondary": "FAIL"
+        },
+        "R08.2": {
+          "pass": false,
+          "secondary": "FAIL"
+        },
+        "R08.3": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0016",
+      "arm": "text",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "calls": [],
+      "relations": {
+        "R16.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R16.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R16.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R16.4": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0049",
+      "arm": "text",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 5,
+        "n_gold": 4
+      },
+      "calls": [
+        {
+          "name": "bill_payment.list_bills",
+          "arguments": {
+            "type": "phone"
+          }
+        },
+        {
+          "name": "banking.get_balance",
+          "arguments": {
+            "account_id": "acc_001"
+          }
+        },
+        {
+          "name": "bill_payment.pay",
+          "arguments": {
+            "bill_id": "bill_01",
+            "source": "bank"
+          }
+        },
+        {
+          "name": "banking.open_savings",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "amount": 200000,
+            "term_months": 6
+          }
+        },
+        {
+          "name": "banking.open_savings",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "amount": 200000,
+            "term_months": 6
+          }
+        }
+      ],
+      "relations": {
+        "R49.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R49.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R49.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R49.4": {
+          "pass": false,
+          "secondary": "FAIL"
+        }
+      }
+    },
+    {
+      "id": "train_0004",
+      "arm": "text",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 3,
+        "n_gold": 2
+      },
+      "calls": [
+        {
+          "name": "smart_home.get_status",
+          "arguments": {
+            "room": "phòng ngủ nhỏ"
+          }
+        },
+        {
+          "name": "smart_home.light_set",
+          "arguments": {
+            "device_id": "light_bedroom2",
+            "power": "on",
+            "brightness": 50
+          }
+        },
+        {
+          "name": "smart_home.light_set",
+          "arguments": {
+            "device_id": "light_bedroom2",
+            "power": "on",
+            "brightness": 50
+          }
+        }
+      ],
+      "relations": {
+        "R04.1": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0019",
+      "arm": "native",
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 0,
+        "n_gold": 0
+      },
+      "calls": [],
+      "relations": {
+        "R19.1": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0116",
+      "arm": "native",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "calls": [],
+      "relations": {
+        "R116.1": {
+          "pass": false,
+          "secondary": "FAIL"
+        }
+      }
+    },
+    {
+      "id": "train_0025",
+      "arm": "native",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 5
+      },
+      "calls": [],
+      "relations": {
+        "R25.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R25.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R25.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R25.4": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0003",
+      "arm": "native",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 5
+      },
+      "calls": [
+        {
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "phone",
+              "amount"
+            ]
+          }
+        }
+      ],
+      "relations": {
+        "R03.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R03.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R03.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        }
+      }
+    },
+    {
+      "id": "train_0008",
+      "arm": "native",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "calls": [
+        {
+          "name": "alarm.update",
+          "arguments": {
+            "alarm_id": "alm_02",
+            "time": "2026-11-14T07:30:00+07:00",
+            "label": "họp sớm (nếu mưa)",
+            "enabled": true
+          }
+        }
+      ],
+      "relations": {
+        "R08.1": {
+          "pass": false,
+          "secondary": "FAIL"
+        },
+        "R08.2": {
+          "pass": false,
+          "secondary": "FAIL"
+        },
+        "R08.3": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    },
+    {
+      "id": "train_0016",
+      "arm": "native",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 5
+      },
+      "calls": [
+        {
+          "name": "weather.get_current",
+          "arguments": {
+            "location": "TP.HCM"
+          }
+        },
+        {
+          "name": "reminders.create",
+          "arguments": {
+            "content": "Nếu mưa thì dò lệch đau bóng song hãy mệt nãy tiếng với nhẫn ét mét cho mẹ",
+            "time": "2026-11-24T15:00:00+07:00",
+            "repeat": "daily"
+          }
+        }
+      ],
+      "relations": {
+        "R16.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R16.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R16.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R16.4": {
+          "pass": false,
+          "secondary": "FAIL"
+        }
+      }
+    },
+    {
+      "id": "train_0049",
+      "arm": "native",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.5,
+        "n_submitted": 4,
+        "n_gold": 4
+      },
+      "calls": [
+        {
+          "name": "banking.get_balance",
+          "arguments": {}
+        },
+        {
+          "name": "banking.list_beneficiaries",
+          "arguments": {}
+        },
+        {
+          "name": "banking.list_transactions",
+          "arguments": {
+            "account_id": "acc_01",
+            "limit": 5
+          }
+        },
+        {
+          "name": "banking.open_savings",
+          "arguments": {
+            "from_account_id": "acc_01",
+            "amount": 100000,
+            "term_months": 12
+          }
+        }
+      ],
+      "relations": {
+        "R49.1": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R49.2": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R49.3": {
+          "pass": false,
+          "secondary": "NOT_EXECUTED"
+        },
+        "R49.4": {
+          "pass": false,
+          "secondary": "FAIL"
+        }
+      }
+    },
+    {
+      "id": "train_0004",
+      "arm": "native",
+      "proxy": {
+        "score": 0.5,
+        "hash_correct": true,
+        "f1": 0.5,
+        "n_submitted": 2,
+        "n_gold": 2
+      },
+      "calls": [
+        {
+          "name": "smart_home.get_status",
+          "arguments": {
+            "room": "phòng ngủ nhỏ"
+          }
+        },
+        {
+          "name": "smart_home.light_set",
+          "arguments": {
+            "device_id": "light_bedroom2",
+            "brightness": 50
+          }
+        }
+      ],
+      "relations": {
+        "R04.1": {
+          "pass": true,
+          "secondary": "PASS"
+        }
+      }
+    }
+  ]
+}
