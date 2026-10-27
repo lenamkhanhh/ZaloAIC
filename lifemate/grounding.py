@@ -238,7 +238,7 @@ def ground_arguments(call: dict, tools: dict, executed: list[dict], results: lis
         elif isinstance(value, str) and schema.get("x-ref"):
             ref = schema["x-ref"]
             candidates = evidence.entities.get(ref, {})
-            if value in candidates or evidence.user_supplied(value):
+            if value in candidates or evidence.user_supplied(value, name):
                 continue
             named = [(key, display) for key, display in candidates.items() if display is not None]
             grounded = ground_name(value, named)

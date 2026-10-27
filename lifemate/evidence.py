@@ -36,6 +36,7 @@ class EvidenceLedger:
         self.phones = set()
         self.refs_by_app = {}
         self.refs_by_param = {}
+        self.context_ids = {}
         self.user_text = [transcript]
         for tool in tools.values():
             for name, prop in tool.get("parameters", {}).get("properties", {}).items():
@@ -52,6 +53,16 @@ class EvidenceLedger:
         for call, result in zip(executed, results):
             self.observe(call, result)
         self._collect_phones(context or {})
+        def context_ids(value):
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    if key in self.refs_by_param and isinstance(child, str):
+                        self.context_ids.setdefault(key, set()).add(child)
+                    context_ids(child)
+            elif isinstance(value, list):
+                for child in value:
+                    context_ids(child)
+        context_ids(context or {})
         for text in self.user_text:
             self.phones.update(_text_phones(text))
 
@@ -62,6 +73,8 @@ class EvidenceLedger:
                     number = _phone(child)
                     if number:
                         self.phones.add(number)
+                if key in ("content", "body", "text", "message", "description", "note", "subject") and isinstance(child, str):
+                    self.phones.update(_text_phones(child))
                 self._collect_phones(child)
         elif isinstance(value, list):
             for child in value:
@@ -92,8 +105,15 @@ class EvidenceLedger:
                     visit(child, ref)
         visit(result, default)
 
-    def user_supplied(self, value):
-        return any(re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", text) for text in self.user_text)
+    def user_supplied(self, value, parameter):
+        if value in self.context_ids.get(parameter, ()):
+            return True
+        literal = r"(?<!\w)" + re.escape(value) + r"(?!\w)"
+        # A person's name merely appearing in the request is not an opaque ID.
+        shaped_id = not re.search(r"\s", value) and bool(re.search(r"[\d_:-]", value))
+        labelled = r"\b(?:" + re.escape(parameter) + r"|id)\s*[:=]?\s*['\"]?" + re.escape(value) + r"(?!\w)"
+        return any(re.search(labelled, text, re.I) or (shaped_id and re.search(literal, text))
+                   for text in self.user_text)
 
 
 def _phone(value):
@@ -118,6 +138,8 @@ def _text_phones(text):
     for word in re.findall(r"\w+|[^\w\s]", text.lower()) + [""]:
         if word in digits:
             run += digits[word]
+        elif word in (",", "-", "/") and run:
+            continue  # Spoken digit groups may be separated by short pauses.
         else:
             if 7 <= len(run) <= 15:
                 numbers.add(run)
