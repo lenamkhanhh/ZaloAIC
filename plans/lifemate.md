@@ -7,14 +7,42 @@
 > kênh chính thức (tối đa 5 file/ngày); không dùng điểm leaderboard public để
 > chọn ngưỡng hay chọn hệ thống. Tỉ lệ hash đúng chỉ là metric chẩn đoán.
 
-## Baseline thực dụng (ngày 1–2, trước mọi fine-tune)
+## Baseline thực dụng — đã hiện thực thành code (đợt LifeMate 2026-10-27)
+
+Triển khai nằm ở `lifemate/` (chạy được, xem `RUN_LIFEMATE.md` ở root
+repo); chuyên đề 1–2 là prototype nghiên cứu, `lifemate/` là bản chốt.
 
 ```
 PhoWhisper-small → transcript → Qwen3-4B instruct (chưa fine-tune)
   → prompt: catalog tool đã lọc theo installed_apps + history + user context
-  → constrained JSON + validator schema
-  → gọi qua zaic_tools → lấy log + state_hash → nộp
+  → constrained JSON + validator schema (validate TRƯỚC call, không ghi log)
+  → gọi qua zaic_tools → observation vào prompt NGAY lượt sau mỗi call
+  → lấy log + state_hash → nộp
 ```
+
+- Cấu hình chính: `lifemate/configs/recommended.json` (= baseline +
+  grounding theo loại slot, zero tham số thêm). Cấu hình tối giản làm
+  mốc đối chiếu: `lifemate/configs/baseline.json` (không grounding).
+  Acoustic rescoring, contextual decoding và SFT KHÔNG nằm trong hai
+  config này — chúng là đề xuất có thí nghiệm định nghĩa sẵn (P1/P2),
+  chỉ vào config chính khi thắng baseline trên train held-out.
+- Dữ liệu thật đã đọc (v3.2.0): train 1.545, public_test 634; split
+  cố định `lifemate/splits/train_dev_heldout.json` (dev 1.237 /
+  held-out 308, seed 42, stratify theo empty/ask_only/ask_after/normal).
+  Giới hạn đã ghi: cùng tool-sequence có thể xuất hiện ở cả dev và
+  held-out (695 sequence khác nhau cho 1.545 mẫu), nên held-out đo
+  khái quát trong họ template, không phải template chưa thấy.
+- **Trạng thái chạy thật (không phóng đại):** trên VM dev (không GPU,
+  2 CPU, 7,9 GB RAM, không torch/transformers) CHƯA chạy model nào.
+  Đã chạy thật: loader + split + adapter + replay gold toàn bộ 1.545
+  mẫu train (log và changed-apps khớp label 100%), fake-run +
+  check-submission trên public_test, scorer sanity (empty policy trên
+  100 mẫu train đầu = 0,06 đúng như dự đoán từ 6 mẫu empty). ASR trên
+  CPU đã thử và THẤT BẠI có ghi nhận: faster-whisper cài được (1.2.1)
+  nhưng weights PhoWhisper-small trên HF là transformers-format, không
+  có model.bin cho CTranslate2; torch CPU wheel host không tới được từ
+  VM này nên đường transformers cũng chưa cài được. Chạy model thật
+  cần máy local/Kaggle có GPU — xem RUN_LIFEMATE.md §3–§5.
 
 - Đo ngay: state đúng, tool F1, giây/sample (ASR riêng, LLM riêng, tổng), tỉ lệ
   mẫu > 30 s, determinism (chạy lại 1 lần với greedy/temperature 0/seed cố định,

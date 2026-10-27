@@ -79,6 +79,23 @@
 - **Q-L6:** Tổng < 6B có bao gồm ASR và mọi model phụ không, và LLM < 5B được
   tính riêng như thế nào?
 
+**Cập nhật 2026-10-27 — đã xác minh bằng cách đọc code zaic_tools thật
+(trong gói dữ liệu v3.2.0, KHÔNG phải bằng evaluator, vì gói không kèm
+evaluator):**
+- **Q-L2 — GIẢI QUYẾT MỘT PHẦN:** `Session.call` ghi MỌI call vào
+  `calls`, kể cả call bị từ chối schema (`ok: false`), và
+  `get_tool_calls()` trả đúng danh sách đó làm `tool_calls` của dòng
+  nộp. Vậy submission PHẢI chứa toàn bộ call đã thực thi. Phần còn mở:
+  failed call có ảnh hưởng tới F1 không (evaluator không có trong gói).
+- **Q-L4 — GIẢI QUYẾT:** `validate()` chỉ kiểm schema, KHÔNG ghi log,
+  KHÔNG đổi state. Validator chặn TRƯỚC khi gọi là an toàn và không vi
+  phạm log — vì call đó chưa bao giờ được thực thi. Lọc call SAU khi
+  đã thực thi vẫn là rủi ro (call đã nằm trong log).
+- **Q-L1, Q-L3, Q-L5 — VẪN MỞ:** cách chấm ask, read có tính F1 không,
+  và submission khi hết vòng lặp — không có gì trong gói dữ liệu trả
+  lời; scorer trong `lifemate/scoring.py` ghi rõ các giả định này và
+  không trình bày kết quả của nó như điểm chính thức.
+
 **DataMate:**
 - **Q-D1:** Câu hỏi không có trong submission.jsonl được tính như abstain
   (0 điểm), như sai (−1), hay bị loại khỏi mẫu chấm?

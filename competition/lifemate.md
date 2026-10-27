@@ -59,8 +59,34 @@ email) để lập kế hoạch và gọi tool đúng thứ tự, đạt trạng
 - Tool catalog có `kind` (read/write/meta, meta = `sys.ask_missing_info`), `x-ref`
   (phải là ID hợp lệ), `x-match: fuzzy`, `x-one-of`; chỉ gọi tool của app trong
   `context.installed_apps`.
-- **Chưa tải/giải nén để xác minh trong phiên này:** kích thước zip, catalog tool
-  chính xác, Docker base image, inference script chính thức.
+- **Đã tải và xác minh 2026-10-27 (gói v3.2.0, build 2026-10-24):**
+  URL https://dl-challenge.zalo.ai/2026/lifemate_argfzdgert/train+public_test.zip,
+  876.430.231 byte, SHA256
+  `57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320`,
+  `unzip -t` không lỗi (27.254 entry), giải nén 1,2 GB. Train 1.545 mẫu
+  (không phải ~1.600 như portal ghi), public_test 634 mẫu (không phải
+  ~600). Catalog: train 46 app / 147 tool, public_test 36 app / 122
+  tool, schema_version 2.7.0; tập app KHÁC NHAU giữa hai split
+  (public có stocks, translator, grocery, recipes, public_transit,
+  parking, train_bus_tickets, ecommerce, event_tickets, habit_tracker,
+  pantry mà train không có). Audio WAV 16 kHz mono 16-bit (kiểm bằng
+  stdlib wave). History: cặp user/assistant; user turn trên train có
+  `audio_text`, trên public_test CHỈ có `audio`. Label train:
+  `tool_calls` dài 0–6 (rỗng 111, ask 217), `tool_results`,
+  `final_state` chỉ chứa app bị thay đổi.
+- **Đã xác minh bằng code zaic_tools (stdlib only, đọc trực tiếp):**
+  `validate()` không ghi log, không đổi state; mọi `call()` — kể cả
+  bị từ chối schema — đều ghi vào `get_tool_calls()`; call chỉ bị từ
+  chối khi lỗi schema, còn ID không tồn tại / thiếu tiền / tìm rỗng
+  trả `ok: true, done: false` và không đổi state; `sys.ask_missing_info`
+  chỉ ghi vào call list, không đổi state; `state_hash` = sha256 của
+  toàn bộ state hiện tại sau canonicalisation. Gói KHÔNG kèm evaluator
+  (không có file eval/score nào) — cách chấm ask, read có tính F1
+  không, và xử lý failed call trong F1 vẫn là UNVERIFIED (xem gaps.md
+  Q-L1/Q-L3/Q-L5 và `lifemate/scoring.py`).
+- **Chưa xác minh:** Docker base image, inference script chính thức
+  (ban tổ chức nói sẽ có tài liệu riêng), latency A30 của bất kỳ model
+  nào, và mọi điểm số trên dữ liệu thật (chưa chạy model nào).
 
 ## Giả định làm việc về read/F1 — ASSUMPTION, chưa truy cập được evaluator
 
