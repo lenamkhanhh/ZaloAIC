@@ -1,8 +1,25 @@
 # Kế hoạch thi đấu — DataMate
 
 > Mọi thử nghiệm đều phải đo **PA** (không chỉ accuracy), thời gian/câu hỏi, và
-> tỷ lệ chuyển đổi giữa đúng/sai/abstain/unanswerable. Tách held-out: không đo trên
-> dữ liệu đã dùng để viết helper hoặc fine-tune.
+> tỷ lệ chuyển đổi giữa đúng/sai/abstain/unanswerable, **trên train held-out tách
+> theo business** (xem R1–R8 dưới đây). Tách held-out: không đo trên dữ liệu đã
+> dùng để viết helper hoặc fine-tune. **Giao thức bắt buộc (sửa D2/D3 cũ):**
+> mọi ngưỡng (abstain, unanswerable, đồng thuận) được học và khóa **chỉ trên
+> `train_cal`**, đo một lần trên `train_holdout`; public test không có
+> `answers.jsonl` theo ghi nhận 2026-10-26 nên **không tự tính PA trên public
+> test tại chỗ** — public test chỉ dùng để đo format/latency và nộp sanity qua
+> kênh chính thức (tối đa 5 file/ngày), **không bao giờ dùng điểm leaderboard
+> public để sửa ngưỡng rồi nộp lại** (đó vẫn là fitting vào public). Bước xác
+> minh đầu tiên khi có dữ liệu: giải nén zip thật và liệt kê file từng split;
+> nếu public test thực tế có `answers.jsonl` thì giao thức này phải viết lại.
+> Nhãn duy nhất chắc chắn là `answers.jsonl` của train (câu unanswerable có
+> answer null, kèm trường `alias`). Lưu ý phân biệt: 0,03 trong
+> |PA(uploaded) − PA(rerun)| ≤ 0,03 là **quy tắc tái lập của ban tổ chức**
+> (xem competition/datamate.md), còn "PA tăng ≥ 0,03" trong các bảng R là
+> **tiêu chí đề xuất** trong kế hoạch này — hai con số khác nhau, không được
+> dùng lẫn. Không thiết kế phép đo dựa trên gold không có
+> (không có 'gold final state' cho DataMate; nhãn thiếu thì tự gán bằng quy tắc
+> xác định từ profiler/rulebook và ghi rõ đó là nhãn tự tạo).
 
 ## Baseline thực dụng
 
@@ -12,9 +29,14 @@ Profiler (không LLM) → Planner (đủ/thiếu dữ liệu) → Coder (SQL/pan
   → Quyết định cuối: trả lời / unanswerable / abstain theo ngưỡng đã calibration
 ```
 
-- Model khởi đầu: Qwen2.5-Coder-7B hoặc Qwen3-8B — **xác minh checkpoint trước**
-  (ngày phát hành, tổng tham số thực từ `config.json`, license) vì shortlist hiện
-  tại chỉ dựa trên nguồn thứ cấp.
+- Model khởi đầu: **Qwen2.5-Coder-7B-Instruct (7,61B tổng / 6,53B non-embedding,
+  28 layer, context 131.072 — mặc định 32.768, YaRN để mở rộng, paper arXiv
+  2409.12186, Apache 2.0, blog chính thức 19/09/2024)** + PhoBERT-base 0,135B =
+  7,745B; Qwen3-8B (8,19B, secondary) chỉ làm đối chứng. Ngày commit đầu tiên trên
+  HF của Qwen2.5-Coder-7B vẫn **chưa trích được** — ghi lại trước khi nộp; không
+  dùng ngày blog thứ cấp 15/04/2025 (mâu thuẫn với citation 2024, đã loại).
+  Quantization không làm giảm tổng tham số. Fine-tune checkpoint cutoff
+  interpretation là **UNVERIFIED** — hỏi BTC hoặc giữ model gốc dự phòng.
 - Tuần 1: đọc evaluator + README + rulebook từng split; viết profiler + helper +
   formatter + unit test; chạy profiler trên train và ghi snapshot schema.
 - **Formatter phải pass gần 100% test riêng từng type trước khi đo PA** — nếu
@@ -80,9 +102,11 @@ chỉ "abstain cho an toàn".
 1. **Tầng chuẩn hóa output + hiệu chuẩn abstain theo loại câu** — lever rẻ nhất
    dưới PA.
 2. **Sinh 3 candidate + kiểm tra chéo bằng thực thi** (CHESS/BASE-SQL gọn) — giới
-   hạn số candidate để vừa 6 giờ.
-3. **Exploration/profiling tự động khi README nghèo** (ReFoRCE/ProSPy) + retrieval
-   ví dụ kiểu ViR² (rẻ, không cần train lại).
+   hạn số candidate để vừa 6 giờ; hòa → abstain, không random vote.
+3. **Exploration xác định + schema shortlist có fallback** (ReFoRCE
+   CODE_INSPECTED ở mức file; schemagate README_READ) + retrieval ví dụ kiểu
+   ViR² (rẻ, không cần train lại). Exploration xác định bằng code luôn chạy
+   trước exploration LLM.
 4. **Fine-tune nhỏ trên train ZAIC** (schema linking + sinh code) nếu có GPU và
    thời gian — mỗi bước đều phải đo PA trên business mới
    (leave-one-business-out), không chỉ trên business đã train.
@@ -96,7 +120,9 @@ chỉ "abstain cho an toàn".
   một lỗi.
 - **Synthetic business mới:** đổi tên cột, đổi loại hình từ business train để tập
   generalization, thay vì chỉ sinh thêm câu hỏi trên cùng schema.
-- **PhoBERT/encoder nhỏ cho schema/value linking** (135M/370M, cộng vào tổng 15B)
+- **PhoBERT-base cho schema/value linking** (135M, MIT — KHÔNG dùng base-v2
+  AGPL v3; bắt buộc input đã tách từ tiếng Việt, chi phí bộ tách từ chưa tính
+  vào tổng) — cộng vào tổng 15B
   trong khi LLM chính làm planning/code — tiết kiệm ngân sách so với việc dùng LLM
   lớn cho mọi bước.
 
@@ -118,15 +144,15 @@ chỉ "abstain cho an toàn".
 
 | ID | Giả thuyết | Dữ liệu kiểm tra | Metric | Tiêu chí tiếp tục / dừng |
 |---|---|---|---|---|
-| D1 — Chuẩn hóa output | Formatter tách riêng loại bỏ lỗi format | 50 kết quả tính đúng, chạy qua formatter | Tỉ lệ format đúng theo từng type | Baseline phải pass gần 100% test này trước khi đo PA |
-| D2 — Baseline | LLM ≤ 14B + 1 chương trình + ngưỡng abstain 0,5 cho đường cơ sở | Toàn bộ public test | PA + tỉ lệ đúng/sai/abstain theo loại câu | Đây là đường cơ sở cho mọi nâng cấp sau |
-| D3 — Hiệu chuẩn abstain | Ngưỡng theo loại câu, học trên held-out, thắng ngưỡng lý thuyết 0,5 | Public test chia 2 nửa (chọn ngưỡng nửa 1, đo nửa 2) | PA | Giữ nếu PA tăng ≥ 0,03 so với D2 và ngưỡng ổn định khi chia public test làm 2 nửa |
-| D4 — Kiểm tra chéo | 2 cách tính độc lập, chỉ trả lời khi đồng thuận | 50 câu held-out | PA, tỉ lệ abstain | Giữ nếu PA tăng mà tỉ lệ abstain không tăng quá 10 điểm phần trăm |
-| D5 — Generalization | Leave-one-business-type-out phát hiện overfit loại hình | Train, giấu 1 loại hình, test trên đó | PA trên business bị giấu | Nếu PA giảm > 0,15 khi giấu 1 loại hình, ưu tiên exploration/profiling + synthetic business mới trước khi fine-tune |
-| D6 — Ngân sách thời gian | Cấu hình đầy đủ vừa 6 giờ private test | Toàn bộ public test, ngoại suy | Tổng thời gian, giây/câu hỏi | Nếu vượt 6 giờ: cắt candidate trước, giảm vòng revision sau, giữ profiler + formatter + abstain |
-| D7 — Planner | Planner tách riêng cải thiện unanswerable mà không làm mất câu đúng | 50 câu held-out gồm cả câu unanswerable đã biết | Unanswerable đúng, câu đúng bị chuyển nhầm thành unanswerable, PA tổng | Giữ nếu unanswerable đúng tăng mà câu đúng bị chuyển nhầm không tăng đáng kể |
-| D8 — Multi-candidate | 5 candidate + lọc thực thi + đồng thuận thắng 1 candidate | 50 câu held-out | PA, giây/câu hỏi | Giữ nếu PA tăng đủ bù thời gian |
-| D9 — Fan trap / join ngầm | Aggregate trước khi join và liệt kê khóa join từ profiler tránh lỗi nhân đôi | 10 câu hỏi cố tình có fan trap và join ngầm | Tỉ lệ tránh được lỗi | Sửa helper/join rule cho tới khi pass toàn bộ 10 câu |
+| R1 — Chuẩn hóa output (thay D1 cũ) | Formatter tách riêng loại bỏ lỗi format | 50 kết quả tính đúng (từ train), chạy qua formatter | Tỉ lệ format đúng theo từng type | Formatter phải pass gần 100% test riêng từng type trước khi đo PA |
+| R2 — Baseline (thay D2 cũ) | Qwen2.5-Coder-7B + 1 chương trình + ngưỡng abstain 0,5 (lý thuyết) cho đường cơ sở | train_holdout tách theo business | PA, coverage, accuracy trên câu đã trả lời, giây/câu hỏi | Đường cơ sở; mọi nâng cấp so với đường này, cùng một holdout. Public test chỉ đo thời gian/format, không đo PA tại chỗ. |
+| R7 — Calibration (thay D3 cũ) | Ngưỡng theo loại câu học trên train_cal, khóa rồi đo một lần trên holdout | train_cal (học) → train_holdout (đo, một lần) | PA, risk–coverage, reliability theo loại câu | Tiêu chí đề xuất (không phải kết luận): giữ ngưỡng nếu PA holdout tăng so với ngưỡng 0,5 chung và không sụt trên loại câu nào; không sửa ngưỡng từ holdout rồi báo lại số đó — nếu sửa, phải tách holdout mới. Báo kèm số câu hỏi từng nhóm. |
+| R4 — Revision an toàn (thay D4 cũ) | Revision theo lỗi thực thi (tối đa 2 vòng, có đóng băng kết quả đúng đầu tiên) thắng không revision | train_holdout, chỉ các câu lần đầu lỗi/rỗng/vi phạm rule | 4 chuyển đổi sai→đúng / đúng→sai / sai→abstain / đúng→abstain, PA | Tiêu chí đề xuất: giữ nếu sai→đúng vượt trội đúng→sai; nếu đúng→sai đáng kể thì thu hẹp điều kiện chạy revision. Revision vì 'trông hay hơn' bị cấm. |
+| R8 — Generalization (thay D5 cũ) | Leave-one-business-type-out | Train, giấu toàn bộ 1 loại hình khỏi fit+cal | PA trên loại hình bị giấu, so với PA trên loại hình đã thấy | Nếu PA sụt lớn trên loại hình bị giấu thì ưu tiên exploration + synthetic business mới trước khi fine-tune; 'lớn' bao nhiêu phải đọc kèm số câu hỏi của loại hình đó — không dùng ngưỡng cứng 0,15 như kết luận. Kết quả R8, không phải R7, mới là căn cứ quyết định có fine-tune hay giữ model gốc. |
+| R6 — Ngân sách thời gian (thay D6 cũ) | Cấu hình đầy đủ vừa 6 giờ private test | Public test chỉ đo thời gian (không đo PA), ngoại suy từ giây/câu hỏi | Tổng thời gian ngoại suy, giây/câu hỏi | Nếu vượt 6 giờ: cắt candidate trước, giảm vòng revision sau, giữ profiler + formatter + abstain |
+| R3 — Exploration (thay D7/D3 cũ, bổ sung) | Exploration xác định + shortlist có fallback thắng full schema | train_holdout tách theo business | PA, recall bảng/cột, giây/câu hỏi | Giữ nếu PA tăng và recall bảng không giảm; nếu recall giảm thì sửa shortlist, không tăng candidate |
+| R5 — Multi-candidate | 3 candidate + lọc thực thi + đồng thuận, hòa → abstain (không random vote) | train_holdout | PA, giây/câu hỏi, tỉ lệ hòa | Tiêu chí đề xuất: giữ nếu PA tăng đủ bù thời gian ngoại suy ra 6 giờ private; nếu không, quay về 1 candidate |
+| R9 — Fan trap / join ngầm + Cross-check thật | Aggregate trước khi join; SQL vs pandas viết logic khác nhau, chỉ trả lời khi đồng thuận | 10 câu hỏi cố tình có fan trap và join ngầm + train_holdout (câu join/aggregate) | Tỉ lệ tránh được lỗi; PA, tỉ lệ mâu thuẫn, trong ca mâu thuẫn bên nào đúng nhiều hơn | Giữ cross-check nếu nó bắt được lỗi mà 1 đường không bắt được; nếu 2 đường cùng sai một kiểu thì bỏ cross-check, sửa rule assertion. |
 
 **Thứ tự làm việc đề xuất (trước deadline 16/11/2026):** tuần 1 nền tảng không cần
 LLM + baseline; tuần 1–2 baseline LLM + 1 candidate; tuần 2 nâng cấp rẻ (Planner,

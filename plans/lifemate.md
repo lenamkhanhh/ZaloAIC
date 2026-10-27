@@ -1,7 +1,11 @@
 # Kế hoạch thi đấu — LifeMate
 
-> Mọi nâng cấp chỉ giữ lại nếu cải thiện **state đúng** (không phải WER, BFCL hay
-> F1 trace) trên public test, và không phá ngân sách 30 s/mẫu trên A30.
+> Mọi nâng cấp chỉ giữ lại nếu cải thiện **điểm chính thức**
+> mean(hash đúng ? tool F1 : 0) trên **train held-out** (không phải WER, BFCL,
+> hash rate một mình hay F1 trace), và không phá ngân sách 30 s/mẫu trên A30.
+> Public test chỉ dùng để đo format/latency/determinism/số call và nộp sanity qua
+> kênh chính thức (tối đa 5 file/ngày); không dùng điểm leaderboard public để
+> chọn ngưỡng hay chọn hệ thống. Tỉ lệ hash đúng chỉ là metric chẩn đoán.
 
 ## Baseline thực dụng (ngày 1–2, trước mọi fine-tune)
 
@@ -15,9 +19,11 @@ PhoWhisper-small → transcript → Qwen3-4B instruct (chưa fine-tune)
 - Đo ngay: state đúng, tool F1, giây/sample (ASR riêng, LLM riêng, tổng), tỉ lệ
   mẫu > 30 s, determinism (chạy lại 1 lần với greedy/temperature 0/seed cố định,
   đếm mẫu đổi kết quả).
-- **Chưa xác minh trước khi chốt baseline:** HF repo + licence + ngày phát hành của
-  PhoWhisper từng size và Qwen3-4B-Instruct-2507 (nguồn thứ cấp ghi 06/08/2025,
-  Apache 2.0); catalog tool chính xác từ dữ liệu đã tải.
+- **Đã xác minh một phần trước khi chốt baseline:** Qwen3-4B-Instruct-2507 — HF
+  commit `cdbee75`, Apache 2.0, 4,0B tổng / 3,6B non-embedding, 36 layer, context
+  native 262.144 (nhiệm vụ giới hạn 16K), non-thinking, series tháng 7/2025
+  (KDnuggets 06/08/2025 là **ngày bài báo, không phải ngày phát hành model**).
+  PhoWhisper từng size và catalog tool chính xác vẫn cần đối chiếu từ dữ liệu đã tải.
 
 ## Phân tích lỗi — đo theo nhóm, không đo chung chung
 
@@ -27,19 +33,23 @@ PhoWhisper-small → transcript → Qwen3-4B instruct (chưa fine-tune)
 | Hiểu yêu cầu sai (sai intent, nhầm app) | Phân loại `used_wrong_tool` (τ-bench) | Retrieval tool theo description, không theo tên; function masking khi fine-tune |
 | Chọn tool sai / thiếu tool | So tập tool gold vs nộp | Planner tách bước: liệt kê tool cần → kiểm tra precondition → mới gọi |
 | Sai tham số (đúng tool, sai giá trị) | Fuzzy-F1 argument + slot-error | Validator + candidate grounding + constrained decoding |
-| Sai thứ tự / thiếu dependency | Trace so với gold, check precondition | ReAct + dependency check + read-before-write |
-| Gọi thừa write / side-effect | So state cuối với gold, liệt kê write thừa | Cấm write suy đoán, post-write verification |
+| Sai thứ tự / thiếu dependency | Trace so với gold, check precondition | ReAct + dependency check + selective reads (precondition/grounding, cache) |
+| Gọi thừa write / side-effect | So state cuối với gold, liệt kê write thừa | Cấm write suy đoán; không verification read sau write theo mặc định (xem deep-profiles §0.1) |
 | Thiếu thông tin / ngoài phạm vi sai | Confusion matrix execute / ask / refuse | Rule ask/refuse riêng, cân bằng dữ liệu clarify/refuse |
 | Parse/format lỗi | Tỉ lệ JSON lỗi, thiếu trường | Constrained decoding + validator + 1 vòng sửa |
 | Latency > 30 s | Tỉ lệ mẫu quá giờ | Giảm model ASR, cắt thought, cắt context, faster-whisper, quant |
 
 ## Nâng cấp ưu tiên (theo thứ tự, mỗi bước chỉ giữ nếu cải thiện state đúng)
 
-1. **Validator + constrained decoding + read-before-write.** Rẻ nhất, bắt buộc.
+1. **Validator + constrained decoding + selective reads.** Rẻ nhất, bắt buộc.
+   Validator chạy TRƯỚC khi gọi ToolEnv; lọc call SAU khi đã thực thi là rủi ro
+   (xem deep-profiles §0.1) — không tự ý giấu failed call hay read call khỏi submission.
 2. **Entity correction rule-based** (N-best + candidate list đóng từ tool read).
    Số tiền/ngày không fuzzy đoán — không khớp chính xác thì hỏi lại.
-3. **A/B PhoWhisper-small vs medium; A/B Qwen3-4B vs xLAM-2-3b** (chỉ khi xLAM-2
-   đã xác minh eligible trước 26/10/2026).
+3. **A/B PhoWhisper-small vs medium; A/B Qwen3-4B non-thinking vs Qwen3-4B
+   thinking** (chỉ khi lỗi planning/multi-step chiếm đa số). xLAM-2-3b và
+   Hammer2.1-3b chỉ là ứng viên A/B sau khi đọc licence/ngày/repo trên HF card
+   gốc — không vào shortlist chính (xem deep-profiles §6–§7).
 4. **Router tách riêng / few-shot đúng format** (nếu lỗi argument cao): tách prompt
    chọn tool khỏi prompt điền argument nếu context bị nhiễu; few-shot phải dùng đúng
    format giá trị thật mà tool yêu cầu.
@@ -78,11 +88,13 @@ PhoWhisper-small → transcript → Qwen3-4B instruct (chưa fine-tune)
 
 | ID | Giả thuyết | Dữ liệu kiểm tra | Metric | Tiêu chí tiếp tục / dừng |
 |---|---|---|---|---|
-| E1 — ASR | PhoWhisper-medium giảm slot-error đủ bù latency | 100 mẫu train | WER tổng + WER thực thể + giây/mẫu | Tiếp tục với bản thắng nếu WER thực thể tốt hơn ≥ 2 điểm; nếu không, lấy bản nhỏ hơn |
-| E2 — Baseline | Baseline prompt-only cho đường cơ sở đo được | Toàn bộ public test | F1 + tỉ lệ hash đúng + phân bố 6 nhóm lỗi + thời gian/mẫu | Đây là đường cơ sở cho mọi nâng cấp sau |
-| E3 — Validator | Validator chặn lỗi tham số trước khi gọi | Public test, A/B với E2 | Số mẫu sai → đúng, số mẫu đúng → sai | Giữ nếu số mẫu sai → đúng tăng mà không làm mẫu đúng → sai |
-| E4 — Irrelevance | Dữ liệu irrelevance tổng hợp giảm false-positive call | Mẫu gold rỗng/thiếu trong public test | False-positive call, F1 mẫu bình thường | Giữ nếu false-positive giảm ≥ 20% mà F1 mẫu bình thường không giảm |
-| E5 — Fine-tune | LoRA trên trajectory đã verify cải thiện state đúng | Public test (không đo trên dữ liệu tổng hợp) | State đúng, thời gian/mẫu | Dừng nếu F1 public test không tăng sau 1 vòng hoặc thời gian/mẫu vượt 30 s |
+| E1 — ASR | PhoWhisper-medium giảm slot-error đủ bù latency | 100 mẫu train held-out | Slot-error theo role (negation/number/entity) + giây/mẫu (không dùng WER tổng để chọn) | Tiêu chí đề xuất: giữ bản thắng nếu slot-error giảm rõ và còn dư thời gian/mẫu; nếu không, lấy bản nhỏ hơn. Báo kèm số mẫu từng nhóm. |
+| E2 — Baseline | Baseline prompt-only cho đường cơ sở đo được | Train held-out (gold `tool_calls`/`final_state`) | Điểm chính thức mean(hash ? F1 : 0), tỉ lệ ≤ 30 s, giây/mẫu (ASR riêng, LLM riêng), phân bố lỗi | Đây là đường cơ sở cho mọi nâng cấp sau. Public test chỉ đo format/latency, không dùng để chọn hệ thống. |
+| E3 — Validator | Validator chặn lỗi tham số trước khi gọi | Train held-out, A/B với E2 | Điểm chính thức, số mẫu sai → đúng, số mẫu đúng → sai | Giữ nếu điểm chính thức tăng mà không làm mẫu đúng → sai tăng đáng kể |
+| E4 — Irrelevance | Dữ liệu irrelevance tổng hợp giảm false-positive call | Mẫu gold rỗng/thiếu trong train held-out | False-positive call, confusion execute/ask/refuse, điểm chính thức | Tiêu chí đề xuất: giữ nếu false-positive giảm mà điểm execute không giảm; các ngưỡng số chỉ là đề xuất, không phải kết luận |
+| E5 — Fine-tune | LoRA trên trajectory đã verify cải thiện điểm chính thức | Train held-out (không đo trên dữ liệu tổng hợp) | Điểm chính thức, thời gian/mẫu, confusion ask/refuse | Dừng sau 1 vòng nếu điểm chính thức không tăng hoặc thời gian/mẫu vượt 30 s |
+| E6 — Read ablation (mới) | Bỏ verification read mặc định và bỏ redundant read (cache) không làm giảm điểm | Train held-out: đếm read theo loại | Điểm chính thức, số call/sample, giây/sample | Giữ cấu hình read có điểm chính thức cao nhất với số call thấp nhất |
+| E7 — Loop guard (mới) | Loop guard §0.2 tốt hơn loop → ask/[] cũ | Train held-out, tách riêng mẫu có loop | Điểm chính thức, tỉ lệ loop, confusion ask/refuse | Giữ nếu điểm trên mẫu loop tăng và confusion ask/refuse không bị méo (loop không bị gán nhầm thành ask/refuse) |
 
 **Chi phí:** chưa có số đo latency trên A30 cho bất kỳ tầng nào — mọi quyết định
 latency phải đo trên chính Docker/A30 của submission, không lấy số trên GPU khác
