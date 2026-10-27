@@ -301,3 +301,48 @@ có vLLM và GPU).
 - **Câu hỏi evaluator còn mở:** xem §5.3; đồng thời xem danh sách đầy đủ
   Q-L1..Q-L6 trong [../gaps.md](../gaps.md). Không gửi câu hỏi cho ban
   tổ chức trong đợt này.
+
+---
+
+## Cập nhật đợt 3 (2026-10-27) — sửa code, đã kiểm chứng bằng test
+
+Các thay đổi trong `01-constrained-decoding-lifemate.py` (xem code,
+không chỉ mô tả ở đây):
+
+- **Schema:** schema ngoài giờ khai báo đủ `properties` (`name` trong
+  enum, `arguments` là object) cùng `additionalProperties: false`.
+  Trước đây validator JSON Schema chuẩn từ chối cả call hợp lệ
+  `{"name": "contacts.search", "arguments": {"name": "An"}}` vì coi
+  `name`/`arguments` là trường thừa. Test chuẩn: `jsonschema.validate`
+  với call hợp lệ qua, call sai tool bị từ chối.
+- **X-ref fail-closed:** key thiếu trong `allowed_refs`, hoặc
+  `RefSet(loaded=False)`, giờ là lỗi "not loaded" thay vì lặng lẽ cho
+  qua; set đã load mà rỗng thì từ chối mọi giá trị (đúng nghĩa "đã
+  load và thật sự rỗng"); set đã load có id thì kiểm tra membership.
+  Phân biệt ba trạng thái này là bắt buộc — trước đây set rỗng bị coi
+  như "không có ràng buộc".
+- **ToolAgent nhận observation:** `execute()` giờ trả `ExecutionResult`
+  (ok, state_progress, output, error, refs) thay vì chỉ hai boolean.
+  ID từ kết quả read (ví dụ `contact_id: c-99`) được merge vào
+  `allowed_refs`, nên bước sau dùng được ID không có trong prompt ban
+  đầu. Tuple `(ok, progress)` cũ vẫn được chấp nhận nhưng không mang
+  observation. Test fake-environment đã chạy chuỗi đọc → dùng ID mới.
+- **Kết thúc bình thường:** `run()` nhận thêm `completion(result,
+  executed)`; khi predicate đúng thì `finished_normally = True` và
+  trace trả nguyên trạng. Trước đây vòng lặp chỉ dừng nhờ loop guard.
+  Thêm seam test `text_generator` để test vòng lặp offline không cần
+  vLLM/GPU (production để None, dùng engine).
+- **Cache stale:** giá trị quan sát từ read (balance, list, …) bị xóa
+  sau mỗi write; ID refs thì giữ lại (id vẫn là identifier hợp lệ sau
+  write). Đây là phân biệt cố ý, không phải "xóa hết cache".
+- **Ask sau write:** `request_missing_info` giữ gate thận trọng "chỉ
+  khi chưa write", nhưng docstring giờ ghi rõ đây là ASSUMPTION chưa
+  xác minh với evaluator (câu hỏi Q-L trong `gaps.md`), không phải
+  luật chính thức — đừng trích nó như luật khi evaluator chưa đọc.
+- **Backend schema:** thêm `backend_schema_report()` — chỉ liệt kê
+  feature schema dùng và thư viện nào import được; nó KHÔNG chứng minh
+  XGrammar/vLLM chấp nhận schema. Kiểm chứng thật vẫn là: pin một
+  phiên bản vLLM, build Docker, chạy schema thật trên A30.
+
+Chưa kiểm chứng: vLLM/XGrammar trên A30; mọi số latency trong báo cáo
+gốc vẫn là ước tính.

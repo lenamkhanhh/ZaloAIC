@@ -155,10 +155,69 @@ def build_tool_call_schema(tools: dict[str, ToolSpec]) -> dict[str, Any]:
                 "additionalProperties": False,
             }
         )
+    # The outer schema MUST declare the same two properties its branches
+    # declare. An outer ``additionalProperties: false`` with no
+    # ``properties`` at the same level rejects every property, including
+    # the legal ``name``/``arguments`` pair -- that was a real bug in the
+    # previous version: a standard JSON Schema validator rejected the
+    # valid call {"name": "contacts.search", "arguments": {"name": "An"}}.
+    # The outer properties are intentionally generic (name in enum,
+    # arguments a free object); the per-tool binding lives in the branches.
     return {
         "type": "object",
+        "properties": {
+            "name": {"type": "string", "enum": sorted(tools)},
+            "arguments": {"type": "object"},
+        },
+        "required": ["name", "arguments"],
         "oneOf": branches,
         "additionalProperties": False,
+    }
+
+
+def backend_schema_report(schema: dict[str, Any]) -> dict[str, Any]:
+    """Report what a constrained-decoding backend still has to prove.
+
+    Passing a standard JSON Schema validator (e.g. ``jsonschema``) proves
+    the schema is well-formed; it does NOT prove XGrammar/vLLM accepts
+    it, because backends support different schema subsets (``oneOf`` +
+    ``const`` + per-branch ``additionalProperties`` is the risky part
+    here). This helper only inventories the features used and whether
+    each backend library is importable in the current environment. The
+    real check is: build one Docker image with one pinned vLLM version,
+    feed it this exact schema on an A30, and record pass/fail there.
+    """
+    import importlib.util
+
+    def _uses(node: Any, keys: set[str]) -> set[str]:
+        found: set[str] = set()
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in keys:
+                    found.add(key)
+                found |= _uses(value, keys)
+        elif isinstance(node, list):
+            for item in node:
+                found |= _uses(item, keys)
+        return found
+
+    features = _uses(
+        schema,
+        {"oneOf", "anyOf", "allOf", "const", "enum", "pattern",
+         "additionalProperties", "required", "minimum", "maximum"},
+    )
+    return {
+        "features_used": sorted(features),
+        "backends_importable": {
+            lib: importlib.util.find_spec(lib) is not None
+            for lib in ("vllm", "xgrammar", "outlines", "guidance")
+        },
+        "standard_validator_pass_is_not_backend_proof": True,
+        "verified_on_a30": False,
+        "required_check": (
+            "Pin one vLLM version, build the Docker image, and generate "
+            "with this exact schema on an A30 before shipping."
+        ),
     }
 
 
@@ -193,6 +252,41 @@ class ToolCall:
     arguments: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class RefSet:
+    """One cross-reference set with an explicit load state.
+
+    Three states are distinct and must never be conflated:
+
+    * ``loaded=False`` -- references have NOT been loaded yet. An x-ref
+      against this set is UNVERIFIED: validation must fail closed
+      (report "not loaded"), never silently pass.
+    * ``loaded=True, ids=frozenset()`` -- references were loaded and the
+      set is genuinely empty. Any value fails membership, correctly.
+    * ``loaded=True, ids={...}`` -- membership is checked against ``ids``.
+
+    Callers may also pass a plain ``set`` in ``allowed_refs``; a plain
+    set is treated as a loaded set. The dangerous case is a MISSING key
+    (no entry at all for that reference name): that is the "not loaded"
+    state, not an empty set, and it fails closed too.
+    """
+
+    ids: frozenset[str] = frozenset()
+    loaded: bool = True
+
+
+def _ref_ids(
+    allowed_refs: dict[str, set[str] | RefSet], name: str
+) -> tuple[frozenset[str] | None, bool]:
+    """Return (ids, loaded) for a reference name, or (None, False)."""
+    if name not in allowed_refs:
+        return None, False
+    value = allowed_refs[name]
+    if isinstance(value, RefSet):
+        return value.ids, value.loaded
+    return frozenset(str(v) for v in value), True
+
+
 _TYPE_CHECKS: dict[str, Callable[[Any], bool]] = {
     "string": lambda v: isinstance(v, str),
     "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
@@ -208,7 +302,7 @@ def _check_value(
     value: Any,
     schema: dict[str, Any],
     path: str,
-    allowed_refs: dict[str, set[str]],
+    allowed_refs: dict[str, set[str] | RefSet],
     errors: list[str],
 ) -> None:
     """Recursively check one value against a (subset of) JSON Schema."""
@@ -233,12 +327,25 @@ def _check_value(
     # Catalog-style cross-reference constraints (generic, not tool-specific).
     # ``x-ref`` names a reference set supplied by the caller (e.g. contact
     # ids read from the environment); ``x-one-of`` is a closed value list.
+    # Fail closed: a reference set that was never loaded (missing key, or
+    # RefSet(loaded=False)) is an ERROR, not a pass. The previous code
+    # defaulted a missing set to ``set()`` and then skipped the check
+    # whenever the set was empty, so an arbitrary id passed validation.
     if "x-ref" in schema:
-        allowed = allowed_refs.get(str(schema["x-ref"]), set())
-        if allowed and value not in allowed:
-            errors.append(f"{path}: {value!r} is not a known {schema['x-ref']}")
+        ref_name = str(schema["x-ref"])
+        ids, loaded = _ref_ids(allowed_refs, ref_name)
+        if not loaded:
+            errors.append(
+                f"{path}: reference set {ref_name!r} not loaded; "
+                "cannot validate this id"
+            )
+        elif value not in ids:
+            errors.append(f"{path}: {value!r} is not a known {ref_name}")
     if "x-one-of" in schema and value not in schema["x-one-of"]:
         errors.append(f"{path}: {value!r} not in x-one-of {schema['x-one-of']!r}")
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for index, item in enumerate(value):
+            _check_value(item, schema["items"], f"{path}[{index}]", allowed_refs, errors)
     if isinstance(value, dict) and isinstance(schema.get("properties"), dict):
         for prop in schema.get("required", []):
             if prop not in value:
@@ -255,12 +362,19 @@ def _check_value(
 def validate_tool_call(
     obj: Any,
     tools: dict[str, ToolSpec],
-    allowed_refs: dict[str, set[str]] | None = None,
+    allowed_refs: dict[str, set[str] | RefSet] | None = None,
 ) -> tuple[ToolCall | None, list[str]]:
     """Validate a parsed object as a tool call.
 
     Returns ``(ToolCall, [])`` on success, or ``(None, [errors])`` on failure.
     Never executes anything: validation is strictly pre-call.
+
+    ``allowed_refs`` semantics (see :class:`RefSet`): a missing key or a
+    ``RefSet(loaded=False)`` for an ``x-ref`` used by the call is an
+    error ("not loaded"), a loaded empty set rejects every value, and a
+    loaded non-empty set is checked by membership. Validation success
+    therefore means "every referenced id was actually known", not
+    merely "no reference list was supplied".
     """
     allowed_refs = allowed_refs or {}
     if not isinstance(obj, dict):
@@ -281,7 +395,7 @@ def validate_tool_call(
 def parse_tool_call(
     text: str,
     tools: dict[str, ToolSpec],
-    allowed_refs: dict[str, set[str]] | None = None,
+    allowed_refs: dict[str, set[str] | RefSet] | None = None,
 ) -> ToolCall:
     """Parse and validate model output text as a tool call.
 
@@ -369,11 +483,18 @@ def build_sampling_params(schema: dict[str, Any], max_tokens: int = 512) -> Any:
     except ImportError:
         pass
     # Oldest style: guided_json passed directly to SamplingParams.
-    return SamplingParams(
-        temperature=0.0,
-        max_tokens=max_tokens,
-        guided_json=json.dumps(schema, ensure_ascii=False),
-    )
+    try:
+        return SamplingParams(
+            temperature=0.0,
+            max_tokens=max_tokens,
+            guided_json=json.dumps(schema, ensure_ascii=False),
+        )
+    except TypeError as exc:  # pragma: no cover - version mismatch
+        raise RuntimeError(
+            "No known vLLM structured-output API matched this vLLM "
+            "version; pin one version and test build_sampling_params "
+            "against it instead of guessing."
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -448,10 +569,17 @@ def request_missing_info(
 ) -> bool:
     """Decide whether ``sys.ask_missing_info`` is legitimate.
 
-    Only valid when nothing has been written yet AND the missing slot cannot
-    be grounded by any read. It is a grounding conclusion, never a
-    loop-fallback: callers must not invoke this merely because the loop
-    guard stopped the agent.
+    ASSUMPTION, NOT AN OFFICIAL RULE: "only before any write" is the
+    conservative reading used by this module, but whether the official
+    evaluator forbids ``ask_missing_info`` after a partial write has
+    NOT been verified against the evaluator/README (open question Q-L
+    in gaps.md). Do not present this gate as a competition rule, and do
+    not let it silently discard a legitimate ask if the evaluator turns
+    out to allow one: verify first, then relax this gate if needed.
+    Within this assumption, an ask is only valid when nothing has been
+    written yet AND the missing slot cannot be grounded by any read.
+    It is a grounding conclusion, never a loop-fallback: callers must
+    not invoke this merely because the loop guard stopped the agent.
     """
     return writes_executed == 0 and not slot_groundable_by_any_read
 
@@ -474,32 +602,124 @@ def empty_if_no_app(
 
 
 @dataclass
+class ExecutionResult:
+    """What one executed tool call actually returned.
+
+    The previous contract returned only ``(ok, state_progress)`` booleans,
+    so the agent never saw an id or a value it had just read -- a read
+    could not feed the next call. This contract carries the observation:
+
+    * ``output``: the tool's returned value (or ``None`` on failure).
+    * ``error``: the failure message, or ``None`` on success.
+    * ``refs``: reference ids established by this call, e.g.
+      ``{"contact_id": {"c-99"}}`` from a contacts read. These are merged
+      into :attr:`ToolAgent.allowed_refs`, so a later call may use an id
+      that was not in the original prompt. Ids are identifiers, not
+      values, so they survive a later write; value observations do not
+      (see the cache rule in :meth:`ToolAgent.run`).
+    """
+
+    ok: bool
+    state_progress: bool
+    output: Any = None
+    error: str | None = None
+    refs: dict[str, set[str]] = field(default_factory=dict)
+
+
+def _normalize_execution(raw: Any) -> ExecutionResult:
+    """Accept the new contract or the legacy ``(ok, progress)`` tuple."""
+    if isinstance(raw, ExecutionResult):
+        return raw
+    if isinstance(raw, tuple) and len(raw) == 2:
+        ok, progress = raw
+        return ExecutionResult(ok=bool(ok), state_progress=bool(progress))
+    raise TypeError(
+        "execute() must return ExecutionResult or (ok, state_progress); "
+        f"got {raw!r}"
+    )
+
+
+@dataclass
 class ToolAgent:
     """Generate-validate-execute loop with constrained decoding + guard.
 
     ``execute`` is a caller-supplied callable wrapping ``zaic_tools``: it
-    takes a :class:`ToolCall` and returns ``(ok, state_progress)`` where
+    takes a :class:`ToolCall` and returns an :class:`ExecutionResult`
+    (a legacy ``(ok, state_progress)`` tuple is still accepted, but it
+    carries no observation and therefore cannot feed later steps).
     ``state_progress`` is True when the call moved the environment toward
     the goal (the caller decides this from the tool result, not from the
     model's opinion of it). This module never reads state files directly.
+
+    Normal termination: the previous version had NO normal exit -- the
+    loop only ever ended via the loop guard. ``run`` now takes an
+    optional ``completion`` predicate, called after every execution
+    with ``(last_result, executed_calls)``; when it returns True the
+    loop ends normally (``finished_normally`` is set) and the trace is
+    returned as-is. The caller owns the completion criterion (e.g.
+    "the required write succeeded"), because only the task knows what
+    "done" means; the guard remains the safety net, not the exit.
     """
 
     engine: Any
     tools: dict[str, ToolSpec]
-    execute: Callable[[ToolCall], tuple[bool, bool]]
+    execute: Callable[[ToolCall], ExecutionResult | tuple[bool, bool]]
     guard: LoopGuard = field(default_factory=LoopGuard)
-    allowed_refs: dict[str, set[str]] = field(default_factory=dict)
+    allowed_refs: dict[str, set[str] | RefSet] = field(default_factory=dict)
+    # Testability seam: when set, generation uses this callable
+    # (prompt -> raw model text, still validated by parse_tool_call)
+    # instead of the vLLM engine, so the loop can be tested offline
+    # without a GPU. Production leaves it None and uses the engine.
+    text_generator: Callable[[str], str] | None = None
+    # Observations, in execution order; the caller (and tests) read the
+    # agent's memory here instead of re-deriving it from prompts.
+    last_results: list[ExecutionResult] = field(default_factory=list, init=False)
+    finished_normally: bool = field(default=False, init=False)
+    # Value observations from reads (balances, lists, ...). A write
+    # invalidates them: a balance read before a transfer is stale after
+    # it. Id references (``allowed_refs``) are NOT cleared, because an
+    # id established by a read stays a valid identifier after a write.
+    value_cache: dict[str, Any] = field(default_factory=dict, init=False)
 
     def generate_tool_call(self, prompt: str, max_tokens: int = 512) -> ToolCall:
         """Generate one tool call under the catalog schema, then validate it."""
+        if self.text_generator is not None:
+            text = self.text_generator(prompt)
+            return parse_tool_call(text, self.tools, self.allowed_refs)
         schema = build_tool_call_schema(self.tools)
         params = build_sampling_params(schema, max_tokens=max_tokens)
         outputs = self.engine.generate([prompt], params)
         text = outputs[0].outputs[0].text
         return parse_tool_call(text, self.tools, self.allowed_refs)
 
-    def run(self, prompt: str) -> list[ToolCall]:
-        """Run until the guard stops the loop; return the executed trace.
+    def _replan_prompt(self, prompt: str, executed: list[ToolCall]) -> str:
+        """Rebuild the prompt from OBSERVED results, not just call names.
+
+        The previous version listed only tool names, so a replan could
+        not use anything a read had returned. Each step is now rendered
+        as ``name(args) -> ok/error/output`` (output truncated), so the
+        next generation can use a contact id it did not start with.
+        """
+        lines = []
+        for call, result in zip(executed, self.last_results):
+            outcome = "ok" if result.ok else f"error: {result.error}"
+            output = repr(result.output)
+            if len(output) > 300:
+                output = output[:300] + "..."
+            lines.append(f"- {call.name}({call.arguments}) -> {outcome}; output={output}")
+        return (
+            f"{prompt}\n\nPrevious calls and their OBSERVED results "
+            "(use these, do not repeat failed calls, do not guess new ids):\n"
+            + "\n".join(lines)
+            + "\nChoose a different, evidence-backed action or stop."
+        )
+
+    def run(
+        self,
+        prompt: str,
+        completion: Callable[[ExecutionResult, list[ToolCall]], bool] | None = None,
+    ) -> list[ToolCall]:
+        """Run until completion, or until the guard stops the loop.
 
         The returned trace is the submission material: it is returned as-is,
         including failed calls, and nothing is appended after stopping.
@@ -516,26 +736,36 @@ class ToolAgent:
                 if self.guard._replanned:
                     return executed
                 self.guard.mark_replanned()
-                current_prompt = (
-                    f"{prompt}\n\nPrevious calls (do not repeat them): "
-                    f"{[c.name for c in executed]}. "
-                    "Choose a different, evidence-backed action or stop."
-                )
+                current_prompt = self._replan_prompt(prompt, executed)
                 continue
-            ok, progress = self.execute(call)
+            result = _normalize_execution(self.execute(call))
             executed.append(call)
-            action = self.guard.record(call, state_progress=progress)
+            self.last_results.append(result)
+            # Grounding update: ids established by this call become
+            # valid references for later validation.
+            spec = self.tools.get(call.name)
+            for ref_name, ids in result.refs.items():
+                current = self.allowed_refs.get(ref_name)
+                if isinstance(current, RefSet):
+                    merged = set(current.ids) | set(ids)
+                    self.allowed_refs[ref_name] = RefSet(ids=frozenset(merged), loaded=True)
+                else:
+                    merged = set(current or set()) | set(ids)
+                    self.allowed_refs[ref_name] = merged
+            if spec is not None and spec.kind == "read":
+                self.value_cache[f"{call.name}:{json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)}"] = result.output
+            elif spec is not None and spec.kind == "write":
+                # A write may change the world the reads described.
+                self.value_cache.clear()
+            if completion is not None and completion(result, executed):
+                self.finished_normally = True
+                return executed
+            action = self.guard.record(call, state_progress=result.state_progress)
             if action == "continue":
                 continue
             if action == "replan_once":
                 self.guard.mark_replanned()
-                # Replan prompt: only facts already observed (previous calls,
-                # their results, cached reads). No new guessed entities.
-                current_prompt = (
-                    f"{prompt}\n\nPrevious calls (do not repeat them): "
-                    f"{[c.name for c in executed]}. "
-                    "Choose a different, evidence-backed action or stop."
-                )
+                current_prompt = self._replan_prompt(prompt, executed)
                 continue
             return executed  # "stop": finish the trace as-is
 
@@ -592,6 +822,8 @@ def demo() -> None:
     schema = build_tool_call_schema(tools)
     print("schema fingerprint:", schema_fingerprint(schema))
     print("schema branches:", len(schema["oneOf"]))
+    print("backend schema report (NOT a backend proof):",
+          backend_schema_report(schema))
 
     refs = {"contact_id": {"c-1", "c-2"}}
     good = parse_tool_call(
