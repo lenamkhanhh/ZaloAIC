@@ -292,14 +292,21 @@ majority vote — majority vote chỉ nằm ở `vote_result` khi bật
      SQL qua `src/utils/util.py::execute_sql` (timeout 30 s bằng
      thread); **chỉ sửa tiếp khi `row_count == 0 and column_count
      == 0`**; nếu kết quả có dòng thì dừng và giữ nguyên.
-- **Lỗi gộp đọc từ `execute_sql`:** hàm này trả về `(0, 0, error)`
-  cả khi SQL lỗi và khi SQL chạy đúng nhưng ra 0 dòng — tức bước 4
-  **không phân biệt được "lỗi cú pháp" với "kết quả rỗng"**. So với
-  ReFoRCE (3 trạng thái) và CHESS (6 trạng thái), đây là bước lùi về
-  mặt thông tin cho quyết định, và là lý do không copy nguyên vòng
-  sửa của RSL-SQL sang DataMate: một SQL đúng nhưng ra 0 dòng (đáp
-  án COUNT = 0, hoặc danh sách rỗng đúng) sẽ bị sửa cho tới khi ra
-  dòng — tức sửa hỏng đáp án đúng. Ngược lại, điểm đáng lấy của RSL:
+- **SỬA SAI (đợt LifeMate 2026-10-27, đọc lại code gốc):** bản nháp này
+  trước đây ghi "`execute_sql` trả về `(0, 0, error)` cả khi SQL lỗi và
+  khi SQL chạy đúng nhưng ra 0 dòng". Điều đó SAI về hàm. Thực tế
+  `src/utils/util.py::execute_sql` trả về bộ ba
+  `(row_count, column_count, result)` trong đó trường thứ ba PHÂN
+  BIỆT được: kết quả rỗng hợp lệ → `(0, 0, "")` (preview rỗng), lỗi →
+  `(0, 0, <error_text>)`, timeout → `(0, 0, "TimeoutError: ...")`.
+  Lỗi thật nằm ở **bước 4**, không phải ở hàm: `src/step_4_self_correction.py`
+  kích hoạt sửa bằng điều kiện `row_count == 0 and column_count == 0`
+  và **bỏ qua hoàn toàn trường thứ ba**, nên một SQL đúng nhưng ra 0
+  dòng vẫn bị đưa vào vòng sửa tối đa 5 lần với prompt "The result of
+  the buggy SQL is []. Please fix the SQL..." — tức sửa hỏng đáp án
+  rỗng đúng (danh sách rỗng). Ngoại lệ cần ghi rõ: COUNT(*) trên tập
+  rỗng trả về 1 dòng nên `row_count == 1`, bước 4 KHÔNG sửa COUNT=0;
+  claim cũ "RSL sửa hỏng COUNT=0" là sai. Ngược lại, điểm đáng lấy của RSL:
   chọn nhị phân có kèm kết quả thực thi rẻ hơn nhiều so với Unit
   Tester của CHESS (1 lần gọi LLM thay vì 1 lần gọi cho mỗi test),
   và self-correction chỉ chạy khi cần (không sửa mặc định mọi câu).
@@ -425,9 +432,12 @@ Ngược (bằng chứng ngược mạnh, cũng từ cùng một bảng ablation
   vòng retry — với business mới, exploration LLM có thể tốn nhiều
   thời gian hơn cả chương trình chính mà không sửa được lỗi nào nếu
   lỗi nằm ở rule (không nằm ở schema).
-- **RSL-SQL gộp lỗi và rỗng** (mục 2.6): sửa có điều kiện chỉ đúng
-  khi điều kiện phân biệt được các trạng thái. Copy nguyên vòng sửa
-  của RSL sẽ sửa hỏng đáp án COUNT = 0 / danh sách rỗng đúng.
+- **RSL-SQL bước 4 bỏ qua trường error** (mục 2.6, đã sửa sai):
+  `execute_sql` phân biệt được lỗi/rỗng qua trường thứ ba, nhưng
+  trigger của bước 4 chỉ xét `row_count == 0 and column_count == 0`
+  nên vẫn sửa hỏng đáp án danh sách rỗng đúng. COUNT=0 không bị ảnh
+  hưởng (trả về 1 dòng). Trigger sửa của DataMate vì vậy phải xét
+  error-string, không xét riêng row_count.
 - **CHESS revise trên trạng thái rỗng**: vì CHESS đánh dấu cả
   `EMPTY_RESULT`/`ZERO_COUNT_RESULT`/`ALL_NONE_RESULT` là cần sửa,
   một đáp án 0 đúng cũng bị đưa vào revise — tức B có thể làm hỏng

@@ -300,16 +300,24 @@ abstain, cộng assertion rule bằng code + tính toán thứ hai độc lập;
 giữ phần tách được của CHESS — chọn schema trước khi sinh (tác giả báo
 cáo +~2% accuracy, ~5× ít token, chưa xác minh độc lập).
 
-**Đổi hướng 5 — RSL-SQL chứng minh trigger sửa phải phân biệt lỗi với
-rỗng.** Repo https://github.com/Laqcce-cao/RSL-SQL, HEAD `fb1dcf0`,
-Apache 2.0. 4 bước nối file (SQL sơ bộ → SQL tăng cường → chọn nhị phân
-bằng LLM với cả hai kết quả thực thi trong prompt → tự sửa tối đa 5
-vòng) thật sự rẻ, nhưng `src/utils/util.py::execute_sql` trả về
-`(0, 0, error)` cho **cả** lỗi SQL và kết quả rỗng hợp lệ, nên bước 4
-"sửa" đáp án COUNT=0/list rỗng đúng cho tới khi chúng trả về dòng.
-**Quyết định:** trigger sửa có điều kiện của repo phải loại trừ đáp án
-rỗng đã kiểm chứng (COUNT=0, list rỗng đã check) — giờ là yêu cầu cứng,
-không phải sở thích, và nối trực tiếp với taxonomy của Ưu tiên 5.
+**Đổi hướng 5 — RSL-SQL chứng minh trigger sửa phải xét trường error,
+không chỉ row_count. [SỬA SAI 2026-10-27, đọc lại code gốc]** Repo
+https://github.com/Laqcce-cao/RSL-SQL, HEAD `fb1dcf0`, Apache 2.0.
+4 bước nối file (SQL sơ bộ → SQL tăng cường → chọn nhị phân bằng LLM
+với cả hai kết quả thực thi trong prompt → tự sửa tối đa 5 vòng) thật
+sự rẻ. Bản tổng hợp trước đây ghi sai rằng `execute_sql` trả
+`(0, 0, error)` cho cả lỗi và rỗng. Thực tế `src/utils/util.py::execute_sql`
+trả `(row_count, column_count, result)` và trường thứ ba PHÂN BIỆT
+được: rỗng hợp lệ → `(0, 0, "")`, lỗi → `(0, 0, <error_text>)`,
+timeout → `(0, 0, "TimeoutError: ...")`. Lỗi thật ở
+`src/step_4_self_correction.py`: trigger sửa là
+`row_count == 0 and column_count == 0` và bỏ qua hoàn toàn trường thứ
+ba, nên SQL đúng nhưng ra 0 dòng vẫn bị sửa tối đa 5 lần. COUNT=0
+không bị ảnh hưởng (COUNT(*) trả về 1 dòng nên bước 4 dừng).
+**Quyết định (giữ nguyên, với lý do đã sửa):** trigger sửa có điều kiện
+của repo phải xét error-string và loại trừ đáp án rỗng đã kiểm chứng
+(COUNT=0, list rỗng đã check) — giờ là yêu cầu cứng, không phải sở
+thích, và nối trực tiếp với taxonomy của Ưu tiên 5.
 
 **Kiến trúc chốt đầu tiên là B-trimmed, không phải C, không phải
 pipeline 7 bước đầy đủ ngay ngày đầu.** So sánh (greedy, 7B local):
@@ -596,8 +604,9 @@ trả (id, string); Qwen3-4B giữ baseline, xLAM/Hammer vẫn A/B với lý do
 SFT đổi sang blueprint-first + gold cố định trước + rejection sampling
 thay vì SFT trên rollout. DataMate: kiến trúc chốt đầu tiên là
 B-trimmed (A đo trước, rồi shortlist + fallback, rồi sửa có điều kiện
-kiểu ReFoRCE), không phải C; bỏ selector LLM (CHESS/RSL-SQL đều có
-pass-through hoặc sửa mất đáp án đúng); bỏ score trọng số 0,5/0,3/0,2
+kiểu ReFoRCE), không phải C; bỏ selector LLM (CHESS có pass-through;
+RSL bước 4 sửa cả kết quả rỗng đúng vì trigger bỏ qua trường error);
+bỏ score trọng số 0,5/0,3/0,2
 (thay bằng cổng xác định + verifier logistic nhỏ trên đặc trưng quan
 sát được); pool candidate đổi từ seed-only sang đa dạng chiến lược;
 `unanswerable` bị giáng từ phán quyết trước code xuống kết luận sau
