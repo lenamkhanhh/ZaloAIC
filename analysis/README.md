@@ -83,6 +83,16 @@ Không chứa raw dataset, audio hay weights.
   0019/0116). FROZEN trước run: Codex copy nguyên vẹn vào hồ sơ run,
   chấm PASS/FAIL độc lập với format/hash/F1, không đưa vào input
   agent.
+- `runtime/E1_V10_INTENT_ANALYSIS_2026-10-28.md` — Phân tích E1 V10
+  (main b87bf9a): verdict PARTIAL cho format-scope (score 0.125 →
+  0.1875 toàn bộ từ 0004 cleanup, prerequisite 5/21 → 4/21), phân rã
+  0116 thành ba lớp (intent nhắc–gọi, grounding đã chặn ID bịa,
+  pseudo-call text bị tính là clean stop), năm pattern intent còn
+  lại, đối chiếu E2/E5, và đề xuất E6 một thí nghiệm ba arm
+  (A control native V10, B evidence-first prompt rule, C pseudo-call
+  parser rule) với tiêu chí đăng ký trước, negative control 0025,
+  caveat vacuous-PASS và gate CPU P1–P4. Không sửa inference, không
+  chạy GPU, không hardcode probe.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
