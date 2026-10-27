@@ -138,6 +138,7 @@ class AgentLoop:
         env: ZaicEnv,
         generator: Callable[[str, dict], dict | None],
         completion=None,
+        *, protocol=None,
     ) -> dict:
         """Run one sample. Returns the submission line (env material)."""
         base = build_base_prompt(sample, transcript, self.tools)
@@ -145,6 +146,12 @@ class AgentLoop:
             base += "\nRead only to resolve a missing entity or precondition; reuse still-valid observations."
         if not self.config.verification_read_after_write:
             base += "\nDo not add a verification read after a write unless the next action needs its result."
+        if protocol is not None:
+            base = protocol.base(base, self.tools)
+        def observe(calls, outputs, replan=False):
+            if protocol is not None:
+                return protocol.render(base, calls, outputs, replan)
+            return render_observation_prompt(base, calls, outputs, replan)
         prompt = base
         executed: list[dict] = []
         results: list[dict] = []
@@ -159,8 +166,9 @@ class AgentLoop:
                 if is_stop_signal(gen):
                     return env.submission_line()
                 if not isinstance(gen, dict) or "name" not in gen:
-                    prompt = render_observation_prompt(base, executed, results)
-                    prompt += "\n\nYour last output was not a valid tool call JSON. Output one tool call or {\"stop\": true}."
+                    prompt = observe(executed, results)
+                    error = "Your last output was not a valid tool call JSON. Output one tool call or {\"stop\": true}."
+                    prompt = protocol.feedback(prompt, error) if protocol is not None else prompt + "\n\n" + error
                     continue
                 call = {"name": gen["name"], "arguments": gen.get("arguments", {}) or {}}
                 if self.config.grounding:
@@ -173,8 +181,8 @@ class AgentLoop:
                          env.validate(call["name"], call["arguments"]))
                 if check.get("ok"):
                     break
-                prompt = render_observation_prompt(
-                    base, executed + [call],
+                prompt = observe(
+                    executed + [call],
                     results + [{"ok": False, "error": f"validation failed (NOT executed, NOT submitted): {check.get('error')}"}],
                 )
                 call = None
@@ -184,7 +192,7 @@ class AgentLoop:
                 if self.guard._replanned:
                     return env.submission_line()
                 self.guard._replanned = True
-                prompt = render_observation_prompt(base, executed, results, replan=True)
+                prompt = observe(executed, results, replan=True)
                 continue
             result = env.call(call["name"], call["arguments"])
             executed.append(call)
@@ -195,11 +203,11 @@ class AgentLoop:
                 return env.submission_line()
             action = self.guard.record(call, state_progress=bool(result.get("ok")))
             if action == "continue":
-                prompt = render_observation_prompt(base, executed, results)
+                prompt = observe(executed, results)
                 continue
             if action == "replan_once":
                 self.guard._replanned = True
-                prompt = render_observation_prompt(base, executed, results, replan=True)
+                prompt = observe(executed, results, replan=True)
                 continue
             return env.submission_line()
         return env.submission_line()
