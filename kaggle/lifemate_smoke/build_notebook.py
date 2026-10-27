@@ -36,7 +36,9 @@ def build(output_dir=None, paired_inputs=None):
             "Gold is diagnostic only; not a deployable pipeline or benchmark.\n",
             "ASR model remains resident for matching placement; no ASR timing comparison.\n",
         ]
-    (destination / "lifemate_smoke.ipynb").write_text(json.dumps(notebook, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    # Kaggle CLI on Windows may read notebook JSON with the locale codec.
+    # JSON escapes preserve Vietnamese text while keeping the upload ASCII.
+    (destination / "lifemate_smoke.ipynb").write_text(json.dumps(notebook, ensure_ascii=paired_inputs is not None, indent=1) + "\n", encoding="utf-8")
     metadata = {
         "id": "khanhss/lifemate-smoke-dev5-20261027", "title": "LifeMate Smoke Dev5 20261027",
         "code_file": "lifemate_smoke.ipynb", "language": "python", "kernel_type": "notebook",
