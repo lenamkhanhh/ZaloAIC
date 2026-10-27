@@ -3,6 +3,7 @@
 The notebook embeds this file verbatim. No training or competition submission.
 """
 import copy
+from contextlib import contextmanager
 import dataclasses
 import hashlib
 import json
@@ -70,6 +71,67 @@ def make_bundle(output):
     return bundle
 
 
+@contextmanager
+def t4_efficient_attention():
+    """Single-threaded smoke only; restore the pinned HF helper on all exits.
+
+    Native SDPA GQA does not support the efficient backend. HF's existing
+    repeat_kv path computes the same attention with equal head counts, which
+    permits that backend on T4. Never silently fall back to quadratic math.
+    Floating-point kernel changes can still change greedy token decisions.
+    """
+    import transformers
+    from transformers.integrations import sdpa_attention
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+    if transformers.__version__ != "4.57.6":
+        raise RuntimeError("The smoke attention override requires transformers==4.57.6")
+    original = sdpa_attention.use_gqa_in_sdpa
+    sdpa_attention.use_gqa_in_sdpa = lambda attention_mask, key: False
+    try:
+        with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
+            yield
+    finally:
+        sdpa_attention.use_gqa_in_sdpa = original
+
+
+def attention_preflight(torch):
+    """Check real HF Qwen-shaped prefill/decode on both GPUs before downloads."""
+    from types import SimpleNamespace
+    from transformers.integrations import sdpa_attention
+    module = SimpleNamespace(num_key_value_groups=4, is_causal=True, training=False)
+    results = []
+    with torch.random.fork_rng(devices=[0, 1]), torch.no_grad():
+        for device in (0, 1):
+            torch.cuda.reset_peak_memory_stats(device)
+            with torch.cuda.device(device), t4_efficient_attention():
+                # Tiny parity check against the native GQA math reference.
+                q = torch.randn(1, 32, 64, 128, device=device, dtype=torch.float16)
+                k = torch.randn(1, 8, 64, 128, device=device, dtype=torch.float16)
+                v = torch.randn_like(k)
+                actual, _ = sdpa_attention.sdpa_attention_forward(module, q, k, v, None)
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+            with sdpa_kernel(SDPBackend.MATH):
+                expected = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
+            torch.testing.assert_close(actual.transpose(1, 2), expected, atol=2e-3, rtol=2e-3)
+            del q, k, v, actual, expected
+            with torch.cuda.device(device), t4_efficient_attention():
+                q = torch.randn(1, 32, 8192, 128, device=device, dtype=torch.float16)
+                k = torch.randn(1, 8, 8192, 128, device=device, dtype=torch.float16)
+                v = torch.randn_like(k)
+                prefill, _ = sdpa_attention.sdpa_attention_forward(module, q, k, v, None)
+                # Single-token cached decode uses non-causal attention to all keys.
+                decode, _ = sdpa_attention.sdpa_attention_forward(module, q[:, :, :1], k, v, None)
+                if not torch.isfinite(prefill).all() or not torch.isfinite(decode).all():
+                    raise RuntimeError("Non-finite output from efficient attention preflight")
+                torch.cuda.synchronize(device)
+            results.append({"device": device, "prefill_tokens": 8192,
+                            "peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
+                            "tiny_gqa_parity": "passed", "backend": "EFFICIENT_ATTENTION"})
+            del q, k, v, prefill, decode
+            torch.cuda.empty_cache()
+    return results
+
+
 def main():
     work = Path(os.environ.get("LIFEMATE_SMOKE_INPUTS", "/kaggle/temp/lifemate-smoke"))
     output = Path(os.environ.get("LIFEMATE_SMOKE_OUTPUT", "/kaggle/working/lifemate_smoke"))
@@ -115,6 +177,10 @@ def main():
             "gpu0": gpu.name, "gpu0_bytes": gpu.total_memory, "gpu_count": torch.cuda.device_count(),
             "device_used": "ASR cuda:0; LLM balanced across cuda:0 and cuda:1", "packages": {p.split("==")[0]: importlib.metadata.version(p.split("==")[0]) for p in PACKAGES},
         }
+
+        phase("attention_preflight")
+        summary["attention_preflight"] = attention_preflight(torch)
+        summary["attention_override"] = "HF repeat_kv + EFFICIENT_ATTENTION; smoke only; may affect floating-point outputs"
 
         phase("source")
         source_zip = work / "source.zip"
@@ -243,7 +309,8 @@ def main():
                         tick = time.perf_counter()
                         raw_text["value"] = None
                         try:
-                            result = llm(prompt, tools)
+                            with t4_efficient_attention():
+                                result = llm(prompt, tools)
                         except Exception as exc:
                             record["trace"].append({"event": "generation_error", "prompt": prompt,
                                                     "error": repr(exc), "seconds": time.perf_counter() - tick})

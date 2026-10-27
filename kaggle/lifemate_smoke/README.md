@@ -26,6 +26,18 @@ T4s (6 GiB weight-placement budget per GPU). This is a smoke placement, not a
 claim of fitting or meeting 30 seconds on a single A30. Source/core defaults
 still use a single device unless this optional placement is requested.
 
+Version 2 also hit attention OOM on 4/5 samples despite confirmed sharding.
+Version 3 keeps that placement and uses HF's explicit repeat_kv path with
+PyTorch EFFICIENT_ATTENTION for LLM generation only. Native SDPA GQA supports
+Flash/math, so automatic selection can use quadratic math attention on T4.
+This override is scoped to each generation and requires transformers 4.57.6;
+it is not a core pipeline default. Numerical kernel differences may affect
+greedy outputs even though the weights, prompt, seed and token limits match.
+Before downloading data/weights, both GPUs must pass tiny GQA-reference
+parity and 8192-token Qwen-shaped prefill/decode using the actual HF helper.
+Unsupported efficient kernels fail immediately, with no math fallback.
+The preflight restores RNG state before model loading.
+
 Launch once (GPU time is consumed):
 
 ```text
