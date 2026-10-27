@@ -39,6 +39,15 @@ Không chứa raw dataset, audio hay weights.
   chứng khớp byte-identical với code nhánh trên 30 mẫu. Ràng buộc
   renderer vẫn giữ nguyên: không rút gọn list còn ID/tên, không xoá
   field vì thuộc FREE_TEXT_KEYS, không đổi pipeline đang chạy.
+- `CONTEXT_BUDGET_A2E832B_2026-10-28.md` +
+  `measure_context_budget_a2e832b.py` — Đo RIÊNG prompt thật của agent
+  mới a2e832b (cùng nhánh, JSON đầy đủ đã có sẵn trong agent + action
+  policy 455 token + outcome not_done), cùng tokenizer/revision/dev/
+  ngưỡng. Kết quả riêng, không ghép với phép đo e79f9722: 0/1.237 mẫu
+  và 0/4.080 bước vượt ngân sách, max 9.874 token (train_1636), không
+  có ID nào vượt — nên chưa cần renderer phức tạp hơn cho phạm vi gold
+  replay. Giới hạn ghi rõ: chưa bao phủ observation do model gọi sai
+  hoặc lặp. Phép đo e79f9722 giữ nguyên làm đối chứng.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
