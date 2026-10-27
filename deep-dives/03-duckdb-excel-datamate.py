@@ -33,6 +33,7 @@ import sqlite3
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
@@ -139,14 +140,17 @@ def parse_vn_number(
 
     has_dot, has_comma = "." in text, "," in text
     if locale == "vn":
-        # Dạng VN hợp lệ: nhóm '.' hàng nghìn (mỗi nhóm 3 chữ số), tùy chọn
-        # phần thập phân sau ','. "1.5" không phải dạng VN hợp lệ -> issue.
-        if re.fullmatch(r"\d{1,3}(?:\.\d{3})*(?:,\d+)?", text):
+        # Dạng VN hợp lệ: số nguyên thuần ("1000") hoặc nhóm '.' hàng
+        # nghìn (mỗi nhóm 3 chữ số), tùy chọn phần thập phân sau ','.
+        # "1.5" không phải dạng VN hợp lệ -> issue. Phiên bản trước dùng
+        # \d{1,3} ở đầu nên từ chối cả số nguyên 4 chữ số như "1000".
+        if re.fullmatch(r"\d+(?:\.\d{3})*(?:,\d+)?", text):
             return _apply(".", ","), None
         return None, f"not_a_valid_vn_number: {raw!r}"
     if locale == "en":
-        # Dạng EN hợp lệ: nhóm ',' hàng nghìn, tùy chọn phần thập phân sau '.'.
-        if re.fullmatch(r"\d{1,3}(?:,\d{3})*(?:\.\d+)?", text):
+        # Dạng EN hợp lệ: số nguyên thuần hoặc nhóm ',' hàng nghìn,
+        # tùy chọn phần thập phân sau '.'.
+        if re.fullmatch(r"\d+(?:,\d{3})*(?:\.\d+)?", text):
             return _apply(",", "."), None
         return None, f"not_a_valid_en_number: {raw!r}"
     # locale == "auto"
@@ -164,7 +168,80 @@ def parse_vn_number(
     # Một dấu duy nhất với 1–2 chữ số sau nó: chỉ có thể là thập phân.
     if has_dot or has_comma:
         return _apply("", "." if has_dot else ","), None
-    return float(text), None
+    # Số nguyên thuần. Phiên bản trước trả float(text) mà quên áp dấu
+    # âm, nên "-100" và "(100)" đều thành +100.0.
+    return (-float(text) if negative else float(text)), None
+
+
+def parse_vn_money(
+    raw: Any, *, locale: Literal["auto", "vn", "en"] = "auto"
+) -> tuple[Decimal | None, str | None]:
+    """Parse a money cell to ``Decimal``, never via float.
+
+    Contract split (this is the fix for the demo's float-for-money):
+    ``parse_vn_number`` returns float and is ONLY for generic quantities
+    where a binary-float rounding is acceptable. Any value that will be
+    summed, compared, or formatted as an answer amount MUST go through
+    this function: it applies the same separator/sign rules as
+    :func:`parse_vn_number` but keeps the exact decimal value, so
+    0.1 + 0.2 style float artefacts can never leak into a revenue total.
+    A caller that converts this Decimal to float before formatting has
+    broken the contract, not the parser.
+    """
+    from decimal import Decimal as _Decimal
+
+    if raw is None:
+        return None, None
+    if isinstance(raw, bool):
+        return None, "boolean_not_a_number"
+    if isinstance(raw, int):
+        return _Decimal(raw), None
+    if isinstance(raw, float):
+        # str() round-trips the shortest decimal the float prints as;
+        # it does not recover a decimal the float never represented.
+        return _Decimal(str(raw)), None
+    text = str(raw).strip()
+    if not text:
+        return None, None
+    if "%" in text:
+        return None, "percent_not_converted_here"
+    text = re.sub(r"^(VND|VNĐ|₫|đ)\s*|\s*(VND|VNĐ|₫|đ)$", "", text).strip()
+    negative = False
+    if text.startswith("(") and text.endswith(")"):
+        negative, text = True, text[1:-1].strip()
+    if text.startswith("-"):
+        negative, text = True, text[1:].strip()
+    text = text.replace("\u00a0", "").replace(" ", "")
+    if not re.fullmatch(r"\d+(?:[.,]\d+)*", text):
+        return None, f"unparseable_number: {raw!r}"
+    has_dot, has_comma = "." in text, "," in text
+    if locale == "vn":
+        if not re.fullmatch(r"\d+(?:\.\d{3})*(?:,\d+)?", text):
+            return None, f"not_a_valid_vn_number: {raw!r}"
+        body = text.replace(".", "")
+        if "," in body:
+            body = body.replace(",", ".")
+    elif locale == "en":
+        if not re.fullmatch(r"\d+(?:,\d{3})*(?:\.\d+)?", text):
+            return None, f"not_a_valid_en_number: {raw!r}"
+        body = text.replace(",", "")
+    elif has_dot and has_comma:
+        body = text.replace(",", "") if text.rfind(".") > text.rfind(",") else text.replace(".", "").replace(",", ".")
+    elif has_dot and _VN_THOUSANDS_RE.match(text):
+        body = text.replace(".", "")
+    elif has_comma and _EN_THOUSANDS_RE.match(text):
+        body = text.replace(",", "")
+    elif _SINGLE_SEP_3DIGITS.match(text):
+        return None, f"ambiguous_number (1.500 vs 1.5): {raw!r}"
+    elif has_dot or has_comma:
+        body = text.replace(",", ".")
+    else:
+        body = text
+    try:
+        value = _Decimal(body)
+    except Exception:
+        return None, f"unparseable_number: {raw!r}"
+    return (-value if negative else value), None
 
 
 def parse_number_column(
@@ -439,6 +516,52 @@ def _check_view_name(name: str) -> str:
     return name
 
 
+_WRITE_KEYWORDS = {
+    "insert", "update", "delete", "drop", "create", "alter", "truncate",
+    "copy", "attach", "detach", "pragma", "call", "execute", "grant",
+    "revoke", "merge", "vacuum",
+    # NOTE: "replace" is intentionally NOT banned: REPLACE() is a common
+    # string function in SELECTs; banning the word would false-positive
+    # on legitimate reads. Write-REPLACE (REPLACE INTO) is already
+    # rejected by the SELECT/WITH first-token rule above.
+}
+_FILE_FUNCTIONS = {
+    "read_csv", "read_csv_auto", "read_parquet", "read_json", "read_json_auto",
+    "read_xlsx", "st_read", "parquet_scan", "csv_scan", "read_blob", "read_text",
+}
+
+
+def _assert_readonly_sql(sql: str) -> None:
+    """Reject anything that is not one SELECT/WITH statement.
+
+    Strips leading ``--``/``/* */`` comments first so a write cannot hide
+    behind a comment prefix. Keyword matching is whole-word and
+    case-insensitive; a keyword inside a string literal is a false
+    positive the caller must avoid (this guard is syntactic, not a SQL
+    parser -- see :meth:`DuckDBStore.query`).
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        raise ValueError("empty SQL")
+    cleaned = sql.strip()
+    while cleaned.startswith("--"):
+        cleaned = cleaned.split("\n", 1)[1].lstrip() if "\n" in cleaned else ""
+    while cleaned.startswith("/*"):
+        end = cleaned.find("*/")
+        if end == -1:
+            raise ValueError("unterminated SQL comment")
+        cleaned = cleaned[end + 2:].lstrip()
+    first = re.match(r"([A-Za-z]+)", cleaned)
+    if first is None or first.group(1).upper() not in ("SELECT", "WITH"):
+        raise ValueError("only a single SELECT/WITH statement is allowed")
+    body = cleaned[len(first.group(1)):]
+    if ";" in body.rstrip().rstrip(";"):
+        raise ValueError("multiple SQL statements are not allowed")
+    words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", cleaned.lower()))
+    banned = (words & _WRITE_KEYWORDS) | (words & _FILE_FUNCTIONS)
+    if banned:
+        raise ValueError(f"SQL contains banned keyword/function: {sorted(banned)}")
+
+
 class DuckDBStore:
     """DuckDB in-memory làm engine thực thi duy nhất cho câu hỏi đã làm sạch.
 
@@ -504,7 +627,12 @@ class DuckDBStore:
         if missing:
             raise ValueError(f"calendar.csv missing columns: {missing}")
         frame = frame.rename(columns=mapping)
-        frame["solar_date"] = pd.to_datetime(frame["solar_date"]).dt.date
+        # dayfirst=True: a dd/mm/yyyy string in calendar.csv must not be
+        # silently read as mm/dd/yyyy (pandas defaults are ambiguous for
+        # day<=12). ISO yyyy-mm-dd strings are unaffected by dayfirst.
+        frame["solar_date"] = pd.to_datetime(
+            frame["solar_date"], dayfirst=True, format="mixed"
+        ).dt.date
         for col in ("lunar_year", "lunar_month", "lunar_day"):
             frame[col] = frame[col].astype("Int64")
         self.register_frame(view, frame)
@@ -512,10 +640,16 @@ class DuckDBStore:
     def query(self, sql: str, params: list[Any] | None = None) -> pd.DataFrame:
         """Chạy một câu SQL chỉ-đọc và trả về DataFrame (kết quả nhỏ).
 
-        Lưu ý cho tầng LLM: chỉ cho phép câu SELECT/WITH. Việc chặn câu
-        ghi (INSERT/UPDATE/DELETE/DROP/...) phải làm ở tầng validator trước
-        khi gọi hàm này — hàm này không tự phân tích SQL để chặn ghi.
+        Giới hạn được THỰC THI ở đây, không chỉ ghi trong docstring như
+        phiên bản trước: câu phải bắt đầu bằng SELECT/WITH (sau khi bỏ
+        comment), chỉ chứa một statement, và không chứa từ khóa ghi hay
+        hàm đọc file (read_csv/read_parquet/...). Đây vẫn là guard cú
+        pháp, KHÔNG phải sandbox hệ điều hành: DuckDB chạy cùng process
+        vẫn có thể bị khai thác qua hàm khác, nên pipeline thật cần
+        chạy DuckDB trong process riêng với filesystem bị giới hạn nếu
+        SQL do model sinh ra được coi là không tin cậy.
         """
+        _assert_readonly_sql(sql)
         return self.con.execute(sql, params or []).fetchdf()
 
     def close(self) -> None:
@@ -548,8 +682,19 @@ def tet_window_sql(
     ``lunar_year = Y`` duy nhất sẽ MẤT nửa tháng Giêng.
 
     Các tên cột/bảng là placeholder: khớp lại với schema thật và với quy tắc
-    doanh thu của split (ở đây minh họa: tổng tiền dòng sau chiết khấu dòng,
-    loại dòng bị hủy/trả — KHÔNG tự suy ra quy tắc khác nếu rulebook khác).
+    doanh thu của split.
+
+    Quy tắc loại trừ (SỬA SO VỚI PHIÊN BẢN TRƯỚC): phiên bản trước chỉ
+    lọc dòng ``line_status NOT IN ('cancelled', 'returned')``. Rulebook
+    đã ghi nhận cho DataMate nói doanh thu loại "đơn bị hủy / đơn có
+    hàng trả" -- tức loại ở MỨC ĐƠN HÀNG: một đơn có bất kỳ dòng trả nào
+    thì toàn bộ đơn bị loại, kể cả các dòng còn tốt của nó. SQL dưới
+    đây thực thi mức đơn hàng bằng NOT EXISTS, và giữ thêm lọc dòng
+    như một vành đai thứ hai. ĐÂY LÀ DIỄN GIẢI của cụm "any-returned
+    orders" trong ghi chú rulebook, CHƯA đối chiếu nguyên văn rulebook
+    của đúng split -- nếu rulebook thật chỉ loại theo dòng, bỏ mệnh đề
+    NOT EXISTS đi và ghi lại lý do. Đừng dùng SQL này mà không kiểm
+    tra điểm đó.
 
     Returns:
         (câu SQL có placeholder ``?``, danh sách tham số theo thứ tự).
@@ -568,6 +713,11 @@ def tet_window_sql(
     JOIN tet_dates c ON o.{order_date_col} = c.solar_date
     JOIN {lines_view} l ON l.{line_order_col} = o.{order_id_col}
     WHERE l.{line_status_col} NOT IN ('cancelled', 'returned')
+      AND NOT EXISTS (
+          SELECT 1 FROM {lines_view} l2
+          WHERE l2.{line_order_col} = o.{order_id_col}
+            AND l2.{line_status_col} IN ('cancelled', 'returned')
+      )
     """
     return sql, [tet_lunar_year, tet_lunar_year + 1]
 

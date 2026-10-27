@@ -505,3 +505,51 @@ Kết quả chạy thật trong phiên này (venv thử: DuckDB 2.0.0, pandas
   tham số; xem danh sách đầy đủ Q-D1..Q-D6 trong
   [../gaps.md](../gaps.md). Không gửi câu hỏi cho ban tổ chức trong đợt
   này.
+
+---
+
+## Cập nhật đợt 3 (2026-10-27) — sửa code, đã kiểm chứng bằng test
+
+Các thay đổi trong `03-duckdb-excel-datamate.py`:
+
+- **Dấu âm không còn mất.** Nhánh số nguyên thuần cuối hàm
+  `parse_vn_number()` trước đây trả `float(text)` mà quên áp dấu âm,
+  nên `-100` và `(100)` đều thành `+100.0`. Giờ trả đúng `-100.0`;
+  `(1.000,50)` → `-1000.5`.
+- **Số nguyên thuần ở locale vn/en.** Regex locale trước đây bắt đầu
+  bằng `\d{1,3}` nên từ chối cả `1000`. Giờ `\d+` ở đầu cho phép số
+  nguyên bất kỳ độ dài nào, vẫn từ chối `1.5` ở locale vn (không phải
+  dạng VN hợp lệ).
+- **Tiền tách khỏi float.** Thêm `parse_vn_money()` trả `Decimal` với
+  cùng quy tắc dấu/phân cách; `parse_vn_number()` (float) chỉ còn cho
+  số lượng thông thường. Caller nào đổi Decimal sang float trước khi
+  format đáp án là phá contract, không phải lỗi parser. Demo cũ dùng
+  float cho tiền chỉ để gọn — từ đợt này demo và code phân biệt rõ.
+- **Query chỉ-đọc được thực thi.** `DuckDBStore.query()` giờ gọi
+  `_assert_readonly_sql()`: một statement duy nhất bắt đầu SELECT/
+  WITH (sau khi bỏ comment), cấm từ khóa ghi và hàm đọc file
+  (`read_csv`, `read_parquet`, …). Phiên bản trước chỉ ghi "chỉ cho
+  phép SELECT/WITH" trong docstring mà không chặn gì. Ghi rõ giới hạn:
+  đây là guard cú pháp, KHÔNG phải sandbox OS — SQL do model sinh vẫn
+  cần chạy trong process riêng với filesystem giới hạn nếu coi là
+  không tin cậy.
+- **SQL Tết loại ở mức đơn hàng.** `tet_window_sql()` trước đây chỉ
+  lọc dòng `line_status NOT IN ('cancelled', 'returned')`. Theo diễn
+  giải rulebook "đơn bị hủy / đơn có hàng trả", một đơn có bất kỳ dòng
+  trả nào thì toàn bộ đơn bị loại (thêm `NOT EXISTS` cho dòng
+  cancelled/returned cùng đơn). Đây là DIỄN GIẢI, chưa đối chiếu nguyên
+  văn rulebook của đúng split — nếu rulebook thật chỉ loại theo dòng
+  thì bỏ mệnh đề `NOT EXISTS` và ghi lại lý do. Test đã chạy: đơn có
+  dòng ok 100 + dòng returned 50 và đơn ok 200 → doanh thu 200 (đơn
+  thứ nhất đóng góp 0).
+- **Calendar dayfirst.** `load_calendar()` giờ parse `solar_date`
+  với `dayfirst=True`, để chuỗi `05/02/2025` không bị đọc lầm thành
+  05 tháng 2 hay 02 tháng 5 theo mặc định mơ hồ của pandas; chuỗi ISO
+  không bị ảnh hưởng.
+- **Liên hệ đợt research 3:** kiến trúc chốt đầu tiên là B-trimmed
+  (A đo trước → shortlist + fallback → sửa có điều kiện kiểu ReFoRCE),
+  BASE-SQL bị xóa khỏi danh sách code cần đọc (repo trống), DABstep
+  baseline đã đọc thật, và trigger sửa phải loại trừ đáp án rỗng đã
+  kiểm chứng — xem `../research/round3-p3-datamate-complete-solutions.md`
+  và `research-updates-2026-10-27.md` §3. Code hiện tại chưa triển
+  khai pipeline B-trimmed đầy đủ; đó là bước tiếp theo sau khi đo A.
