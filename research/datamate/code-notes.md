@@ -93,7 +93,8 @@ Câu hỏi + business data + README + rulebook(split) + as-of + calendar.csv
      không chốt đáp án, chuyển sang abstain hoặc vòng sửa có mục tiêu
   → 7. FORMATTER (tách riêng, có test): chuyển kết quả thành type đúng
   → Quyết định cuối: trả lời / unanswerable / abstain theo ngưỡng đã calibration
-     trên held-out, không theo confidence miệng của LLM
+     trên train_cal tách theo business và khóa trước khi đo holdout (không theo
+     confidence miệng của LLM, không học ngưỡng trên public test)
 ```
 
 ### 6. Quy tắc join và aggregate — nơi lỗi "chạy được nhưng sai" hay ẩn nhất
@@ -117,7 +118,7 @@ Câu hỏi + business data + README + rulebook(split) + as-of + calendar.csv
 | Type | Kiểm tra |
 |---|---|
 | number | Làm tròn 2 chữ số thập phân; không thêm ký tự tiền tệ; không dùng định dạng phân cách nghìn nếu evaluator so sánh số |
-| percent | Kèm dấu theo đúng định dạng đã ghi trong đề bài; kiểm tra 0–100 hay 0–1 (đừng đoán — đọc evaluator/rulebook) |
+| percent | Kèm dấu theo đúng định dạng đã ghi trong đề bài; kiểm tra 0–100 hay 0–1 (đừng đoán — đọc evaluator/rulebook; điểm này UNVERIFIED, Q-D4) |
 | string | Chuẩn hóa NFC + lowercase + thay ký tự không phải chữ/số/khoảng trắng bằng khoảng trắng; giữ dấu thanh; dùng alias/mã trong dữ liệu |
 | date | ISO yyyy-mm-dd; tháng yyyy-mm; kiểm tra không vượt as-of khi câu hỏi giới hạn tới as-of |
 | boolean | Chỉ true/false theo đúng type, không trả "có/không" dạng string |
@@ -125,3 +126,18 @@ Câu hỏi + business data + README + rulebook(split) + as-of + calendar.csv
 | table | Đúng tên cột, đúng thứ tự cột, đúng hàng; rows as set theo ghi nhận (cần đối chiếu evaluator: "as set" có nghĩa thứ tự hàng không quan trọng hay không) |
 | unanswerable | Chỉ trả khi Planner kết luận thiếu dữ liệu, không phải khi code lỗi |
 | abstain | Khi không đủ tự tin sau calibration, hoặc hai đường tính mâu thuẫn và đã hết vòng sửa |
+
+
+## Hồ sơ sâu round 2 — đọc ở đây, không lặp lại trong file này
+
+- ReFoRCE (CODE_INSPECTED ở mức file), schemagate (README_READ), DSR-SQL
+  (PAPER_READ, repo chính thức 404), BASE-SQL ablation, DABstep/I2I-STRADA:
+  xem [deep-profiles.md](deep-profiles.md).
+- ReFoRCE: lấy SqlEnv 3 trạng thái, vòng sửa tối đa 3 lần → simplify khi rỗng
+  → dừng sau 3 thất bại liên tiếp, exploration xác định trước exploration LLM,
+  `reduce_ddl()`; bỏ random vote khi hòa (hòa → abstain), bỏ GPT API và
+  credential Snowflake/BigQuery, cắt kết quả thăm dò bằng aggregate có chủ đích
+  thay vì cắt mù 500 ký tự.
+- schemagate: shortlist bảng/cột xác định trước khi đưa cho LLM, bảng không được
+  phép vắng mặt hoàn toàn khỏi prompt; guard fallback một lần sang schema đầy đủ
+  trước khi kết luận unanswerable; đo recall shortlist trên train.

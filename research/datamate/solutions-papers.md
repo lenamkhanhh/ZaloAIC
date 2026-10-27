@@ -29,7 +29,13 @@
 - **Paper:** https://arxiv.org/html/2502.10739v1
 - **Pipeline:** M-Schema (mô tả schema có kèm mẫu), schema linking, SFT, SQL
   revision, SQL merge revision. Tác giả tự báo cáo: Qwen2.5-Coder 32B từ 56,84% lên
-  67,47% trên BIRD dev; Spider test 88,87%.
+  67,47% trên BIRD dev; Spider test 88,87%. **Repo chính thức chưa xác định
+  trong round 2 — không gắn link repo, không gắn nhãn code (PAPER_READ).**
+- **Ablation — bằng chứng quan trọng nhất (xem deep-profiles §4):** cùng một
+  bảng ablation, backbone DeepSeek-Coder 33B cho thấy +Data Samples làm GIẢM
+  từ 49,54 xuống 44,26 (−5,28) và +Schema Linking làm giảm Spider test 0,51.
+  **Không mặc định 'thêm bước = tốt hơn' — đo từng bước riêng trên model ZAIC
+  thực tế, trên train_holdout tách theo business.**
 - **Chuyển giao:** lấy M-Schema + sample, revision và merge revision. Bỏ model 32B
   (vượt 15B). Viết lại cho Qwen2.5-Coder-7B hoặc Qwen3-8B và cho cả pandas, không chỉ SQL.
 - **Rủi ro:** revision làm tăng số lần gọi model — tính vào ngân sách 6 giờ;
@@ -51,10 +57,17 @@
 
 ## 4. Alpha-SQL — MCTS + self-supervised reward (rút gọn, không copy nguyên)
 
-- **Pipeline (secondary):** MCTS rollout (một bản mô tả: 24 rollout, mỗi lần mở rộng
-  3 action, temperature 0,8; reward tính bằng 5 lần lặp; revision tối đa 10 vòng).
-  Tác giả tự báo cáo qua bản tóm tắt thứ cấp: Qwen2.5-Coder-7B đạt 66,8% trung bình,
-  tương đương hoặc hơn một số phương pháp dùng GPT-4o.
+- **Pipeline và nguồn chính thức (thay mirror):** arXiv 2502.17248 —
+  https://arxiv.org/abs/2502.17248 (v2, sửa 15/06/2025) và ICML 2025, PMLR v267 —
+  https://proceedings.mlr.press/v267/li25dt.html. MCTS rollout (một bản mô tả:
+  24 rollout, mỗi lần mở rộng 3 action, temperature 0,8; reward tính bằng 5 lần
+  lặp; revision tối đa 10 vòng). Tác giả tự báo cáo: **BIRD dev 69,7% với LLM
+  32B open-source, không fine-tune**; một tổng hợp thứ cấp khác (ExpeSQL, VLDB
+  2026 workshop) ghi Alpha-SQL với **Qwen2.5-Coder-7B đạt 66,8% BIRD dev, 24
+  rollout**, chọn bằng majority vote theo kết quả thực thi — và chỉ rõ nhược
+  điểm là latency cao + token thừa do trace lặp. **Hai con số 69,7% (32B) và
+  66,8% (7B) là hai backbone khác nhau, không được so sánh như một thí nghiệm**
+  và không được dùng để suy ra hiệu quả trên DataMate.
 - **Chuyển giao:** lấy ý tưởng reward bằng thực thi (SQL chạy đúng + kết quả nhất
   quán). Không lấy nguyên MCTS 24 rollout — thay bằng beam/search nhỏ (3–5
   candidate) + revision có giới hạn.
@@ -69,11 +82,16 @@
   base Spider dev EX 83,5%, BIRD dev EX 51,5%; sau SPFT-SQL: 87,2% và 61,0%.
   Ablation: Verification-Based Iterative Fine-Tuning đóng góp lớn nhất (+3,3–3,8%
   Spider, +6,8% BIRD), self-play thêm +0,6–0,8%.
-- **DB-Explore (Findings EMNLP 2025):** sinh instruction từ database exploration,
-  lọc bằng thực thi; từ 26.000 cặp Spider và 22.000 cặp BIRD ban đầu, sau lọc còn
-  21.273 và 16.457 cặp hợp lệ (tỷ lệ thành công 81,8% và 74,8%) — tác giả tự báo cáo
-  qua bản tóm tắt. Bản ACL chính thức cần đối chiếu lại (link trong phiên là bản
-  mirror qua worker).
+- **DB-Explore (Findings EMNLP 2025) — record chính thức, thay mirror:**
+  Anthology ID 2025.findings-emnlp.1032, DOI 10.18653/v1/2025.findings-emnlp.1032,
+  trang 18969–18979. Sinh instruction từ database exploration, lọc bằng thực thi;
+  từ 26.000 cặp Spider và 22.000 cặp BIRD ban đầu, sau lọc còn 21.273 và 16.457
+  cặp hợp lệ (tỷ lệ thành công 81,8% và 74,8%) — tác giả tự báo cáo qua bản tóm
+  tắt. Kết quả tác giả tự báo cáo: BIRD EX 67,0%, SPIDER 87,8%, implementation
+  open-source dựa trên Qwen2.5-Coder-7B. Lưu ý: abstract nói 'dùng GPT-4 để khai
+  thác' — đó là bước tạo dữ liệu offline, không phải model inference; và 'SOTA
+  với chi phí tối thiểu' là claim của tác giả, không phải leaderboard độc lập.
+  Chưa đọc code, licence chưa xác minh.
 - **Chuyển giao:** sinh câu hỏi + SQL/code từ schema train → chạy thực thi → chỉ giữ
   cặp chạy đúng và cho kết quả khớp → fine-tune. Phải sửa: (1) thêm rulebook vào
   prompt sinh, (2) thêm các type output của DataMate, (3) thêm ví dụ unanswerable
@@ -93,11 +111,18 @@
   structural theo từng giai đoạn; Critic quản lý lịch sử sửa lỗi (delta-guided
   memory) để tránh sửa vòng quanh; bước kiểm tra logic cuối đối chiếu chương trình
   với ý định gốc — vì thực thi không bắt được lỗi "executable-but-incorrect".
-- **Judge-Then-Solve (preprint 2026, chỉ dựa trên mô tả tóm tắt, chưa đọc toàn
-  văn):** bắt model phán quyết answerability trong một block riêng trước khi giải;
-  nếu UNANSWERABLE thì dừng và abstain ngay; nếu ANSWERABLE thì mới giải. Điểm đáng
-  lấy: tách bước "đủ dữ liệu hay không" thành quyết định có thể đo, kiểm tra và
-  calibration riêng.
+- **Judge-Then-Solve — arXiv ID đã sửa: 2605.28070** (Gu và cộng sự, nộp
+  27/05/2026 — https://arxiv.org/pdf/2605.28070; ID cũ 2602.04755 trong ghi chú
+  gốc là sai, mirror r2.dev đã bỏ, thay bằng arXiv chính thức). Paper tháng
+  5/2026 **trước cả hai mốc cutoff** (01/10/2026, 26/10/2026) nên ý tưởng không
+  bị loại vì cutoff; hạn chế thực sự là miền medical và việc chưa có checkpoint
+  nào được xác minh. Cơ chế: bắt model phán quyết answerability trong một block
+  riêng trước khi giải; nếu UNANSWERABLE thì dừng và abstain ngay; nếu
+  ANSWERABLE thì mới giải. Điểm đáng lấy: tách bước "đủ dữ liệu hay không"
+  thành quyết định có thể đo, kiểm tra và calibration riêng. **Lưu ý phân biệt
+  với DataMate:** trong DataMate, `unanswerable` và `abstain` là hai quyết định
+  khác nhau với hai bộ ngưỡng khác nhau (xem deep-profiles §7) — không gộp
+  UNANSWERABLE của JTS thành abstain mù.
 - **Áp dụng cho DataMate:** cài 3 vai trò bằng cùng một model nhỏ nhưng prompt khác
   nhau (tiết kiệm tham số): (a) Planner liệt kê cột/bảng/cửa sổ/quy tắc cần thiết và
   kết luận đủ/thiếu dữ liệu; (b) Coder viết code từ plan; (c) Checker đối chiếu code
@@ -134,11 +159,16 @@
   pilot cho thấy word segmentation tiếng Việt cải thiện kết quả, NPMI hữu ích cho
   schema linking, PhoBERT giúp hiệu quả cao hơn XLM-R trong thí nghiệm đó
   (author-reported). Paper: https://ar5iv.labs.arxiv.org/abs/2010.01891
-- **PhoBERT:** base 135M, large 370M tham số (theo slide tác giả:
-  https://datquocnguyen.github.io/resources/DatQuocNguyen_AIDay2020_FinalVersion.pdf).
-  Cả hai đều nhỏ, có thể nằm trong ngân sách 15B nếu dùng làm encoder phụ — nhưng
-  phải kiểm tra giấy phép và ngày phát hành của checkpoint cụ thể, và phải cộng
-  tham số vào tổng.
+- **PhoBERT — đã nâng cấp từ slide lên README chính thức:**
+  https://github.com/VinAIResearch/PhoBERT. **`vinai/phobert-base` 135M, MIT;
+  `vinai/phobert-large` 370M, MIT; `vinai/phobert-base-v2` 135M, GNU AGPL v3.**
+  Dùng base (MIT) cho budget; base-v2 (AGPL v3) chỉ dùng nếu chấp nhận copyleft
+  trong Docker. **Cảnh báo kỹ thuật từ README: 'INPUT TEXT MUST BE ALREADY
+  WORD-SEGMENTED!'** — PhoBERT không nhận text thô tiếng Việt chưa tách từ;
+  pipeline schema linking phải cộng thêm một bộ tách từ (ví dụ RDRsegmenter —
+  chưa tính tham số/giấy phép, phải bổ sung trước khi chốt pipeline). Cả hai
+  đều nhỏ, có thể nằm trong ngân sách 15B nếu dùng làm encoder phụ — và phải
+  cộng tham số vào tổng.
 - **ViR² (DOI 10.31276/VJSTE.2025.0089):** retrieval ngữ nghĩa rồi rerank theo cú pháp
   bằng beam search; trên ViText2SQL đạt 23,33% Exact Match và 87,83% component-level
   F1, vượt Random, Skill-KNN, ASTRES và DICL tới 5 điểm EM theo báo cáo của tác giả.
@@ -161,9 +191,9 @@ Hugging Face trước khi dùng.*
 
 | Model | Cỡ / license (secondary) | Ngày (secondary) | Kết luận tạm thời |
 |---|---|---|---|
-| Qwen3-8B (dense) | 8B, Apache 2.0 | 2025-04-28 | Đủ điều kiện về ngày và cỡ theo nguồn thứ cấp; còn dư ngân sách cho encoder/reranker nhỏ |
-| Qwen2.5-Coder-7B-Instruct | 7,61B, Apache 2.0, context 128K | 2024-09-19 | **Lựa chọn an toàn nhất cho vai trò Coder** |
-| Qwen2.5-Coder-14B-Instruct | 14,7B, Apache 2.0, context 128K | 2024-09 | **Cẩn thận:** cộng PhoBERT-base 0,135B là 14,835B — sát trần 15B; cộng thêm reranker khác là vượt |
+| Qwen3-8B (dense) | 8,19B (secondary — card gốc chưa mở trực tiếp trong round 2), Apache 2.0 (family-level) | 2025-04-28 (family) | Đối chứng cho D-M1, không phải mặc định; đọc config.json trước khi dùng |
+| Qwen2.5-Coder-7B-Instruct | 7,61B tổng / 6,53B non-embedding, 28 layer, context 131.072 (mặc định 32.768, YaRN để mở rộng), paper arXiv 2409.12186, Apache 2.0 | Blog chính thức 19/09/2024; ngày commit đầu tiên trên HF **chưa trích được** (không dùng ngày blog thứ cấp 15/04/2025) | **Lựa chọn an toàn nhất cho vai trò Coder**; 7,61 + PhoBERT-base 0,135 = 7,745B, dư 7,255B |
+| Qwen2.5-Coder-14B-Instruct | 14,7B tổng / 13,1B non-embedding, Apache 2.0 | 2024-09 (family) | **Cẩn thận:** cộng PhoBERT-base 0,135B là 14,835B — chỉ dư 0,165B, không còn chỗ cho bất kỳ model phụ nào; nếu BTC tính non-embedding (13,1B) thì dư 1,765B, nhưng **không được dựa vào cách tính này** cho tới khi có xác nhận (Q-D5). Chỉ thử khi D-M1/D-M2 bão hòa và đã đo được ngân sách thời gian. |
 | Qwen2.5-Coder-32B | 32,5B | 2024-09 | **Loại trực tiếp** (vượt 15B); chỉ dùng kết quả BASE-SQL làm bằng chứng pipeline |
 | Qwen3 MoE 30B-A3B, 235B-A22B | Tổng 30B / 235B, chỉ kích hoạt 3B / 22B | 2025-04 | **Loại trực tiếp:** luật tính toàn bộ tham số MoE |
 | gpt-oss-20B (MoE, tổng 21B) | Tổng 21B | 2025-08 | **Loại** nếu tính tổng tham số MoE (21B > 15B) |
@@ -180,4 +210,10 @@ bài học: schema linking bằng từ vựng đơn thuần không luôn giúp m
 self-correction dựa trên thực thi có giá trị hơn trong ngân sách nhỏ. BASE-SQL cho
 thấy fine-tune ít mẫu cũng có hiệu quả: 14B/32B ổn định sau khoảng 150 bước
 (~1,2k mẫu), 7B sau khoảng 250 bước (~4k mẫu) theo mô tả của BASE-SQL — vẫn phải
-đo trên held-out của ZAIC.
+đo trên held-out của ZAIC. **Thí nghiệm phân biệt cùng-checkpoint đa vai trò
+(bổ sung round 2):** trên 50 câu held-out, so (a) coder đơn, (b) coder + checker
+cùng checkpoint, (c) coder + checker bằng code (không LLM: thực thi + kiểm tra
+type + kiểm tra khoảng ngày/đơn vị). Chỉ giữ (b) nếu PA tăng trên held-out mà
+không tăng giây/câu hỏi quá ngân sách; nếu không, giữ (c) — checker code rẻ và
+không mù cùng lỗi với coder. Một checkpoint dùng nhiều vai trò tính tham số
+một lần, nhưng rủi ro thì không tính một lần.
