@@ -7,7 +7,18 @@ counterfactuals built from real gold situations (should-fire):
     evaluated against a roster doctored to duplicate the write's contact.
   * Gate 2 (read-before-write): gold entity-referencing writes with full
     session evidence vs the same writes evaluated with the evidence
-    removed (empty prior calls/observations/rosters).
+    removed (empty PriorCall list + empty rosters). FIX ROUND: the gate
+    now takes PriorCall objects (tool, args, result_scalars, succeeded)
+    -- prior-call ARGUMENTS never count (a proposal is not evidence)
+    and result scalars that echo the call's own arguments are excluded
+    (sms/phone never validate contacts). ALL references are checked.
+    An old-vs-new effect count is reported when the round-10 module is
+    available (--old-gates-path): gold applicable writes where the OLD
+    rule passed but the NEW gate fires (the F-effect: stricter evidence
+    blocks gold) and vice versa. The verdict follows the re-audit:
+    if stricter evidence pushes precision below 95%, the verdict
+    becomes DROP with the FP breakdown -- the old counting is NOT
+    smuggled back in to rescue it.
   * Gate 3 literal (transfer confirmation): gold transfers checked for
     confirmation markers. Because gold transfers ARE correct executions,
     a fire here is a gold contradiction, not a false positive in the
@@ -38,6 +49,7 @@ Usage:
 
 import argparse
 import collections
+import importlib.util
 import json
 import math
 import sys
@@ -47,7 +59,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
 from lifemate_gates import (  # noqa: E402
     gate_contact_ambiguity, gate_read_before_write, gate_confirmation,
-    gate_confirmation_scoped)
+    gate_confirmation_scoped, PriorCall)
 from lifemate_provenance import find_number_spans, nfc_lower  # noqa: E402
 
 READ_VERBS = ("search", "list", "get", "status", "forecast", "balance",
@@ -132,7 +144,20 @@ def main():
     ap.add_argument("--data-root", required=True)
     ap.add_argument("--split", required=True)
     ap.add_argument("--out-json", default="/tmp/gates_audit.json")
+    ap.add_argument("--old-gates-path",
+                    default=str(Path.home() / "workspace" / "round10-base"
+                                / "lifemate_gates.py"),
+                    help="Round-10 gates module for the old-vs-new G2 "
+                         "effect count; skipped if the file is missing.")
     args = ap.parse_args()
+
+    old_g2 = None
+    if Path(args.old_gates_path).exists():
+        spec = importlib.util.spec_from_file_location(
+            "old_lifemate_gates", args.old_gates_path)
+        old_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(old_mod)
+        old_g2 = old_mod.gate_read_before_write
 
     split = json.load(open(args.split))
     dev_ids = {k for k, v in split.items() if v == "dev"}
@@ -152,10 +177,12 @@ def main():
             continue
         gold = s["label"]["tool_calls"]
         current_text = s.get("audio_text", "")
-        # History evidence.
+        # History evidence: PriorCall objects (fix-round G2 contract)
+        # plus the legacy tuple/scalar forms for the old-vs-new count.
         hist_user = []
         hist_calls = []
         hist_obs = []
+        hist_priors = []
         hist_rosters = []
         hist_ask_positions = []  # indices into hist_user after each ask
         for h in s.get("history", []):
@@ -164,11 +191,20 @@ def main():
             elif h.get("role") == "assistant":
                 calls = h.get("tool_calls") or []
                 results = h.get("tool_results") or []
-                for call in calls:
+                for idx, call in enumerate(calls):
                     hist_calls.append((call.get("name"),
                                        call.get("arguments") or {}))
                     if call.get("name") == "sys.ask_missing_info":
                         hist_ask_positions.append(len(hist_user))
+                    res = results[idx] if idx < len(results) else None
+                    ok = isinstance(res, dict) and res.get("ok") is True \
+                        and res.get("done") is not False
+                    flat = []
+                    if res is not None:
+                        flatten_scalars(res, flat)
+                    hist_priors.append(PriorCall(
+                        call.get("name"), call.get("arguments") or {},
+                        result_scalars=flat, succeeded=ok))
                 for res in results:
                     flatten_scalars(res, hist_obs)
                     collect_rosters(res, hist_rosters)
@@ -176,12 +212,21 @@ def main():
         env = ToolEnv("train", s["id"], root=args.data_root)
         replay_obs = []       # (position, scalars)
         replay_rosters = []   # (position, entry)
+        replay_priors = []    # (position, PriorCall)
         for idx, call in enumerate(gold):
             try:
                 res = env.call(call.get("name"),
                                call.get("arguments") or {})
             except Exception:
-                continue
+                res = None
+            ok = isinstance(res, dict) and res.get("ok") is True \
+                and res.get("done") is not False
+            flat = []
+            if res is not None:
+                flatten_scalars(res, flat)
+            replay_priors.append((idx, PriorCall(
+                call.get("name"), call.get("arguments") or {},
+                result_scalars=flat, succeeded=ok)))
             if call.get("name") == "contacts.search" \
                     and isinstance(res, dict) and res.get("ok"):
                 for entry in res.get("contacts") or []:
@@ -189,8 +234,6 @@ def main():
                         replay_rosters.append(
                             (idx, {"id": entry["id"],
                                    "name": entry.get("name", "")}))
-            flat = []
-            flatten_scalars(res, flat)
             replay_obs.append((idx, flat))
         # Evaluate every gold write.
         for pos, call in enumerate(gold):
@@ -200,10 +243,12 @@ def main():
             call_args = call.get("arguments") or {}
             rosters = list(hist_rosters) + [e for p, e in replay_rosters
                                             if p < pos]
-            prior_calls = list(hist_calls) + [
+            priors = list(hist_priors) + [pc for p, pc in replay_priors
+                                          if p < pos]
+            old_prior_calls = list(hist_calls) + [
                 (c.get("name"), c.get("arguments") or {})
                 for c in gold[:pos]]
-            prior_obs = list(hist_obs) + [
+            old_prior_obs = list(hist_obs) + [
                 v for p, flat in replay_obs if p < pos for v in flat]
             # ---- Gate 1
             g1 = gate_contact_ambiguity(call, rosters)
@@ -228,19 +273,28 @@ def main():
                         stats["g1"]["synthetic_TP"] += 1
                     else:
                         stats["g1"]["synthetic_FN"] += 1
-            # ---- Gate 2
-            g2 = gate_read_before_write(call, prior_calls, prior_obs,
-                                        rosters)
+            # ---- Gate 2 (fix-round PriorCall contract)
+            g2 = gate_read_before_write(call, priors, rosters)
             if g2.applicable:
                 stats["g2"]["gold_applicable"] += 1
                 if g2.fired:
                     stats["g2"]["gold_fired_FP"] += 1
                 # Synthetic: same write, evidence removed.
-                g2s = gate_read_before_write(call, [], [], [])
+                g2s = gate_read_before_write(call, [], [])
                 if g2s.fired:
                     stats["g2"]["synthetic_TP"] += 1
                 else:
                     stats["g2"]["synthetic_FN"] += 1
+                # Old-vs-new effect (round-10 module, if available).
+                if old_g2 is not None:
+                    old = old_g2(call, old_prior_calls, old_prior_obs,
+                                 rosters)
+                    if old.applicable:
+                        stats["g2"]["old_new_both_applicable"] += 1
+                        if not old.fired and g2.fired:
+                            stats["g2"]["old_passed_new_fired"] += 1
+                        elif old.fired and not g2.fired:
+                            stats["g2"]["old_fired_new_passed"] += 1
             # ---- Gate 3 (transfers only)
             if name in ("banking.transfer", "ewallet.transfer"):
                 texts = hist_user + [current_text]
@@ -289,6 +343,14 @@ def main():
 
     g1 = precision_report("g1")
     g2 = precision_report("g2")
+    g2["old_new_both_applicable"] = stats["g2"]["old_new_both_applicable"]
+    g2["old_passed_new_fired"] = stats["g2"]["old_passed_new_fired"]
+    g2["old_fired_new_passed"] = stats["g2"]["old_fired_new_passed"]
+    g2["old_new_note"] = (
+        "old_passed_new_fired = gold writes the round-10 rule passed "
+        "but the fixed gate fires (stricter evidence: prior args and "
+        "echoes no longer count). If this pushes precision below 95%, "
+        "the verdict is DROP; the old counting is not restored.")
     g3s = precision_report("g3_scoped")
     lit_total = stats["g3_literal"]["gold_transfers"]
     lit_fired = stats["g3_literal"]["gold_fired"]

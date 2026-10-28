@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
 from lifemate_gates import (  # noqa: E402
     gate_contact_ambiguity, gate_read_before_write, gate_confirmation,
-    gate_confirmation_scoped, AskBudget)
+    gate_confirmation_scoped, AskBudget, PriorCall)
 
 ROSTER_DUP = [{"id": "c_05", "name": "Minh"},
               {"id": "c_08", "name": "Minh"},
@@ -71,40 +71,78 @@ class TestGate1(unittest.TestCase):
 class TestGate2(unittest.TestCase):
     def test_contact_needs_search(self):
         call = {"name": "sms.send", "arguments": {"contact_id": "c_05"}}
-        r = gate_read_before_write(call, [], [], ROSTER_CLEAN)
+        r = gate_read_before_write(call, [], ROSTER_CLEAN)
         self.assertFalse(r.fired)  # roster establishes the contact
-        r = gate_read_before_write(call, [], [], [])
+        r = gate_read_before_write(call, [], [])
         self.assertTrue(r.fired)
 
-    def test_entity_id_needs_observation(self):
+    def test_entity_id_needs_succeeded_result(self):
         call = {"name": "alarm.delete",
                 "arguments": {"alarm_id": "alm_01"}}
-        r = gate_read_before_write(call, [], ["alm_01"], [])
+        # A succeeded read whose result carries the id: pass.
+        r = gate_read_before_write(
+            call, [PriorCall("alarm.list", {},
+                             result_scalars=["alm_01"], succeeded=True)],
+            [])
         self.assertFalse(r.fired)
-        r = gate_read_before_write(call, [], [], [])
+        # No evidence at all: fires.
+        r = gate_read_before_write(call, [], [])
         self.assertTrue(r.fired)
-        # A prior call using the same id also establishes it.
+        # Fix round F: a prior WRITE's arguments never establish the id,
+        # even when that write succeeded.
         r = gate_read_before_write(
-            call, [("alarm.list", {})], [], [])
-        self.assertTrue(r.fired)  # list with no args does not carry the id
+            call, [PriorCall("alarm.snooze", {"alarm_id": "alm_01"},
+                             succeeded=True)],
+            [])
+        self.assertTrue(r.fired)
+        # Fix round F2: a result scalar that echoes the call's own
+        # argument proves nothing (sms/phone never validate contacts).
         r = gate_read_before_write(
-            call, [("alarm.snooze", {"alarm_id": "alm_01"})], [], [])
-        self.assertFalse(r.fired)
+            {"name": "sms.send", "arguments": {"contact_id": "c_05"}},
+            [PriorCall("sms.send", {"contact_id": "c_05"},
+                       result_scalars=["c_05"], succeeded=True)],
+            [])
+        self.assertTrue(r.fired)
+        # A failed read establishes nothing.
+        r = gate_read_before_write(
+            call, [PriorCall("alarm.list", {},
+                             result_scalars=[], succeeded=False)],
+            [])
+        self.assertTrue(r.fired)
+
+    def test_all_references_checked(self):
+        # Fix round G: an established contact must not mask an
+        # unestablished entity id in the same call (synthetic schema:
+        # no real tool combines both -- defence in depth).
+        call = {"name": "x.transfer",
+                "arguments": {"contact_id": "c_05",
+                              "event_id": "evt_99"}}
+        r = gate_read_before_write(call, [], ROSTER_CLEAN)
+        self.assertTrue(r.fired)
+        self.assertIn("evt_99", r.reason)
 
     def test_fully_specified_create_is_not_applicable(self):
         r = gate_read_before_write(
             {"name": "reminders.create",
              "arguments": {"time": "2026-11-19T08:00:00+07:00"}},
-            [], [], [])
+            [], [])
         self.assertFalse(r.applicable)
 
-    def test_bare_mutate_verb_needs_app_read(self):
+    def test_bare_mutate_verb_needs_succeeded_app_read(self):
         call = {"name": "calendar.delete_event", "arguments": {}}
-        r = gate_read_before_write(call, [], [], [])
+        r = gate_read_before_write(call, [], [])
         self.assertTrue(r.fired)
         r = gate_read_before_write(
-            call, [("calendar.list_events", {})], [], [])
+            call, [PriorCall("calendar.list_events", {},
+                             result_scalars=[], succeeded=True)],
+            [])
         self.assertFalse(r.fired)
+        # A failed read does not count as a read.
+        r = gate_read_before_write(
+            call, [PriorCall("calendar.list_events", {},
+                             result_scalars=[], succeeded=False)],
+            [])
+        self.assertTrue(r.fired)
 
 
 class TestGate3(unittest.TestCase):

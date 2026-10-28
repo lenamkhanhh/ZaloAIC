@@ -85,6 +85,11 @@ class TestNumberWords(unittest.TestCase):
         # ISO dates must not be mistaken for numbers.
         spans = find_number_spans("ngày 2026-11-14")
         self.assertEqual([v for _, v in spans], [])
+        # Fix round: phone numbers and identifier digits are not amounts.
+        spans = find_number_spans("gọi cho Minh số 0914061230 nhé")
+        self.assertNotIn(914061230, [v for _, v in spans])
+        spans = find_number_spans("mã đơn c_9526 giao rồi")
+        self.assertNotIn(9526, [v for _, v in spans])
 
 
 class TestRelativeDate(unittest.TestCase):
@@ -208,19 +213,59 @@ class TestProver(unittest.TestCase):
 
     def test_observation_same_app_vs_cross_app(self):
         # Same-app observation proves; cross-app is UNPROVEN (flagged).
+        # Observations are (tool, field, value, entity) quadruples.
         ev = Evidence(
             current_text="dời lịch",
-            history_observations=[("calendar.list_events",
-                                   "2026-11-10T15:00:00+07:00")],
+            turn_observations=[("calendar.list_events", "start",
+                                "2026-11-10T15:00:00+07:00", "evt_02")],
             anchor=ANCHOR)
         v = prove_argument("start", "2026-11-10T15:00:00+07:00",
-                           "calendar.update_event", ev)
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_02"})
         self.assertEqual(v.status, "PROVEN")
         self.assertEqual(v.rule, "observation")
         v = prove_argument("time", "2026-11-10T15:00:00+07:00",
                            "alarm.create", ev)
         self.assertEqual(v.status, "UNPROVEN")
         self.assertEqual(v.rule, "observation_cross_app")
+
+    def test_observation_field_must_match_slot(self):
+        # Fix round D: a balance field never proves an amount.
+        ev = Evidence(
+            current_text="chuyển tiền cho Minh",
+            turn_observations=[("banking.get_balance", "balance",
+                                500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+        ev2 = Evidence(
+            current_text="chuyển tiền cho Minh",
+            turn_observations=[("banking.get_balance", "amount",
+                                500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2)
+        self.assertEqual(v.status, "PROVEN")
+
+    def test_observation_untyped_entries_never_prove(self):
+        # Legacy (tool, scalar) pairs and plain scalars carry no field
+        # (and plain scalars no app): UNKNOWN source, never PROVEN.
+        ev = Evidence(
+            current_text="dời lịch",
+            turn_observations=[("calendar.list_events",
+                                "2026-11-10T15:00:00+07:00")],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-10T15:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_02"})
+        self.assertEqual(v.status, "UNPROVEN")
+        ev2 = Evidence(
+            current_text="dời lịch",
+            turn_observations=["2026-11-10T15:00:00+07:00"],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-10T15:00:00+07:00",
+                           "calendar.update_event", ev2,
+                           call_args={"event_id": "evt_02"})
+        self.assertEqual(v.status, "UNPROVEN")
 
     def test_offset_and_duration(self):
         # "dời muộn hơn nửa tiếng": obs event 15:00-16:00 -> 15:30-16:30.
@@ -249,8 +294,10 @@ class TestProver(unittest.TestCase):
         v = prove_argument("start", "2026-11-10T15:30:00+07:00",
                            "calendar.update_event", ev2, call_args={})
         self.assertEqual(v.status, "UNPROVEN")
-        ev = Evidence(current_text="xóa cái sớm nhất giúp tôi",
-                      history_observations=["2026-11-14T06:15:00+07:00"],
+        ev = Evidence(current_text="xóa cái sớm nhất của Minh giúp tôi",
+                      turn_observations=[("alarm.list_alarms", "time",
+                                          "2026-11-14T06:15:00+07:00",
+                                          None)],
                       rosters=[{"id": "c_05", "name": "Minh"}],
                       anchor=ANCHOR)
         v = prove_argument("time", "2026-11-14T06:15:00+07:00",
@@ -262,33 +309,58 @@ class TestProver(unittest.TestCase):
         self.assertEqual(v.rule, "roster")
         v = prove_argument("contact_id", "c_99", "sms.send", ev)
         self.assertEqual(v.status, "UNPROVEN")
+        # Roster without an exclusive mention proves existence only.
+        ev2 = Evidence(current_text="xóa cái sớm nhất giúp tôi",
+                       rosters=[{"id": "c_05", "name": "Minh"}],
+                       anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_05", "sms.send", ev2)
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertEqual(v.rule, "roster_no_intent")
 
     def test_history_reference_unique_vs_ambiguous(self):
+        # Succeeded history calls only: legacy 2-tuples (unknown
+        # outcome) do not prove.
         ev = Evidence(
             current_text="chuyển số tiền cũ cho Minh",
-            history_call_args=[("banking.transfer", {"amount": 500000})],
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True)],
             anchor=ANCHOR)
         v = prove_argument("amount", 500000, "banking.transfer", ev)
         self.assertEqual(v.status, "PROVEN")
         self.assertEqual(v.rule, "history_reference")
         ev2 = Evidence(
             current_text="chuyển số tiền cũ cho Minh",
-            history_call_args=[("banking.transfer", {"amount": 500000}),
-                               ("banking.transfer", {"amount": 700000})],
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True),
+                               ("banking.transfer", {"amount": 700000},
+                                True)],
             anchor=ANCHOR)
         v = prove_argument("amount", 500000, "banking.transfer", ev2)
         self.assertEqual(v.status, "AMBIGUOUS")
+        ev3 = Evidence(
+            current_text="chuyển số tiền cũ cho Minh",
+            history_call_args=[("banking.transfer", {"amount": 500000})],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev3)
+        self.assertEqual(v.status, "UNPROVEN")
 
     def test_datetime_assembly(self):
-        # Date comes from a history turn, time from the current turn:
-        # neither span alone equals the gold datetime, but together they do.
-        ev = Evidence(current_text="hẹn lại lúc 9 giờ",
-                      history_user_texts=["hôm qua tôi họp với Lan"],
+        # Same current text, exactly one date span + one time span.
+        ev = Evidence(current_text="hẹn bốn giờ chiều mai đi",
                       anchor=ANCHOR)
-        v = prove_argument("time", "2026-11-17T09:00:00+07:00",
-                           "calendar.create_event", ev)
+        v = prove_argument("time", "2026-11-19T16:00:00+07:00",
+                           "reminders.create", ev)
         self.assertEqual(v.status, "PROVEN")
         self.assertEqual(v.rule, "datetime_assembly")
+        # Fix round C: a bare "lại" no longer pairs a current date word
+        # with an unrelated history time.
+        ev = Evidence(
+            current_text="nhắc tôi lại ngày mai nhé",
+            history_user_texts=["đi công viên lúc 15 giờ hôm qua"],
+            anchor=ANCHOR)
+        v = prove_argument("time", "2026-11-19T15:00:00+07:00",
+                           "reminders.create", ev)
+        self.assertEqual(v.status, "UNPROVEN")
 
     def test_default_only_when_declared(self):
         ev = Evidence(current_text="nhắc tôi uống thuốc", anchor=ANCHOR,
@@ -323,6 +395,115 @@ class TestProver(unittest.TestCase):
         self.assertEqual(base.status, "UNPROVEN")
         full = prove_argument("amount", 2000000, "banking.transfer", ev)
         self.assertEqual(full.status, "PROVEN")
+
+
+class TestFixRoundRegressions(unittest.TestCase):
+    """Codex counterexamples A-H: each must stay UNPROVEN/SUPERSEDED."""
+
+    def test_a_substring_number(self):
+        ev = Evidence(current_text="chuyển 1500000 cho Minh",
+                      anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_a2_phone_number(self):
+        ev = Evidence(current_text="gọi cho Minh số 0914061230 nhé",
+                      anchor=ANCHOR)
+        v = prove_argument("amount", 914061230, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_a3_identifier_digits(self):
+        ev = Evidence(current_text="mã đơn c_9526 giao rồi",
+                      anchor=ANCHOR)
+        v = prove_argument("amount", 9526, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_a4_substring_id(self):
+        ev = Evidence(
+            current_text="nhắn cho c_100 nhé",
+            rosters=[{"id": "c_10", "name": "Minh"}],
+            anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_10", "sms.send", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_b_date_only_never_midnight(self):
+        ev = Evidence(current_text="Nhắc tôi sáng mai uống thuốc",
+                      anchor=ANCHOR)
+        v = prove_argument("time", "2026-11-19T00:00:00+07:00",
+                           "reminders.create", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_d_balance_field(self):
+        ev = Evidence(
+            current_text="chuyển tiền cho Minh",
+            turn_observations=[("banking.get_balance", "balance",
+                                500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_e_unrelated_prior_call_offset(self):
+        ev = Evidence(
+            current_text="dời lịch họp mai muộn hơn nửa tiếng nhé",
+            prior_call_args=[("alarm.create",
+                              {"time": "2026-11-18T10:00:00+07:00"},
+                              True)],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-18T10:30:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_99"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_h4_cancel_blocks_history(self):
+        ev = Evidence(
+            current_text="thôi khỏi chuyển số tiền cũ",
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_h5_corrected_history_reference(self):
+        ev = Evidence(
+            current_text="chuyển số tiền cũ à không 700000",
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "SUPERSEDED")
+
+    def test_h9_duration_needs_proven_start(self):
+        event = {"id": "evt_02", "start": "2026-11-10T15:00:00+07:00",
+                 "end": "2026-11-10T16:00:00+07:00"}
+        ev = Evidence(
+            current_text="dời lịch đi",
+            observation_events=[("calendar.list_events", event)],
+            anchor=ANCHOR)
+        v = prove_argument("end", "2026-11-10T16:30:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_02",
+                                      "start": "2026-11-10T15:30:00+07:00"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_h10_other_entity_time(self):
+        ev = Evidence(
+            current_text="dời lịch đi",
+            turn_observations=[("calendar.list_events", "start",
+                                "2026-11-10T16:00:00+07:00", "evt_02")],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-10T16:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_01"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_roster_duplicate_name_ambiguous(self):
+        ev = Evidence(
+            current_text="nhắn cho Minh nhé",
+            rosters=[{"id": "c_05", "name": "Minh"},
+                     {"id": "c_09", "name": "Minh"}],
+            anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_05", "sms.send", ev)
+        self.assertEqual(v.status, "AMBIGUOUS")
 
 
 if __name__ == "__main__":

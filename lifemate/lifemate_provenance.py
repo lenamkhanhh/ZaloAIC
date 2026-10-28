@@ -1,20 +1,38 @@
-"""Provenance DAG and deterministic re-derivation for LifeMate (Round 10).
+"""Typed-evidence rule engine for LifeMate provenance (Round 10, fixed).
 
 Standalone module: standard library only, no model, no network, no simulator
 access. It answers one question per tool argument: can CPU code re-derive
 this exact value from evidence the agent legitimately observed (current
 request, history, prior observations, declared defaults) -- or not?
 
-Design rules (from the Round 9 report, applied literally):
+HONEST NAMING (fix round): this is a RULE ENGINE returning Verdicts
+with rule + detail attribution, not a graph DAG. Derivations are not
+stored as nodes with edges, and invalidation is by rule order
+(supersede/cancel) and by re-proof, not by graph propagation. A real DAG
+would need explicit parent pointers per value plus invalidation when a
+parent is superseded, cancelled, or shown failed; that structure is not
+built here, so the report calls this a rule engine.
+
+Design rules (applied literally):
 - Total-or-reject: every parser returns a value or None. It never guesses.
-- Verbatim matching is only rule 1. The DAG extends PROVEN coverage to
-  normalised, relative-date, history, corrected and multi-source values
-  WITHOUT loosening the rule: re-derivation must reproduce the argument
-  exactly, otherwise the verdict is UNPROVEN (and a write must then ASK,
-  never execute on a guess).
+- Whole spans only: a number must equal a whole parsed span (never a
+  substring of a bigger number, phone number, identifier, date or time);
+  a string must match as a whole phrase with identifier boundaries.
+- Typed time: DATE, TIME and DATETIME are distinct. A date-only span
+  never proves a datetime (hour_missing must not become 00:00).
+- History needs a link: values from earlier turns prove a current-turn
+  write only through an explicit reference phrase plus a unique
+  candidate, never by silent reuse across tasks.
+- Observations are typed: (tool, field, value, entity). Same app alone
+  is not enough; the field must equal the slot, the entity must match
+  (when the write names one), and a create may use only same-turn
+  observations.
+- A proposal is not evidence: prior-call arguments never prove a later
+  value unless the base value itself is independently PROVEN (offset /
+  duration parents), and failed calls contribute nothing.
 - Token-level taint through the LLM is NOT attempted: paraphrase destroys
-  token provenance. The DAG is built OUTSIDE the model from spans and
-  observation values plus deterministic derivation functions.
+  token provenance. Derivations are built OUTSIDE the model from spans
+  and observation values plus deterministic derivation functions.
 - Names are compared by NFC + lowercase exact equality. Tone folding is
   LOSSY (Huong == Huong-with-different-tone) and is never used here.
 
@@ -51,6 +69,7 @@ __all__ = [
     "prove_call",
     "HISTORY_REF_PHRASES",
     "CORRECTION_MARKERS",
+    "CANCEL_MARKERS",
 ]
 
 
@@ -260,15 +279,15 @@ def _parse_number_words_no_ruoi(tokens):
 # --------------------------------------------------------------------------
 
 _DIGIT_FORM_RE = re.compile(
-    r"(?<!\d)(?<!\d[.,])"
+    r"(?<![A-Za-z0-9_])"
     r"(\d{1,3}(?:[.,]\d{3})+|\d+)"
     r"(?:\s*(k|tr))?"
     r"(?![.,]?\d)",
 )
 _INT_UNIT_RE = re.compile(
-    r"(?<!\d)(\d+)\s*(trăm\s+)?(nghìn|ngàn|triệu|tỷ|tỉ)\b")
+    r"(?<![A-Za-z0-9_])(\d+)\s*(trăm\s+)?(nghìn|ngàn|triệu|tỷ|tỉ)\b")
 _DECIMAL_UNIT_RE = re.compile(
-    r"(?<!\d)(\d+)[.,](\d{1,2})\s*(nghìn|ngàn|triệu|tỷ|tỉ)\b")
+    r"(?<![A-Za-z0-9_])(\d+)[.,](\d{1,2})\s*(nghìn|ngàn|triệu|tỷ|tỉ)\b")
 _WORD_RUN_RE = re.compile(r"[^\W_]+", flags=re.UNICODE)
 
 
@@ -327,12 +346,24 @@ def find_number_spans(text):
         after = text[end] if end < len(text) else ""
         if before in "-:" or after in "-:":
             continue
+        # Skip phone-like digit runs: a 9-11 digit run starting with 0
+        # is a Vietnamese phone number, never an amount. (Grouped forms
+        # are amounts unless their digits look exactly like a phone.)
+        raw_digits = re.sub(r"[.,]", "", m.group(1))
+        if m.group(2) is None and len(raw_digits) in (9, 10, 11) \
+                and raw_digits.startswith("0") and raw_digits.isdigit():
+            continue
         value = _digit_form_value(m.group(1), m.group(2))
         if value is None:
             continue
         found.append((m.group(0), value))
         covered.append((start, end))
-    # Word runs: maximal consecutive number-word tokens.
+    # Word runs: maximal consecutive number-word tokens. A run that is
+    # a SINGLE pure-digit token is skipped here: pure-digit spans
+    # belong to the digit-form regex above, with its phone / identifier
+    # / date-time filters. Letting the word run re-add them would
+    # resurrect exactly the spans those filters removed ("0914061230"
+    # as an amount, "9526" out of "c_9526").
     tokens = [(m.group(0), m.start(), m.end())
               for m in _WORD_RUN_RE.finditer(text)]
     i = 0
@@ -345,6 +376,9 @@ def find_number_spans(text):
                         or tokens[j][0].isdigit())):
                 j += 1
             run = tokens[i:j]
+            if len(run) == 1 and run[0][0].isdigit():
+                i = j
+                continue
             span_text = text[run[0][1]:run[-1][2]]
             if not _claimed(run[0][1], run[-1][2]):
                 value = parse_number_words(" ".join(t[0] for t in run))
@@ -851,30 +885,52 @@ class Verdict:
     detail: str = ""
 
 
+CANCEL_MARKERS = [
+    "hủy", "huỷ", "không cần", "thôi khỏi", "bỏ qua", "đừng",
+    "thôi đừng", "không chuyển nữa", "hủy bỏ", "huỷ bỏ",
+]
+
+
 @dataclass
 class Evidence:
     """Everything the prover may use, assembled OUTSIDE the model.
 
-    current_text: the current request transcript.
+    current_text: the current request transcript. Span rules
+        (verbatim/number/relative_date) read ONLY this text: a value
+        stated in an earlier turn proves a current-turn write only
+        through the history_reference rule (explicit reference phrase +
+        unique candidate), never by silent reuse.
     history_user_texts: prior user turns' transcripts, in order.
-    history_observations: values seen in prior tool results. Entries are
-        scalars (app unknown, treated as same-app) or (tool, scalar)
-        tuples. Only same-app observations prove a value; a cross-app
-        match is reported as rule "observation_cross_app" (UNPROVEN),
-        never silently counted as proof.
-    history_call_args: [(tool, arguments)] of prior assistant calls.
+    history_observations: values seen in PRIOR TURNS' tool results, as
+        (tool, field, value, entity) quadruples. Legacy (tool, scalar)
+        pairs and plain scalars are accepted but NEVER prove anything:
+        without a field they cannot satisfy the field rule, and without
+        a tool they cannot satisfy the same-app rule. UNKNOWN source is
+        never defaulted to same-app/PROVEN.
+    turn_observations: values seen in THIS TURN's prefix reads, same
+        quadruple form. Only turn observations may prove a create
+        (a write with no entity id): a prior turn's observation belongs
+        to another task unless an entity link says otherwise.
+    history_call_args: [(tool, arguments)] or [(tool, arguments,
+        succeeded)] of prior turns' assistant calls. Entries with
+        succeeded=False are excluded from history candidates: a failed
+        call's arguments are proposals, not facts.
     rosters: [{id, name}] contacts observed via search before the write.
     observation_events: [(tool, event_dict)] event-like dicts from prior
-        results (same-sample prefix reads + history results), used by the
-        offset/duration rules. Events carry id/start/end/time fields.
-    prior_call_args: [(tool, arguments)] of same-sample gold calls
-        BEFORE the write (trajectory-linked values for the offset rule).
+        results (same-sample prefix reads + history results), used by
+        the offset/duration/assembly rules. Events prove only through
+        an entity link (see those rules).
+    prior_call_args: [(tool, arguments)] or [(tool, arguments,
+        succeeded)] of same-sample calls BEFORE the write. Used only
+        as offset bases, and only when the base value itself is
+        independently PROVEN (see the offset rule).
     anchor: datetime or ISO string for relative-date resolution.
     defaults: {slot: value} ONLY for catalog/policy-declared defaults.
     """
     current_text: str = ""
     history_user_texts: list = field(default_factory=list)
     history_observations: list = field(default_factory=list)
+    turn_observations: list = field(default_factory=list)
     history_call_args: list = field(default_factory=list)
     rosters: list = field(default_factory=list)
     observation_events: list = field(default_factory=list)
@@ -883,73 +939,85 @@ class Evidence:
     defaults: dict = field(default_factory=dict)
 
 
-def _norm_value_forms(value):
-    """String forms a value may legitimately appear in (for verbatim)."""
-    forms = set()
-    if isinstance(value, bool):
-        return forms
-    if isinstance(value, (int, float)):
-        if float(value).is_integer():
-            iv = int(value)
-            forms.add(str(iv))
-            forms.add(f"{iv:,}".replace(",", "."))
-            forms.add(f"{iv:,}".replace(",", ","))
-            forms.add(f"{iv:,}")
-    elif isinstance(value, str):
-        forms.add(nfc_lower(value))
-    return forms
+def _text_contains_phrase(form, text):
+    """Whole-phrase match: form must occur with identifier boundaries on
+    both sides, so "500000" never matches inside "1500000" and "c_10"
+    never matches inside "c_100". Substring matching is the bug this
+    replaces (Codex counterexample A)."""
+    if not form or not text:
+        return False
+    hay = nfc_lower(text)
+    form = nfc_lower(form)
+    return re.search(r"(?<![A-Za-z0-9_])" + re.escape(form)
+                     + r"(?![A-Za-z0-9_])", hay) is not None
 
 
 def _value_matches_text(value, text):
-    """Verbatim check: does a string form of value occur in text?"""
-    if not text:
+    """Verbatim check for STRING values only (whole-phrase match).
+
+    Numbers must never go through verbatim: they are proven only by
+    find_number_spans, where a value must equal a whole parsed span.
+    A numeric verbatim check is what let "500000" match inside
+    "1500000", a phone number, or an identifier's digits.
+    """
+    if not text or not isinstance(value, str):
         return False
-    hay = nfc_lower(text)
-    for form in _norm_value_forms(value):
-        if form and form in hay:
-            return True
-    return False
+    return _text_contains_phrase(value, text)
 
 
-def _datetime_value_forms(value):
-    """Forms of a datetime/date/time value for verbatim matching."""
-    forms = set()
+def _gold_temporal_kind(value):
+    """Classify a gold temporal value: 'datetime' | 'date' | 'time'."""
     if isinstance(value, datetime):
-        forms.add(value.strftime("%Y-%m-%dT%H:%M"))
-        forms.add(value.strftime("%Y-%m-%d %H:%M"))
-        forms.add(value.strftime("%H:%M"))
-        forms.add(value.strftime("%Y-%m-%d"))
-    elif isinstance(value, date):
-        forms.add(value.strftime("%Y-%m-%d"))
-        forms.add(value.strftime("%d/%m/%Y"))
-        forms.add(value.strftime("%d/%m"))
-    elif isinstance(value, str):
-        forms.add(nfc_lower(value))
-    return forms
+        return "datetime"
+    if isinstance(value, date):
+        return "date"
+    if isinstance(value, str):
+        v = value.strip()
+        if re.fullmatch(r"\d{2}:\d{2}(:\d{2})?", v):
+            return "time"
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            return "date"
+        if re.fullmatch(r"\d{4}-\d{2}", v):
+            return "date"
+        try:
+            datetime.fromisoformat(v)
+            return "datetime"
+        except ValueError:
+            return "date"
+    return None
 
 
 def _value_matches_datetime(value, parsed):
-    """Compare a gold datetime/date/time value against a parsed span."""
+    """Typed comparison of a gold temporal value against a parsed span.
+
+    DATE gold compares date parts only; TIME gold compares time parts
+    only; DATETIME gold requires both. A date-only span therefore NEVER
+    proves a datetime value -- not even a midnight one (Codex
+    counterexample B: hour_missing must not become 00:00). A datetime
+    span proves a date gold by its date part, and a time span proves a
+    time gold by its time part.
+    """
     if parsed is None or parsed.kind in ("week_only", "month_only"):
+        return False
+    kind = _gold_temporal_kind(value)
+    if kind is None:
         return False
     try:
         if isinstance(value, datetime):
             gold_dt = value
         elif isinstance(value, str):
             v = value.strip()
-            if re.fullmatch(r"\d{2}:\d{2}(:\d{2})?", v):
-                # Time-only gold: compare the time part only.
+            if kind == "time":
                 if parsed.kind in ("datetime", "time") and parsed.value:
                     return parsed.value.strftime("%H:%M") == v[:5]
                 return False
-            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
-                gold_dt = datetime(int(v[0:4]), int(v[5:7]), int(v[8:10]))
-            elif re.fullmatch(r"\d{4}-\d{2}", v):
-                # Year-month gold: compare year-month of the parsed date.
+            if re.fullmatch(r"\d{4}-\d{2}", v):
                 if parsed.value is None:
                     return False
                 pv = parsed.value
                 return (pv.year, pv.month) == (int(v[0:4]), int(v[5:7]))
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+                gold_dt = datetime(int(v[0:4]), int(v[5:7]), int(v[8:10]))
             else:
                 gold_dt = datetime.fromisoformat(v)
         elif isinstance(value, date):
@@ -958,24 +1026,23 @@ def _value_matches_datetime(value, parsed):
             return False
     except (ValueError, TypeError):
         return False
-    if parsed.kind == "date" and parsed.value is not None:
-        # Date-only span proves a date, never a full datetime. Compare
-        # against the CONVERTED gold datetime (gold_dt), not the raw
-        # value, so string gold datetimes are handled too.
-        if gold_dt.strftime("%H:%M") != "00:00":
-            return False
-        pv = parsed.value
-        return (pv.year, pv.month, pv.day) == (gold_dt.year, gold_dt.month,
-                                               gold_dt.day)
     if parsed.value is None:
         return False
     pv = parsed.value
+    if kind == "date":
+        if isinstance(pv, datetime):
+            return (pv.year, pv.month, pv.day) == (
+                gold_dt.year, gold_dt.month, gold_dt.day)
+        return (pv.year, pv.month, pv.day) == (
+            gold_dt.year, gold_dt.month, gold_dt.day)
+    if parsed.kind == "date":
+        # Date-only span, datetime gold: hour missing, never PROVEN.
+        return False
     if isinstance(pv, datetime):
         return (pv.year, pv.month, pv.day, pv.hour, pv.minute) == (
             gold_dt.year, gold_dt.month, gold_dt.day, gold_dt.hour,
             gold_dt.minute)
-    return (pv.year, pv.month, pv.day) == (gold_dt.year, gold_dt.month,
-                                           gold_dt.day)
+    return False
 
 
 def _scalar_equal(a, b):
@@ -1001,29 +1068,155 @@ def _scalar_equal(a, b):
     return False
 
 
-def _observation_match(value, observations, tool):
-    """Return (same_app, cross_app) for observation equality.
+def _norm_obs_entry(entry):
+    """Normalise one observation entry to (tool, field, value, entity).
 
-    Entries are scalars (app unknown -> treated as same-app) or
-    (tool_name, scalar) tuples. Same-app means the observation tool's app
-    family equals the write tool's app family.
+    Canonical form is a (tool, field, value, entity) quadruple, where
+    field is the result dict's leaf key (e.g. "amount", "balance",
+    "start") and entity is the enclosing object's id-ish value or None.
+    Legacy (tool, scalar) pairs yield field=None (unknown field: can
+    never satisfy the field rule) and plain scalars yield tool=None
+    (unknown app: can never satisfy the same-app rule). Both are kept
+    visible for diagnostics but prove nothing.
+    """
+    if isinstance(entry, tuple) and len(entry) == 4:
+        return entry
+    if isinstance(entry, tuple) and len(entry) == 2:
+        return entry[0], None, entry[1], None
+    return None, None, entry, None
+
+
+def _observation_candidates(value, turn_obs, history_obs, tool, slot,
+                            call_args):
+    """Match a value against structured observations.
+
+    Returns (status, rule, detail) where status is "proven",
+    "ambiguous", "cross_app", "unknown" or None (no match at all).
+    A match must satisfy ALL of:
+      * same app family as the write tool;
+      * field == slot exactly (a "balance" field never proves an
+        "amount" -- Codex counterexample D);
+      * entity: when the write references entity ids, the observation's
+        entity must be None (unattributed, allowed only if unique) or
+        one of the write's ids (a different entity's value never proves
+        this write -- counterexample C/H10);
+      * source: a write with no entity id (a create) may use only
+        same-turn observations; a prior turn's observation belongs to
+        another task unless an entity link says otherwise.
+    Uniqueness: >1 distinct entities among eligible matches is
+    AMBIGUOUS, not proof (two tasks with the same value are not one
+    source of truth).
     """
     app = (tool or "").split(".", 1)[0] if "." in (tool or "") else ""
-    same = False
+    call_ids = set()
+    if call_args:
+        for key, val in call_args.items():
+            if key.endswith("_id") and isinstance(val, str):
+                call_ids.add(val)
+    eligible = []   # (entity, source)
     cross = False
-    for entry in observations:
-        if isinstance(entry, tuple) and len(entry) == 2:
-            obs_tool, obs_value = entry
+    unknown = False
+    for source, obs_list in (("turn", turn_obs), ("history", history_obs)):
+        for entry in obs_list or []:
+            obs_tool, field, obs_value, entity = _norm_obs_entry(entry)
+            if not _scalar_equal(obs_value, value):
+                continue
             obs_app = (obs_tool or "").split(".", 1)[0] \
                 if "." in (obs_tool or "") else ""
-        else:
-            obs_value, obs_app = entry, app
-        if _scalar_equal(obs_value, value):
-            if obs_app == app:
-                same = True
-            else:
+            if obs_tool is None or field is None:
+                unknown = True
+                continue
+            if obs_app != app:
                 cross = True
-    return same, cross
+                continue
+            if field != slot:
+                continue
+            if call_ids:
+                if entity is not None and entity not in call_ids:
+                    continue
+            else:
+                if source != "turn":
+                    continue
+            eligible.append((entity, source))
+    if eligible:
+        entities = {e for e, _ in eligible if e is not None}
+        if len(entities) > 1:
+            return ("ambiguous", "observation_ambiguous",
+                    "%d distinct observation entities match" % len(entities))
+        return ("proven", "observation",
+                "unique %s observation %s=%r"
+                % (eligible[0][1], slot, value))
+    if cross:
+        return ("cross_app", "observation_cross_app",
+                "value seen only in a different app's result")
+    if unknown:
+        return ("unknown", "observation_unknown_source",
+                "value seen only in untyped (field/app unknown) entries")
+    return (None, None, None)
+
+
+def _roster_intent(entry, rosters, current_text, call_args):
+    """Does the current request identify this roster entry, and only it?
+
+    Returns "proven" (an exclusive mention), "ambiguous" (the mention is
+    shared with another entry, e.g. a duplicate name), or "none" (no
+    mention). A roster proves a contact EXISTS; picking the right
+    person needs a distinguishing mention: the call's contact_name, the
+    entry's full name as a phrase, or a name token no other entry
+    shares. Token-level matching prevents "Minh" from claiming "Minh Ha"
+    (a full-name phrase match is void when it extends into another
+    entry's full name at the same position).
+    """
+    target_id = entry.get("id")
+    target_name = nfc_lower(entry.get("name"))
+    if not target_name:
+        return "none"
+    target_tokens = target_name.split()
+    text_tokens = [nfc_lower(t) for t in
+                   re.findall(r"[^\W_]+", current_text or "",
+                              flags=re.UNICODE)]
+    # Mentions from the call itself (contact_name) or from the text.
+    contact_name = nfc_lower((call_args or {}).get("contact_name"))
+    shared = False
+    found = False
+    if contact_name and contact_name == target_name:
+        found = True
+        for other in rosters or []:
+            if other.get("id") != target_id \
+                    and nfc_lower(other.get("name")) == target_name:
+                shared = True
+    # Full-name phrase occurrences (token level).
+    n = len(target_tokens)
+    for pos in range(len(text_tokens) - n + 1):
+        if text_tokens[pos:pos + n] != target_tokens:
+            continue
+        extends = False
+        for other in rosters or []:
+            if other.get("id") == target_id:
+                continue
+            other_tokens = nfc_lower(other.get("name")).split()
+            if len(other_tokens) > n and \
+                    text_tokens[pos:pos + len(other_tokens)] == other_tokens:
+                extends = True
+        if extends:
+            continue
+        found = True
+        for other in rosters or []:
+            if other.get("id") != target_id \
+                    and nfc_lower(other.get("name")) == target_name:
+                shared = True
+    # Single-token mentions, only when the token is exclusive to target.
+    other_token_sets = []
+    for other in rosters or []:
+        if other.get("id") != target_id:
+            other_token_sets.append(set(nfc_lower(other.get("name")).split()))
+    for tok in target_tokens:
+        if tok in text_tokens and not any(tok in s
+                                          for s in other_token_sets):
+            found = True
+    if not found:
+        return "none"
+    return "ambiguous" if shared else "proven"
 
 
 def _parse_gold_datetime(value):
@@ -1086,10 +1279,30 @@ def _find_offset_cues(text):
     return sorted(set(cues))
 
 
+def _call_entry_succeeded(entry):
+    """History/prior call entries may be (tool, args) or
+    (tool, args, succeeded). Two-tuples carry NO outcome information
+    and are treated as unknown -- i.e. not evidence. Only an explicit
+    succeeded=True flag counts: a proposal, a failed write, and an
+    outcome nobody recorded are all equally not facts."""
+    if len(entry) >= 3:
+        return bool(entry[2])
+    return False
+
+
 def _history_candidates(slot, tool, evidence):
-    """Distinct prior values for the same tool+slot in history calls."""
+    """Distinct prior values for the same tool+slot in history calls.
+
+    Only calls recorded as succeeded contribute: a failed call's
+    arguments are proposals, not facts, and a call whose outcome is
+    unknown (two-tuple) is not evidence either. Callers must pass
+    succeeded flags where they know them (the audit does).
+    """
     seen = []
-    for t, args in evidence.history_call_args:
+    for entry in evidence.history_call_args:
+        if not _call_entry_succeeded(entry):
+            continue
+        t, args = entry[0], entry[1]
         if t == tool and isinstance(args, dict) and slot in args:
             v = args[slot]
             if v not in seen:
@@ -1097,28 +1310,123 @@ def _history_candidates(slot, tool, evidence):
     return seen
 
 
-def prove_argument(slot, value, tool, evidence, rules=None, call_args=None):
+def _history_text_candidates(slot, evidence):
+    """Values for a slot stated in history user turns (span-derived).
+
+    A history turn's own words can be the referenced value ("số tiền
+    cũ" pointing at a number the user said earlier). Only span-parsed
+    values count: substrings never do.
+    """
+    seen = []
+    for text in evidence.history_user_texts or []:
+        if slot == "amount":
+            for _, v in find_number_spans(text):
+                if v not in seen:
+                    seen.append(v)
+        elif slot in ("time", "date", "start", "end"):
+            for _, parsed in find_datetime_spans(text, evidence.anchor):
+                if parsed.kind in ("datetime", "time", "date") \
+                        and parsed.value is not None:
+                    v = parsed.value
+                    if isinstance(v, datetime):
+                        v = v.isoformat()
+                    elif isinstance(v, date):
+                        v = v.isoformat()
+                    if v not in seen:
+                        seen.append(v)
+    return seen
+
+
+def _segment_refers_to_history_value(slot, value, segment, tool,
+                                     evidence):
+    """True when a segment references history and the value is the
+    unique history candidate for the slot (typed match). Used by the
+    supersede check so a corrected-away history reference reports
+    SUPERSEDED (a proven error) instead of silently UNPROVEN."""
+    if not any(p in nfc_lower(segment) for p in HISTORY_REF_PHRASES):
+        return False
+    candidates = _history_candidates(slot, tool, evidence)
+    for cand in _history_text_candidates(slot, evidence):
+        if cand not in candidates:
+            candidates.append(cand)
+    return len(candidates) == 1 and _history_value_matches(
+        candidates[0], value, slot)
+
+
+def _history_value_matches(candidate, value, slot):
+    """Typed equality for history candidates vs the proposed value."""
+    if candidate == value:
+        return True
+    if isinstance(candidate, (int, float)) and isinstance(value, (int, float)) \
+            and not isinstance(candidate, bool) \
+            and not isinstance(value, bool):
+        try:
+            return float(candidate) == float(value)
+        except (TypeError, ValueError):
+            return False
+    if slot in ("time", "date", "start", "end") \
+            and isinstance(candidate, str) and isinstance(value, str):
+        kind = _gold_temporal_kind(value)
+        if kind == "time":
+            try:
+                return datetime.fromisoformat(candidate).strftime("%H:%M") \
+                    == value.strip()[:5]
+            except ValueError:
+                return False
+        if kind == "date":
+            try:
+                cdt = datetime.fromisoformat(candidate)
+                vdt = datetime.fromisoformat(value.strip())
+                return (cdt.year, cdt.month, cdt.day) == (
+                    vdt.year, vdt.month, vdt.day)
+            except ValueError:
+                return False
+        return _scalar_equal(candidate, value)
+    return False
+
+
+def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
+                   _depth=0):
     """Prove one tool argument against evidence.
+
+    This is a typed-evidence RULE ENGINE, not a graph DAG: each verdict
+    cites the rule and evidence that derived it, but derivations are not
+    stored as nodes with edges, and invalidation is by rule order
+    (supersede/cancel), not by graph propagation. Calling it a DAG
+    would overclaim; the report says so explicitly.
 
     Rule order (first success wins; attribution is auditable):
       supersede-check (only when correction markers exist),
-      verbatim, number spans (digits vs words attributed separately),
-      relative_date, observation (same-app only; cross-app is remembered
-      and reported as UNPROVEN/observation_cross_app, never proof),
-      roster, history_reference, datetime_assembly, offset, duration,
+      verbatim (strings only, whole-phrase; numbers go via spans),
+      number spans (whole parsed spans, current text only),
+      relative_date (typed date/time/datetime, current text only),
+      observation (same app + exact field + entity + source + unique),
+      roster (existence + exclusive intent mention),
+      history_reference (explicit phrase in the latest segment +
+        unique candidate, cancel-gated),
+      datetime_assembly (same-text unique pairing, or text side +
+        id-linked event primary field; no cross-text linker),
+      offset (id-linked event bases; prior-call bases only at depth 0,
+        entity-linked or anaphoric, and only when the base value itself
+        is independently PROVEN),
+      duration (id-linked event duration, and only when the call's own
+        start is independently PROVEN -- a hallucinated start is never
+        a parent),
       default.
     rules: optional subset to run (used for the verbatim-only baseline).
-    call_args: the full arguments of the call (enables the duration rule
-    for end args, and id-linking for the offset rule).
+    call_args: the full arguments of the call (enables id-linking, the
+    duration rule, and roster intent).
+    _depth: internal recursion guard for base/start proofs (callers
+    leave it at 0).
     """
     all_rules = ["supersede", "verbatim", "number_words", "relative_date",
                  "observation", "roster", "history_reference",
                  "datetime_assembly", "offset", "duration", "default"]
     wanted = set(rules) if rules else set(all_rules)
     texts_current = evidence.current_text or ""
-    texts_history = evidence.history_user_texts or []
-    all_user_texts = [texts_current] + list(texts_history)
     cross_app_candidate = False
+    unknown_candidate = False
+    roster_no_intent = False
 
     # --- supersede: correction markers change what counts as evidence.
     if "supersede" in wanted and any(
@@ -1128,9 +1436,13 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None):
             latest = segments[-1]
             earlier = " ".join(segments[:-1])
             in_latest = _slot_value_in_text(slot, value, latest,
-                                             evidence.anchor)
+                                             evidence.anchor) or \
+                _segment_refers_to_history_value(slot, value, latest,
+                                                 tool, evidence)
             in_earlier = _slot_value_in_text(slot, value, earlier,
-                                              evidence.anchor)
+                                              evidence.anchor) or \
+                _segment_refers_to_history_value(slot, value, earlier,
+                                                 tool, evidence)
             if in_latest and not in_earlier:
                 return Verdict("PROVEN", "supersede",
                                "value from latest correction segment only")
@@ -1138,118 +1450,166 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None):
                 return Verdict("SUPERSEDED", "supersede",
                                "value matches only a corrected-away segment")
 
-    # --- verbatim: a string form of the value occurs in request/history.
-    if "verbatim" in wanted:
-        for text in all_user_texts:
-            if _value_matches_text(value, text):
-                return Verdict("PROVEN", "verbatim",
-                               "string form found in user text")
-        if isinstance(value, str):
-            for text in all_user_texts:
-                if nfc_lower(value) and nfc_lower(value) in nfc_lower(text):
-                    return Verdict("PROVEN", "verbatim",
-                                   "exact string found in user text")
+    # --- verbatim: a string value occurs as a whole phrase in the
+    # current request. Numbers never use this rule (see
+    # _value_matches_text): they must equal a whole parsed span.
+    if "verbatim" in wanted and isinstance(value, str):
+        if _value_matches_text(value, texts_current):
+            return Verdict("PROVEN", "verbatim",
+                           "string form found as a whole phrase")
 
     # --- number spans: a digit or word span parses exactly to the value.
     if "number_words" in wanted and isinstance(value, (int, float)) \
             and not isinstance(value, bool):
-        for text in all_user_texts:
-            for span_text, v in find_number_spans(text):
-                if float(v) == float(value):
-                    rule = "number_digits" if re.search(r"\d", span_text) \
-                        else "number_words"
-                    return Verdict("PROVEN", rule,
-                                   "number span parses to value")
+        for span_text, v in find_number_spans(texts_current):
+            if float(v) == float(value):
+                rule = "number_digits" if re.search(r"\d", span_text) \
+                    else "number_words"
+                return Verdict("PROVEN", rule,
+                               "number span parses to value")
 
-    # --- relative_date: a date/time span parses exactly to the value.
+    # --- relative_date: a date/time span parses exactly to the value
+    # (typed: date-only never proves datetime, even midnight).
     if "relative_date" in wanted and slot in (
             "time", "date", "start", "end"):
-        for text in all_user_texts:
-            for _, parsed in find_datetime_spans(text, evidence.anchor):
-                if _value_matches_datetime(value, parsed):
-                    return Verdict("PROVEN", "relative_date",
-                                   "span %s parses to value" % parsed.kind)
+        for _, parsed in find_datetime_spans(texts_current,
+                                             evidence.anchor):
+            if _value_matches_datetime(value, parsed):
+                return Verdict("PROVEN", "relative_date",
+                               "span %s parses to value" % parsed.kind)
 
-    # --- observation: the value was seen in a prior same-app result.
-    if "observation" in wanted:
-        same, cross = _observation_match(
-            value, evidence.history_observations, tool)
-        if same:
-            return Verdict("PROVEN", "observation",
-                           "value equals a prior same-app observation")
-        if cross:
+    # --- observation: structured, field-exact, entity-bound, source-
+    # aware, unique. Contact slots are not proven by observations:
+    # contacts come from rosters (existence + intent) and history.
+    if "observation" in wanted and slot not in ("contact_id", "to"):
+        status, rule, detail = _observation_candidates(
+            value, evidence.turn_observations, evidence.history_observations,
+            tool, slot, call_args)
+        if status == "proven":
+            return Verdict("PROVEN", rule, detail)
+        if status == "ambiguous":
+            return Verdict("AMBIGUOUS", rule, detail)
+        if status == "cross_app":
             cross_app_candidate = True
+        elif status == "unknown":
+            unknown_candidate = True
 
-    # --- roster: a contact_id observed via search before the write.
+    # --- roster: a contact_id observed via search before the write,
+    # plus an exclusive intent mention of that contact.
     if "roster" in wanted and slot in ("contact_id", "to"):
         for entry in evidence.rosters:
             if isinstance(entry, dict) and entry.get("id") == value:
-                return Verdict("PROVEN", "roster",
-                               "contact_id in an observed search roster")
+                intent = _roster_intent(entry, evidence.rosters,
+                                        texts_current, call_args)
+                if intent == "proven":
+                    return Verdict("PROVEN", "roster",
+                                   "contact_id in roster + exclusive "
+                                   "intent mention")
+                if intent == "ambiguous":
+                    return Verdict("AMBIGUOUS", "roster_ambiguous",
+                                   "intent mention is shared with another "
+                                   "roster entry")
+                roster_no_intent = True
+                break
 
-    # --- history_reference: request points at history ("số tiền cũ", ...).
+    # --- history_reference: the current request explicitly points at
+    # history ("số tiền cũ", ...). The trigger must be in the LATEST
+    # segment when a correction exists (the latest intent governs), and
+    # a cancellation anywhere in the current request disables it.
     if "history_reference" in wanted:
-        if any(p in nfc_lower(texts_current) for p in HISTORY_REF_PHRASES):
-            candidates = _history_candidates(slot, tool, evidence)
-            if len(candidates) == 1 and candidates[0] == value:
-                return Verdict("PROVEN", "history_reference",
-                               "unique history candidate for slot")
-            if len(candidates) >= 2:
-                return Verdict("AMBIGUOUS", "history_reference",
-                               "%d history candidates" % len(candidates))
+        cancelled = any(m in nfc_lower(texts_current)
+                        for m in CANCEL_MARKERS)
+        if not cancelled:
+            trigger_text = texts_current
+            if any(m in nfc_lower(texts_current)
+                   for m in CORRECTION_MARKERS):
+                segments = split_correction_segments(texts_current)
+                if segments:
+                    trigger_text = segments[-1]
+            if any(p in nfc_lower(trigger_text)
+                   for p in HISTORY_REF_PHRASES):
+                candidates = _history_candidates(slot, tool, evidence)
+                for cand in _history_text_candidates(slot, evidence):
+                    if cand not in candidates:
+                        candidates.append(cand)
+                matches = [c for c in candidates
+                           if _history_value_matches(c, value, slot)]
+                if len(candidates) == 1 and matches:
+                    return Verdict("PROVEN", "history_reference",
+                                   "unique history candidate for slot")
+                if len(candidates) >= 2:
+                    return Verdict("AMBIGUOUS", "history_reference",
+                                   "%d history candidates"
+                                   % len(candidates))
 
-    # --- datetime_assembly: an incomplete date span + an incomplete time
-    # span combine to the gold datetime. Linkage is required: same user
-    # text, or a same-app observation side, or a history-reference /
-    # "lại" linker in the current text. Parts of complete datetime spans
-    # are never recycled (that would combine unrelated mentions).
+    # --- datetime_assembly: an incomplete date span + an incomplete
+    # time span combine to the gold datetime. Two legitimate pairings
+    # only: (a) same current text, unique date and unique time in that
+    # text (a forced pairing -- multi-date/time texts are ambiguous);
+    # (b) one side from the current text (unique in the text) and the
+    # other from the PRIMARY time field (start, else time) of an
+    # id-linked observation event. Cross-text pairing via a bare
+    # linker ("lại") is NOT a task link and is removed: it let one
+    # task's time prove another task's reminder (counterexample C).
+    # Parts of complete datetime spans are never recycled.
     if "datetime_assembly" in wanted and slot in ("time", "start", "end"):
         gold_dt = _parse_gold_datetime(value)
         if gold_dt is not None:
-            dates = {}
-            times = {}
-            for idx, text in enumerate(all_user_texts):
-                for _, parsed in find_datetime_spans(text, evidence.anchor):
-                    if parsed.kind == "date" and parsed.value is not None:
-                        pv = parsed.value
-                        dates.setdefault((pv.year, pv.month, pv.day),
-                                         set()).add(("text", idx))
-                    if parsed.kind == "time" and parsed.value is not None:
-                        pv = parsed.value
-                        times.setdefault((pv.hour, pv.minute),
-                                         set()).add(("text", idx))
-            app = (tool or "").split(".", 1)[0] \
-                if "." in (tool or "") else ""
-            for obs_tool, event in evidence.observation_events or []:
-                if not isinstance(event, dict):
-                    continue
-                if (obs_tool or "").split(".", 1)[0] != app:
-                    continue
-                for key in ("start", "time", "end"):
-                    raw = event.get(key)
-                    if isinstance(raw, str):
-                        base = _parse_gold_datetime(raw)
-                        if base is not None:
-                            dates.setdefault((base.year, base.month,
-                                              base.day),
-                                             set()).add(("obs", obs_tool))
-                            times.setdefault((base.hour, base.minute),
-                                             set()).add(("obs", obs_tool))
+            text_dates = set()
+            text_times = set()
+            for _, parsed in find_datetime_spans(texts_current,
+                                                 evidence.anchor):
+                if parsed.kind == "date" and parsed.value is not None:
+                    pv = parsed.value
+                    text_dates.add((pv.year, pv.month, pv.day))
+                if parsed.kind == "time" and parsed.value is not None:
+                    pv = parsed.value
+                    text_times.add((pv.hour, pv.minute))
             want_date = (gold_dt.year, gold_dt.month, gold_dt.day)
             want_time = (gold_dt.hour, gold_dt.minute)
-            linker = any(p in nfc_lower(texts_current)
-                         for p in HISTORY_REF_PHRASES) \
-                or re.search(r"\blại\b", nfc_lower(texts_current)) is not None
-            for dt_tag in dates.get(want_date, set()):
-                for tm_tag in times.get(want_time, set()):
-                    if dt_tag == tm_tag or dt_tag[0] == "obs" \
-                            or tm_tag[0] == "obs" or linker:
+            if want_date in text_dates and want_time in text_times \
+                    and len(text_dates) == 1 and len(text_times) == 1:
+                return Verdict("PROVEN", "datetime_assembly",
+                               "unique date + unique time in current text")
+            call_ids = set()
+            if call_args:
+                for key, val in call_args.items():
+                    if key.endswith("_id") and isinstance(val, str):
+                        call_ids.add(val)
+            if call_ids:
+                for obs_tool, event in evidence.observation_events or []:
+                    if not isinstance(event, dict):
+                        continue
+                    ev_ids = {str(event.get(k)) for k in
+                              ("id", "event_id", "alarm_id", "reminder_id")
+                              if event.get(k)}
+                    if not (ev_ids & call_ids):
+                        continue
+                    primary = event.get("start") or event.get("time")
+                    base = _parse_gold_datetime(primary) \
+                        if isinstance(primary, str) else None
+                    if base is None:
+                        continue
+                    if want_date in text_dates and len(text_dates) == 1 \
+                            and (base.hour, base.minute) == want_time:
                         return Verdict("PROVEN", "datetime_assembly",
-                                       "date span + time span combine")
+                                       "text date + id-linked event time")
+                    if want_time in text_times and len(text_times) == 1 \
+                            and (base.year, base.month, base.day) \
+                            == want_date:
+                        return Verdict("PROVEN", "datetime_assembly",
+                                       "id-linked event date + text time")
 
     # --- offset: an observation event (id-linked) or a prior trajectory
     # call, shifted by a duration the text states with a direction word
     # ("muộn hơn nửa tiếng", "trước đó một tiếng").
+    # Prior-call bases are allowed ONLY at depth 0, and each base value
+    # must itself be PROVEN at depth 1 (offset there uses event bases
+    # only, so no chains of guesses). A prior-call base additionally
+    # needs a link: shared entity id with the write, or -- for creates
+    # -- an anaphoric cue ("đó") tying it to the current instruction.
+    # An unrelated prior alarm's time never bases a calendar move
+    # (counterexample E).
     if "offset" in wanted and slot in ("time", "start", "end"):
         gold_dt = _parse_gold_datetime(value)
         if gold_dt is not None:
@@ -1278,13 +1638,35 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None):
                             base = _parse_gold_datetime(event[key])
                             if base is not None:
                                 bases.append(base)
-                for _, pargs in evidence.prior_call_args or []:
-                    if isinstance(pargs, dict):
-                        for pk in ("time", "start", "end"):
-                            if isinstance(pargs.get(pk), str):
-                                base = _parse_gold_datetime(pargs[pk])
-                                if base is not None:
-                                    bases.append(base)
+                if _depth == 0:
+                    anaphoric = re.search(r"\bđó\b",
+                                          nfc_lower(texts_current)) \
+                        is not None
+                    for entry in evidence.prior_call_args or []:
+                        if not _call_entry_succeeded(entry):
+                            continue
+                        ptool, pargs = entry[0], entry[1]
+                        parg_ids = set()
+                        if isinstance(pargs, dict):
+                            for key, val in pargs.items():
+                                if key.endswith("_id") \
+                                        and isinstance(val, str):
+                                    parg_ids.add(val)
+                        linked = bool(parg_ids & id_args) \
+                            or (not id_args and anaphoric)
+                        if not linked:
+                            continue
+                        if isinstance(pargs, dict):
+                            for pk in ("time", "start", "end"):
+                                if isinstance(pargs.get(pk), str):
+                                    base = _parse_gold_datetime(pargs[pk])
+                                    if base is None:
+                                        continue
+                                    check = prove_argument(
+                                        pk, pargs[pk], ptool, evidence,
+                                        call_args=pargs, _depth=_depth + 1)
+                                    if check.status == "PROVEN":
+                                        bases.append(base)
                 for delta, direction in cues:
                     for base in bases:
                         cand = base + direction * delta
@@ -1297,42 +1679,48 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None):
                                            % ("+" if direction > 0 else "-"))
 
     # --- duration: an end implied by a PROVEN start plus the original
-    # event duration ("dời lịch sang 4 giờ chiều" keeps the 1h slot).
+    # event duration. The call's own start must first be PROVEN at
+    # depth 1: a hallucinated start is never a parent (counterexample
+    # class: "không coi start bịa là parent đã PROVEN").
     if "duration" in wanted and slot == "end" and call_args \
             and "start" in call_args:
         gold_dt = _parse_gold_datetime(value)
         start_dt = _parse_gold_datetime(call_args["start"])
         if gold_dt is not None and start_dt is not None:
-            app = (tool or "").split(".", 1)[0] \
-                if "." in (tool or "") else ""
-            id_args = set()
-            for key, val in call_args.items():
-                if key.endswith("_id") and isinstance(val, str):
-                    id_args.add(val)
-            for obs_tool, event in evidence.observation_events or []:
-                if not isinstance(event, dict):
-                    continue
-                if (obs_tool or "").split(".", 1)[0] != app:
-                    continue
-                ev_ids = {str(event.get(k)) for k in
-                          ("id", "event_id", "alarm_id", "reminder_id")
-                          if event.get(k)}
-                if not id_args or not (ev_ids & id_args):
-                    continue
-                try:
-                    obs_start = _parse_gold_datetime(event["start"])
-                    obs_end = _parse_gold_datetime(event["end"])
-                except (KeyError, TypeError):
-                    continue
-                if obs_start is None or obs_end is None:
-                    continue
-                cand = start_dt + (obs_end - obs_start)
-                if (cand.year, cand.month, cand.day, cand.hour,
-                        cand.minute) == (gold_dt.year, gold_dt.month,
-                                         gold_dt.day, gold_dt.hour,
-                                         gold_dt.minute):
-                    return Verdict("PROVEN", "duration",
-                                   "start + original event duration")
+            start_check = prove_argument(
+                "start", call_args["start"], tool, evidence,
+                call_args=call_args, _depth=_depth + 1)
+            if start_check.status == "PROVEN":
+                app = (tool or "").split(".", 1)[0] \
+                    if "." in (tool or "") else ""
+                id_args = set()
+                for key, val in call_args.items():
+                    if key.endswith("_id") and isinstance(val, str):
+                        id_args.add(val)
+                for obs_tool, event in evidence.observation_events or []:
+                    if not isinstance(event, dict):
+                        continue
+                    if (obs_tool or "").split(".", 1)[0] != app:
+                        continue
+                    ev_ids = {str(event.get(k)) for k in
+                              ("id", "event_id", "alarm_id", "reminder_id")
+                              if event.get(k)}
+                    if not id_args or not (ev_ids & id_args):
+                        continue
+                    try:
+                        obs_start = _parse_gold_datetime(event["start"])
+                        obs_end = _parse_gold_datetime(event["end"])
+                    except (KeyError, TypeError):
+                        continue
+                    if obs_start is None or obs_end is None:
+                        continue
+                    cand = start_dt + (obs_end - obs_start)
+                    if (cand.year, cand.month, cand.day, cand.hour,
+                            cand.minute) == (gold_dt.year, gold_dt.month,
+                                             gold_dt.day, gold_dt.hour,
+                                             gold_dt.minute):
+                        return Verdict("PROVEN", "duration",
+                                       "proven start + original duration")
 
     # --- default: only a caller-declared default counts, never invention.
     if "default" in wanted and slot in evidence.defaults:
@@ -1343,6 +1731,12 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None):
     if cross_app_candidate:
         return Verdict("UNPROVEN", "observation_cross_app",
                        "value seen only in a different app's result")
+    if unknown_candidate:
+        return Verdict("UNPROVEN", "observation_unknown_source",
+                       "value seen only in untyped entries")
+    if roster_no_intent:
+        return Verdict("UNPROVEN", "roster_no_intent",
+                       "contact in roster but no exclusive intent mention")
     return Verdict("UNPROVEN", "none", "no rule re-derived the value")
 
 

@@ -11,8 +11,13 @@ Gates (see module docstrings for exact scope; scope is part of the gate):
 - Gate 1, contact_ambiguity: a write that picks one contact out of >= 2
   same-normalized-name roster entries is vetoed; the agent must ASK.
 - Gate 2, read_before_write: a write that references an existing entity
-  (contact, *_id, or an update/delete/cancel verb) must have a prior
-  read/search establishing that entity in this session.
+  (contact, *_id, or an update/delete/cancel verb) must have prior
+  evidence the entity exists: a roster entry, or a string in a
+  SUCCEEDED result that is not an echo of that call's own arguments.
+  Prior-call ARGUMENTS never count (fix round: a proposal, failed or
+  not, is not evidence -- and sms/phone never validate contacts, so
+  even a successful sms.send echoes an unvalidated id). ALL references
+  of a call are checked, not just the first.
 - Gate 3, confirmation: a transfer needs an explicit user confirmation
   marker in the transcript. TWO variants are implemented and audited
   separately, because the literal form contradicts gold behaviour on
@@ -35,6 +40,7 @@ from dataclasses import dataclass, field
 
 __all__ = [
     "GateResult",
+    "PriorCall",
     "gate_contact_ambiguity",
     "gate_read_before_write",
     "gate_confirmation",
@@ -157,23 +163,82 @@ def _entity_ids(call):
     return ids
 
 
-def gate_read_before_write(call, prior_calls, prior_observations,
-                           rosters):
-    """Gate 2: a write referencing an existing entity needs a prior read.
+@dataclass
+class PriorCall:
+    """One earlier call in the session, with its recorded outcome.
 
-    prior_calls: [(tool, arguments)] of earlier calls in this session
-        (same-sample gold calls before the write + history calls).
-    prior_observations: flattened scalar values from earlier tool results
-        (history results + replayed same-sample read results).
-    rosters: [{id, name}] observed via search before the write.
+    tool: tool name. args: the call's arguments. result_scalars:
+    flattened scalar values from the call's RESULT (phones dropped).
+    succeeded: True only when the result indicates execution
+    (ok True and done not False). A schema-rejected call (ok False)
+    and an app no-op (ok True, done False -- unknown id, insufficient
+    balance, empty search) both count as NOT succeeded.
+    A proposal is not evidence: only succeeded results establish
+    anything, and a result scalar equal to the same call's own argument
+    is an echo of the proposal, not state-derived evidence, and is
+    excluded (a successful sms.send echoes its own contact_id; the
+    simulator never validates contacts for sms/phone, so the echo
+    proves nothing).
+    Legacy (tool, args) tuples are accepted and treated as
+    succeeded=False with no results: they establish nothing. Callers
+    must pass PriorCall objects where they know outcomes (the audit
+    does).
+    """
+    tool: str
+    args: dict = field(default_factory=dict)
+    result_scalars: list = field(default_factory=list)
+    succeeded: bool = False
+
+
+def _as_prior_call(entry):
+    if isinstance(entry, PriorCall):
+        return entry
+    if isinstance(entry, (tuple, list)) and len(entry) >= 2:
+        return PriorCall(tool=entry[0], args=entry[1] or {},
+                         result_scalars=[], succeeded=False)
+    return PriorCall(tool="", args={}, result_scalars=[], succeeded=False)
+
+
+def _call_string_values(args):
+    """String values in a call's arguments (for echo exclusion)."""
+    out = set()
+    if isinstance(args, dict):
+        for value in args.values():
+            if isinstance(value, str):
+                out.add(nfc_lower(value))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        out.add(nfc_lower(item))
+    return out
+
+
+def gate_read_before_write(call, prior_calls, rosters):
+    """Gate 2: a write referencing an existing entity needs prior
+    evidence that the entity exists in this session.
+
+    prior_calls: [PriorCall] of earlier calls in this session
+        (same-sample calls before the write + history calls).
+    rosters: [{id, name}] observed via successful search before the
+        write.
     Applicable iff the write references an entity: a contact reference,
     any *_id argument, or an update/delete/cancel/modify/reschedule verb.
     A write fully specified by the request (e.g. reminders.create with
     all slots) is NOT applicable -- there is no entity to have read.
-    Fires iff no prior evidence establishes the referenced entity:
-      - contact: id in a roster, or name used by a prior call, or the id
-        used by a prior call;
-      - *_id: id in prior observations, or used by a prior call.
+    Evidence that establishes an entity (ALL of it must come from
+    succeeded calls or rosters; prior-call ARGUMENTS never count):
+      - roster ids/names (successful contacts.search results);
+      - string scalars in SUCCEEDED results, excluding echoes of the
+        same call's own arguments (a proposal restated by its own
+        result is not state-derived evidence).
+    ALL references are checked: a contact reference AND every *_id
+    argument. The old code returned after the contact check alone, so
+    an established contact masked an unestablished entity id (a code
+    flaw; no tool in the real 147-tool catalog combines a contact
+    reference with another *_id, so the fix is defence in depth, not
+    a real-schema behaviour change -- see the fix report).
+    Fires iff any referenced entity is unestablished; the reason lists
+    every missing reference.
     """
     name = call.get("name", "")
     if _is_read_tool(name) or name == "sys.ask_missing_info":
@@ -186,45 +251,55 @@ def gate_read_before_write(call, prior_calls, prior_observations,
     if ref is None and not ids and not is_mutate_verb:
         return GateResult(False, False,
                           "write references no existing entity")
-    prior_ids = set()
-    for _, args in prior_calls or []:
-        if isinstance(args, dict):
-            for key, value in args.items():
-                if key.endswith("_id") and isinstance(value, str):
-                    prior_ids.add(value)
-    obs = set(prior_observations or [])
+    priors = [_as_prior_call(e) for e in (prior_calls or [])]
     roster_ids = {e.get("id") for e in (rosters or [])
                   if isinstance(e, dict) and e.get("id")}
     roster_names = {nfc_lower(e.get("name")) for e in (rosters or [])
                     if isinstance(e, dict) and e.get("name")}
+    # State-derived strings: scalars from SUCCEEDED results, minus
+    # each call's own argument echoes. Compared NFC-lowercase (ids in
+    # this data are lowercase alphanumerics + underscore).
+    result_strings = set()
+    for pc in priors:
+        if not pc.succeeded:
+            continue
+        echoes = _call_string_values(pc.args)
+        for scalar in pc.result_scalars or []:
+            if isinstance(scalar, str) \
+                    and nfc_lower(scalar) not in echoes:
+                result_strings.add(nfc_lower(scalar))
+    established_ids = {nfc_lower(i) for i in roster_ids} | result_strings
+    missing = []
     # Contact reference.
     if ref is not None:
         kind, value = ref
         if kind == "id":
-            if value in roster_ids or value in prior_ids:
-                return GateResult(False, True, "contact established")
+            if nfc_lower(value) not in established_ids:
+                missing.append("contact_id %s" % value)
         else:
-            if nfc_lower(value) in roster_names or value in prior_ids:
-                return GateResult(False, True, "contact established")
+            if nfc_lower(value) not in roster_names \
+                    and nfc_lower(value) not in result_strings:
+                missing.append("contact name %r" % value)
+    # Every *_id reference (no early return after the contact).
+    for eid in sorted(ids):
+        if nfc_lower(eid) not in established_ids:
+            missing.append("entity id %s" % eid)
+    if missing:
         return GateResult(True, True,
-                          "contact reference has no prior read/search")
-    # *_id references.
-    if ids:
-        missing = [i for i in ids
-                   if i not in obs and i not in prior_ids]
-        if missing:
-            return GateResult(True, True,
-                              "entity id(s) %s have no prior read"
-                              % ",".join(sorted(missing)))
-        return GateResult(False, True, "entity ids established")
-    # Bare mutate verb with no id argument: needs a prior read of the
-    # same app family (list/get/search) in this session.
+                          "unestablished reference(s): %s"
+                          % "; ".join(missing))
+    if ref is not None or ids:
+        return GateResult(False, True, "references established")
+    # Bare mutate verb with no id argument: needs a prior SUCCEEDED
+    # read of the same app family in this session.
     app = name.split(".", 1)[0] if "." in name else ""
-    for tool, _ in prior_calls or []:
-        if _is_read_tool(tool) and tool.split(".", 1)[0] == app:
+    for pc in priors:
+        if pc.succeeded and _is_read_tool(pc.tool) \
+                and pc.tool.split(".", 1)[0] == app:
             return GateResult(False, True, "prior read of app family")
     return GateResult(True, True,
-                      "mutate verb with no prior read of its app family")
+                      "mutate verb with no prior successful read of its "
+                      "app family")
 
 
 def _has_confirmation_marker(texts):
