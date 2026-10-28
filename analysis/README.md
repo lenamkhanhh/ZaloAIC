@@ -93,6 +93,16 @@ Không chứa raw dataset, audio hay weights.
   parser rule) với tiêu chí đăng ký trước, negative control 0025,
   caveat vacuous-PASS và gate CPU P1–P4. Không sửa inference, không
   chạy GPU, không hardcode probe.
+- `runtime/E5_DEPLOYMENT_BRIEF_2026-10-28.md` — Brief triển khai E5
+  đầy đủ, GATED bởi E6-C (không chạy nếu channel chưa sửa, để đo
+  intent không bị nhiễu pseudo-call): base native V10 + parser E6-C,
+  rule nhắc–gọi với ví dụ synthetic (sửa lỗi brief gốc dùng ví dụ gần
+  như nguyên văn transcript 0116), 20 mẫu ask_only với scoring key
+  đã kiểm chứng (cue "nhắc" tách sạch 7 target vs 13 control theo
+  kiểm tra không phân biệt hoa thường), metric chính ask-first
+  accuracy, tiêu chí CONFIRMED/PARTIAL/REFUTED/CONFOUNDED, 2 mẫu
+  WATCH spillover (0823, 0961), cột đo ASR cue, và gate CPU G1–G5.
+  Không sửa inference, không chạy GPU, không held-out.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
