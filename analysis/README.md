@@ -119,6 +119,18 @@ Không chứa raw dataset, audio hay weights.
   intent, wrong ask params, pass); rà verdict/G1–G5 chỉ ra một lỗi
   cụ thể (format-failure làm nhiễu verdict rule) với một đề xuất báo
   cáo hai cột cần user duyệt, không đổi arms/mẫu/rule.
+- `runtime/SOTA_ANALYSIS_ALL_ERRORS_2026-10-28.md` — Phân tích SOTA
+  cho toàn bộ lỗi LifeMate (v7/E0/E1 V10/E6-C V11) từ 3 luồng research
+  song song: verdict prompt/format/retry ĐÃ chạm trần (E0 gold
+  transcript không sửa intent, E1 native format làm prerequisite
+  giảm 5/21 → 4/21, E6-C bắt được nhưng recovery 0/1, rule trong
+  prompt vẫn bị vi phạm); SOTA theo từng nhóm lỗi với nhãn trung
+  thực (đo/paper/snippet/suy luận); xếp hạng 8 hướng khác theo
+  division of labor (guard code E4 nâng cấp → constrained decoding →
+  step-0 gate → N-best ASR → dynamic enum → SFT When2Call-style →
+  RL shaped rewards → thu nhỏ decision space) kèm danh sách KHÔNG
+  làm có bằng chứng chống và 2 câu phải hỏi organizers (XGrammar
+  trên Docker A30, cách đếm params hệ thống).
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
