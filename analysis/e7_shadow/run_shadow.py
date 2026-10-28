@@ -43,7 +43,7 @@ def run(args):
     cache = json.loads(Path(args.cache).read_text(encoding='utf-8'))['inputs']
     assert len(cache) == 20 and set(cache) <= set(samples)
     source_hash = sha(Path(__file__).with_name('guard.py'))
-    rows, gold_rows, known, paired = [], [], [], []
+    rows, gold_rows, known, paired, paired_arguments = [], [], [], [], []
     # IDs are diagnostic manifest entries only, never passed to assess().
     known_targets = [('train_0219', 'rule'), ('train_0220', 'rule'),
                      ('train_0287', 'rule'), ('train_0360', 'rule'),
@@ -88,6 +88,11 @@ def run(args):
                     if asr['scoped']:
                         paired.append({'id': sample.id, 'arm': arm, 'generation': generation,
                                        'ASR': asr['status'], 'GOLD_TEXT': gold['status']})
+                        assert set(asr['arguments']) == set(gold['arguments'])
+                        for slot in asr['arguments']:
+                            paired_arguments.append({'id': sample.id, 'arm': arm, 'generation': generation,
+                                                     'slot': slot, 'ASR': asr['arguments'][slot],
+                                                     'GOLD_TEXT': gold['arguments'][slot]})
                     identity = (sample.id, arm)
                     if identity in known_targets and identity not in known_seen and 'time' in call['arguments']:
                         known.append(row)
@@ -129,6 +134,7 @@ def run(args):
             slots[key, value['status'], value['reason']] += 1
     counts = lambda rs, key: dict(Counter(r[key]['status'] for r in rs if r[key]['scoped']))
     transitions = Counter((r['GOLD_TEXT'], r['ASR']) for r in paired)
+    argument_transitions = Counter((r['GOLD_TEXT']['status'], r['ASR']['status']) for r in paired_arguments)
     report = {
         'scope': 'E7_PHASE0_SHADOW_ONLY_NOT_LIVE_READY', 'guard_sha256': source_hash,
         'split_sha256': sha(assignment_path), 'trace_zip_sha256': sha(args.traces),
@@ -143,6 +149,8 @@ def run(args):
         'false_blocks_with_failed_gold_result': len(invalid_gold),
         'gold_writes_ASR_unavailable': missing_asr_gold_writes,
         'ASR_GOLD_transition_on_observed_V13_prefixes': {a + '->' + b: n for (a, b), n in transitions.items()},
+        'ASR_GOLD_argument_transition_on_observed_V13_prefixes': {a + '->' + b: n for (a, b), n in argument_transitions.items()},
+        'gold_scoped_arguments': sum(slots.values()),
         'gold_slot_breakdown': [{'slot': k, 'status': s, 'reason': reason, 'count': n} for (k, s, reason), n in slots.items()],
     }
     reasons = []
@@ -156,6 +164,7 @@ def run(args):
     report['gate'] = 'CPU_NOT_READY' if reasons else 'SHADOW_GATE_ONLY_NOT_GPU_AUTHORIZATION'
     save(out / 'v13_proposal_decisions.json', rows)
     save(out / 'known_fill_manifest.json', known)
+    save(out / 'ASR_GOLD_argument_comparison.json', paired_arguments)
     save(out / 'gold_write_decisions.json', gold_rows)
     save(out / 'gold_candidate_false_blocks.json', false_blocks)
     save(out / 'summary.json', report)
