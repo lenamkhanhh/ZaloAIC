@@ -18,9 +18,9 @@ _WORDS = {'không': 0, 'một': 1, 'mốt': 1, 'hai': 2, 'ba': 3, 'bốn': 4,
 _NUM = r'(?:\d+(?:[.,]\d+)*|(?:' + '|'.join([*_WORDS, 'mười', 'mươi', 'trăm', 'linh', 'lẻ']) + r')(?:\s+(?:' + '|'.join([*_WORDS, 'mười', 'mươi', 'trăm', 'linh', 'lẻ']) + r'))*)'
 _TEMPORAL = {'time', 'start', 'end', 'date', 'schedule_time', 'due_date', 'times'}
 _AMOUNT = {'amount', 'quantity', 'threshold', 'threshold_kwh'}
-_INDIRECT = r'như lần trước|như hôm qua|như cũ|hôm đó|hôm ấy|buổi đó|lúc đó|giờ đó|lời dặn|theo|mới nhất|đã đổi|giờ họp|giờ hẹn|trước lúc|giờ xe|lịch'
+_INDIRECT = r'như lần trước|như hôm qua|như cũ|hôm đó|hôm ấy|hôm đấy|buổi đó|lúc đó|giờ đó|lời dặn|theo|mới nhất|đã đổi|giờ họp|giờ hẹn|trước lúc|giờ xe|lịch|cái .+ (?:đó|đấy)|khi .+ xong|giặt xong|làm xong|thợ .+ xong'
 _SUPERSESSION = r'mới nhất|đã đổi|không theo cái cũ|thay thế|cập nhật'
-_COMPLEX = r'à không|kém|từ.+(?:đến|tới)|\b(?:rồi|sau đó|đồng thời)\b'
+_COMPLEX = r'à không|không phải|kém|từ.+(?:đến|tới)|\b(?:rồi|sau đó|đồng thời|và)\b'
 _BILL_TYPES = {'water': r'nước', 'internet': r'mạng|internet',
                'electricity': r'điện(?!\s*thoại)', 'phone': r'điện thoại',
                'tv': r'truyền hình', 'tuition': r'học phí'}
@@ -112,7 +112,7 @@ def _sources(observations, history, include_history):
 
 
 def _points_to(record, request):
-    if isinstance(record.get('id'), str) and record['id'].lower() in request:
+    if isinstance(record.get('id'), str) and re.search(r'(?<!\w)' + re.escape(record['id'].lower()) + r'(?!\w)', request):
         return True
     for key in ('name', 'title', 'label', 'provider'):
         value = _text(record.get(key, ''))
@@ -142,6 +142,8 @@ def _pointed(call, spec, request, observations, history):
 
 
 def _date_request(request, now):
+    if re.search(r'tuần sau nữa|hôm (?:đó|ấy|đấy|trước)|hôm hai|cùng hôm|đúng cái hôm|bữa nớ', request):
+        return None, 'unimplemented_modified_or_referred_date'
     explicit = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', request)
     if explicit:
         try:
@@ -185,9 +187,14 @@ def _clocks(request):
             continue
         hour = int(number)
         minute = 30 if match[3] else int(match[2] or 0)
-        if match[4] in ('chiều', 'tối') and hour < 12:
+        prefix = request[max(0, match.start() - 16):match.start()]
+        period = match[4]
+        if period is None:
+            before = re.search(r'(sáng|chiều|tối|trưa|đêm)\s+(?:mai\s+|nay\s+)?$', prefix)
+            period = before[1] if before else None
+        if period in ('chiều', 'tối') and hour < 12:
             hour += 12
-        if match[4] == 'đêm' and hour == 12:
+        if period == 'đêm' and hour == 12:
             hour = 0
         if 0 <= hour < 24 and 0 <= minute < 60:
             values.append((hour, minute))
@@ -196,6 +203,8 @@ def _clocks(request):
 
 def _delta(request):
     # One operation only. Multiple temporal operations need a task/slot binding.
+    if 'rưỡi' in request:
+        return None
     matches = list(re.finditer(r'(sau|trước|muộn(?: hơn)?|sớm(?: hơn)?)\s+(' + _NUM + r')\s*(phút|tiếng|giờ)', request))
     if len(matches) != 1:
         return None
@@ -232,10 +241,13 @@ def _temporal(key, value, request, context, pointed):
             return _decision('UNKNOWN', 'date_reference_not_resolved')
         return _decision('ALLOW' if candidate_date == desired_date else 'BLOCK', 'derived_date_check', date_source)
     candidate = candidate.astimezone(now.tzinfo)
+    # A single stated start time cannot justify an end/default duration.
+    if key == 'end' and not re.search(r'kết thúc|đến|tới|kéo dài|trong vòng', request):
+        return _decision('UNKNOWN', 'end_or_duration_slot_not_bound')
     if 'ngay bây giờ' in request or 'ngay lúc này' in request:
         return _decision('ALLOW' if candidate == now else 'BLOCK', 'explicit_now_check', 'request+clock')
     delta = _delta(request)
-    if delta is not None and 'nữa' in request:
+    if delta is not None and 'nữa' in request and not pointed and not re.search(r'dời|muộn|sớm|trễ|lùi', request):
         return _decision('ALLOW' if candidate == now + delta else 'BLOCK', 'relative_clock_check', 'request+clock')
     if delta is not None:
         candidates = [(record.get(key), source) for record, source in pointed if record.get(key)]
@@ -244,7 +256,14 @@ def _temporal(key, value, request, context, pointed):
             base, source = valid[0]
             return _decision('ALLOW' if candidate == base + delta else 'BLOCK', 'pointed_time_arithmetic', source)
         return _decision('UNKNOWN', 'relative_event_or_slot_not_uniquely_bound')
+    operation_text = re.sub(r'lần trước|hôm trước', '', request)
+    if re.search(r'muộn|sớm|trễ|trước|sau|dời|lùi|đón', operation_text):
+        return _decision('UNKNOWN', 'unparsed_temporal_operation_or_binding')
     clocks = _clocks(request)
+    if request.count('giờ') > len(clocks) and not (not clocks and re.search(_INDIRECT, request) and pointed):
+        return _decision('UNKNOWN', 'unparsed_or_multiple_clock_mentions')
+    if any(re.search(r'giờ|\d\s*h', quoted) for quoted in re.findall(r'["“]([^"”]+)["”]', request)):
+        return _decision('UNKNOWN', 'quoted_clock_not_bound_to_schedule')
     if len(clocks) > 1 or desired_date is None:
         return _decision('UNKNOWN', 'multiple_clocks_or_unparsed_date')
     if clocks:
@@ -263,6 +282,8 @@ def _temporal(key, value, request, context, pointed):
         return _decision('UNKNOWN', 'unresolved_reference_or_entity')
     if re.search(r'giờ|\d\s*h|rưỡi|tiếng|phút', request):
         return _decision('UNKNOWN', 'unparsed_time_expression')
+    if not re.search(r'nhắc|báo thức|hẹn|lịch', request):
+        return _decision('UNKNOWN', 'current_task_or_pending_intent_not_resolved')
     return _decision('BLOCK', 'no_request_hour_or_supported_reference', 'request_hour_absent')
 
 
@@ -274,6 +295,10 @@ def _numeric(key, value, request, pointed, schema):
         return _decision('UNKNOWN', 'unresolved_field_level_supersession')
     if re.search(_COMPLEX, request):
         return _decision('UNKNOWN', 'multiple_action_slot_binding_not_implemented')
+    if re.search(r'chục|rưỡi|phẩy|tỷ|đô|usd|dưới|trên|quá|hơn|nếu|thì|quy đổi|đổi ra', request):
+        return _decision('UNKNOWN', 'numeric_arithmetic_limit_or_expression_not_resolved')
+    if re.search(r'giờ|phút|\d\s*h|\d{1,2}/\d{1,2}', request):
+        return _decision('UNKNOWN', 'number_may_belong_to_temporal_slot')
     if 'một nửa' in request:
         base_keys = ('balance', 'amount') if key == 'amount' else (key,)
         bases = [(record[k], source) for record, source in pointed for k in base_keys
@@ -290,14 +315,19 @@ def _numeric(key, value, request, pointed, schema):
             return _decision('ALLOW' if proposed == Decimal(str(base)) else 'BLOCK', 'pointed_numeric_value', source)
         return _decision('UNKNOWN', 'numeric_reference_not_uniquely_bound')
     numbers = []
+    covered = []
     if key == 'amount':
         for match in re.finditer(r'(?<!\w)(' + _NUM + r')\s*(nghìn|ngàn|triệu|k\b|đồng|vnd)', request):
             number = _number(match[1])
             if number is not None:
                 numbers.append(number * {'nghìn': 1000, 'ngàn': 1000, 'triệu': 1000000, 'k': 1000}.get(match[2], 1))
+                covered.append(match.span())
     else:
         numbers = [value for match in re.finditer(r'(?<!\w)(' + _NUM + r')(?!\w)', request) if (value := _number(match[1])) is not None]
     numbers = list(dict.fromkeys(numbers))
+    if key == 'amount' and any(not any(a <= m.start() and m.end() <= b for a, b in covered)
+                               for m in re.finditer(r'(?<!\w)' + _NUM + r'(?!\w)', request)):
+        return _decision('UNKNOWN', 'unconsumed_numeric_fragment')
     if len(numbers) == 1:
         return _decision('ALLOW' if proposed == numbers[0] else 'BLOCK', 'single_explicit_numeric_expression', 'request')
     if 'default' in schema:
