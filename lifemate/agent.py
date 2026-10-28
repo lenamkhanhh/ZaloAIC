@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .adapter import ZaicEnv
+from .lifemate_grounding import ground_tool_call
 from .loader import Sample, catalog_tools_for_sample
 
 
@@ -107,11 +108,48 @@ def build_base_prompt(sample: Sample, transcript: str, tools: dict) -> str:
     return "\n".join(lines)
 
 
+def _has_leftover_name(call: dict) -> bool:
+    """True if a contact-name key survived grounding: ``contact_name``
+    always, or ``to`` without an '@' (an email address is not a name).
+    Such keys MUST NOT be executed: validate() ignores unknown args, so
+    the tool would run without the contact instead of failing."""
+    args = call.get("arguments", {}) or {}
+    if isinstance(args.get("contact_name"), str):
+        return True
+    to = args.get("to")
+    return isinstance(to, str) and "@" not in to
+
+
+def _needs_to_params(needs: list, tool_name: str) -> list:
+    """Map adapter needs (e.g. 'time:hour', 'contact:ambiguous') to the
+    ask call's params, mirroring gold ask traces. Empty needs (the
+    leftover-name path) default to the contact slot."""
+    slot = {
+        "amount": "amount",
+        "contact": "to" if tool_name == "email.create_draft" else "contact_id",
+        "time": "time",
+        "date": "date",
+        "start": "start",
+        "end": "end",
+    }
+    params = []
+    for need in needs or []:
+        head = str(need).split(":", 1)[0]
+        param = slot.get(head, head)
+        if param not in params:
+            params.append(param)
+    if not params:
+        params.append("to" if tool_name == "email.create_draft" else "contact_id")
+    return params
+
+
 class AgentLoop:
     def __init__(self, config, tools: dict):
         self.config = config
         self.tools = tools
         self.guard = LoopGuard(max_repeats=config.max_repeats)
+        self.grounding_log: list[dict] = []
+        self._roster: list | None = None
 
     def run(
         self,
@@ -127,6 +165,10 @@ class AgentLoop:
         executed: list[dict] = []
         results: list[dict] = []
         steps = 0
+        # Grounding state is per-sample: a fresh roster and audit log for
+        # every run() so no sample's contacts leak into the next one.
+        self._roster = None
+        self.grounding_log = []
         while steps < self.config.max_steps:
             steps += 1
             call = None
@@ -140,6 +182,26 @@ class AgentLoop:
                     prompt = base + "\n\nYour last output was not a valid tool call JSON. Output one tool call or {\"stop\": true}."
                     continue
                 call = {"name": gen["name"], "arguments": gen.get("arguments", {}) or {}}
+                if getattr(self.config, "grounding", False):
+                    # Grounding hook (round 8): normalise the proposal
+                    # BEFORE validation. The adapter never guesses: a
+                    # NEEDS_ASK, or a contact-name key left over because
+                    # no roster exists yet, becomes an ask call instead
+                    # of executing an ungrounded value. validate() is
+                    # known to ignore unknown args, so the leftover-name
+                    # check must live here, not in validation.
+                    grounded = ground_tool_call(
+                        call,
+                        {"current_time": sample.context.get("current_time")},
+                        roster=self._roster,
+                    )
+                    self.grounding_log.append({"raw": call, "grounded": grounded})
+                    if grounded.status == "NEEDS_ASK" or _has_leftover_name(grounded.call):
+                        call = {"name": "sys.ask_missing_info",
+                                "arguments": {"tool_name": call["name"],
+                                              "params": _needs_to_params(grounded.needs, call["name"])}}
+                    else:
+                        call = grounded.call
                 check = env.validate(call["name"], call["arguments"])
                 if check.get("ok"):
                     break
@@ -159,6 +221,21 @@ class AgentLoop:
             result = env.call(call["name"], call["arguments"])
             executed.append(call)
             results.append(result)
+            if call["name"] == "contacts.search" and result.get("ok") \
+                    and getattr(self.config, "grounding", False):
+                # Accumulate the roster from OBSERVED search results only
+                # (never from state files). Dedup by id; a later search
+                # may extend the roster mid-trace. Gated by the grounding
+                # flag so a dormant loop touches no grounding state.
+                contacts = result.get("contacts")
+                if isinstance(contacts, list):
+                    roster = self._roster if self._roster is not None else []
+                    seen = {c.get("id") for c in roster}
+                    for c in contacts:
+                        if isinstance(c, dict) and c.get("id") not in seen:
+                            roster.append(c)
+                            seen.add(c.get("id"))
+                    self._roster = roster
             if completion is not None and completion(result, executed):
                 return env.submission_line()
             action = self.guard.record(call, state_progress=bool(result.get("ok")))

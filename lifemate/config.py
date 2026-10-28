@@ -41,7 +41,7 @@ class PipelineConfig:
     # Agent
     max_steps: int = 12
     max_repeats: int = 2  # a call seen this many times is pre-blocked
-    grounding: bool = True  # False in baseline.json
+    grounding: bool = False  # adapter hook in agent.py; baseline.json=False, recommended.json=True
     selective_reads: bool = True
     verification_read_after_write: bool = False
     constrained_decoding: str = "validate-and-retry"  # XGrammar via vLLM when available

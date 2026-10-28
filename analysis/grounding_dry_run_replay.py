@@ -147,7 +147,11 @@ def main():
     sys.modules["lifemate_grounding"] = gmod
     spec.loader.exec_module(gmod)
 
-    train_dir = str(Path(args.train_jsonl).resolve().parent)
+    # zaic_tools lives in <data_root>/train/, not necessarily next to the
+    # jsonl (dev.jsonl is a filtered copy kept outside the data dir).
+    train_dir = str(Path(args.data_root).resolve() / "train")
+    if not Path(train_dir, "zaic_tools").is_dir():
+        train_dir = str(Path(args.train_jsonl).resolve().parent)
     sys.path.insert(0, train_dir)
     from zaic_tools import ToolEnv
 
