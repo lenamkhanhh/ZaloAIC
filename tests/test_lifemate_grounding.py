@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for lifemate/lifemate_grounding.py (round 5).
+"""Tests for lifemate/lifemate_grounding.py (rounds 5-6).
 
 Runs on CPU, stdlib only (+ RapidFuzz when installed; difflib otherwise).
 Run with either interpreter -- both backends must pass:
@@ -359,6 +359,209 @@ class TestIntegrationRealCode(unittest.TestCase):
         self.assertAlmostEqual(tool_f1([write, read], gold, {}), 2 / 3)
         self.assertAlmostEqual(tool_f1([write, read, read2], gold, {}), 0.5)
         self.assertEqual(tool_f1([ask], gold, {}), 0.0)
+
+
+# ---------------------------------------------------------------- roster
+# Realistic shapes measured in the round-6 ToolEnv replay (see
+# research/lifemate/contacts-roster-audit.md). Names here are fictitious
+# shapes, not copied roster rows.
+class TestRosterShapes(unittest.TestCase):
+    def setUp(self):
+        self.f = ContactFilter()
+
+    def test_exact_beats_longer_containing_name(self):
+        # Query "Lan" with roster ["Lan", "Lan Anh"]: substring search
+        # returns both, but exact equality must win, not the longer name.
+        roster = [ContactCandidate("c1", "Lan"),
+                  ContactCandidate("c2", "Lan Anh")]
+        d = self.f.filter_contacts("Lan", roster)
+        self.assertEqual(d.status, "EXACT")
+        self.assertEqual(d.candidate.id, "c1")
+
+    def test_duplicate_group_plus_third_name_still_ambiguous(self):
+        roster = [ContactCandidate("c1", "Lan"),
+                  ContactCandidate("c2", "Lan"),
+                  ContactCandidate("c3", "Minh")]
+        d = self.f.filter_contacts("Lan", roster)
+        self.assertEqual(d.status, "AMBIGUOUS")
+        self.assertEqual(d.reason, "duplicate_name")
+
+    def test_empty_query_with_duplicates_is_unknown(self):
+        roster = [ContactCandidate("c1", "Lan"),
+                  ContactCandidate("c2", "Lan")]
+        d = self.f.filter_contacts("", roster)
+        self.assertEqual(d.status, "UNKNOWN")
+
+    def test_threshold_sensitivity_on_fuzzy_input(self):
+        # Proves the round-6 sweep machinery is alive: the sweep was flat
+        # on gold because gold queries are all exact, NOT because the
+        # thresholds do nothing. A typo query grounds at 88, not at 99.
+        roster = [ContactCandidate("c1", "Trần Thị Hương"),
+                  ContactCandidate("c2", "Trần Thị Lan")]
+        orig = mod.FUZZY_THRESHOLD
+        try:
+            mod.FUZZY_THRESHOLD = 88.0
+            self.assertEqual(
+                self.f.filter_contacts("Trần Thị Hươn", roster).status,
+                "FUZZY_GROUNDED")
+            mod.FUZZY_THRESHOLD = 99.0
+            self.assertEqual(
+                self.f.filter_contacts("Trần Thị Hươn", roster).status,
+                "UNKNOWN")
+        finally:
+            mod.FUZZY_THRESHOLD = orig
+
+
+# ---------------------------------------------------------------- adapter
+class TestAdapter(unittest.TestCase):
+    CTX = {"current_time": "2026-10-14T20:00:00+07:00"}  # Wednesday
+
+    def test_money_string_grounds_to_int(self):
+        r = mod.ground_tool_call(
+            {"name": "ewallet.transfer",
+             "arguments": {"amount": "50 nghìn", "contact_id": "c1"}},
+            self.CTX)
+        self.assertEqual(r.status, "GROUNDED")
+        self.assertEqual(r.call["arguments"]["amount"], 50000)
+        self.assertIsInstance(r.call["arguments"]["amount"], int)
+
+    def test_money_number_passes_through(self):
+        r = mod.ground_tool_call(
+            {"name": "ewallet.transfer", "arguments": {"amount": 50000}},
+            self.CTX)
+        self.assertEqual(r.status, "UNCHANGED")
+
+    def test_money_unparseable_needs_ask(self):
+        r = mod.ground_tool_call(
+            {"name": "ewallet.transfer", "arguments": {"amount": "abc"}},
+            self.CTX)
+        self.assertEqual(r.status, "NEEDS_ASK")
+        self.assertIn("amount", r.needs)
+
+    def test_date_relative_grounds(self):
+        r = mod.ground_tool_call(
+            {"name": "reminders.create",
+             "arguments": {"date": "ngày mai", "content": "x"}},
+            self.CTX)
+        self.assertEqual(r.status, "GROUNDED")
+        self.assertEqual(r.call["arguments"]["date"], "2026-10-15")
+
+    def test_date_week_only_needs_ask(self):
+        r = mod.ground_tool_call(
+            {"name": "reminders.create", "arguments": {"date": "tháng sau"}},
+            self.CTX)
+        self.assertEqual(r.status, "NEEDS_ASK")
+        self.assertIn("date:unresolved", r.needs)
+
+    def test_time_daypart_needs_hour(self):
+        r = mod.ground_tool_call(
+            {"name": "reminders.create", "arguments": {"time": "sáng mai"}},
+            self.CTX)
+        self.assertEqual(r.status, "NEEDS_ASK")
+        self.assertIn("time:hour", r.needs)
+
+    def test_time_relative_with_hour_composes_datetime(self):
+        r = mod.ground_tool_call(
+            {"name": "reminders.create",
+             "arguments": {"time": "ngày mai lúc 8 giờ"}},
+            self.CTX)
+        self.assertEqual(r.status, "GROUNDED")
+        self.assertEqual(r.call["arguments"]["time"],
+                         "2026-10-15T08:00:00+07:00")
+
+    def test_time_iso_and_time_only_pass_through(self):
+        for v in ("2026-10-15T08:00:00+07:00", "19:00"):
+            with self.subTest(v=v):
+                r = mod.ground_tool_call(
+                    {"name": "reminders.create", "arguments": {"time": v}},
+                    self.CTX)
+                self.assertEqual(r.status, "UNCHANGED")
+                self.assertEqual(r.call["arguments"]["time"], v)
+
+    def test_time_relative_without_context_needs_ask_not_wall_clock(self):
+        r = mod.ground_tool_call(
+            {"name": "reminders.create", "arguments": {"time": "ngày mai"}},
+            None)
+        self.assertEqual(r.status, "NEEDS_ASK")
+        self.assertIn("time:context_time", r.needs)
+
+    def test_contact_name_exact_grounds_to_id(self):
+        roster = [{"id": "c1", "name": "Lan"}]
+        r = mod.ground_tool_call(
+            {"name": "sms.send",
+             "arguments": {"contact_name": "Lan", "content": "hi"}},
+            self.CTX, roster)
+        self.assertEqual(r.status, "GROUNDED")
+        self.assertEqual(r.call["arguments"]["contact_id"], "c1")
+        self.assertNotIn("contact_name", r.call["arguments"])
+
+    def test_contact_duplicate_needs_ask_and_sets_no_id(self):
+        roster = [ContactCandidate("c1", "Lan"),
+                  ContactCandidate("c2", "Lan")]
+        r = mod.ground_tool_call(
+            {"name": "sms.send",
+             "arguments": {"contact_name": "Lan", "content": "hi"}},
+            self.CTX, roster)
+        self.assertEqual(r.status, "NEEDS_ASK")
+        self.assertIn("contact:ambiguous", r.needs)
+        self.assertNotIn("contact_id", r.call["arguments"])
+
+    def test_search_call_is_never_rewritten(self):
+        roster = [ContactCandidate("c1", "Lan")]
+        r = mod.ground_tool_call(
+            {"name": "contacts.search", "arguments": {"query": "Lan"}},
+            self.CTX, roster)
+        self.assertEqual(r.status, "UNCHANGED")
+        self.assertEqual(r.call["arguments"]["query"], "Lan")
+
+    def test_contact_id_outside_roster_is_noted_not_blocked(self):
+        # Gold itself uses history ids outside search results (9/120 pairs).
+        roster = [ContactCandidate("c1", "Lan")]
+        r = mod.ground_tool_call(
+            {"name": "sms.send",
+             "arguments": {"contact_id": "c9", "content": "hi"}},
+            self.CTX, roster)
+        self.assertEqual(r.status, "UNCHANGED")
+        self.assertTrue(any("not in provided roster" in n for n in r.notes))
+
+    def test_input_is_never_mutated(self):
+        call = {"name": "ewallet.transfer",
+                "arguments": {"amount": "50 nghìn"}}
+        before = json.loads(json.dumps(call))
+        mod.ground_tool_call(call, self.CTX)
+        self.assertEqual(call, before)
+
+    def test_malformed_call_raises(self):
+        with self.assertRaises(ValueError):
+            mod.ground_tool_call({"name": "x"})
+        with self.assertRaises(ValueError):
+            mod.ground_tool_call({"name": "x", "arguments": "nope"})
+
+    @unittest.skipUnless((TRAIN_DIR / "zaic_tools").exists(),
+                         "zaic_tools tree absent")
+    def test_ground_then_validate_order(self):
+        # Pipeline order: ground FIRST, then the real Simulator.validate()
+        # on the grounded call -- validation must pass and stay free.
+        sys.path.insert(0, str(TRAIN_DIR))
+        from zaic_tools.executor import Simulator
+        catalog = json.loads(
+            (TRAIN_DIR / "train_tools_catalog.json").read_text(
+                encoding="utf-8"))
+        sample = {"context": {
+            "installed_apps": {
+                "reminders": {"tools": ["reminders.create", "reminders.list"],
+                              "state": {}},
+                "sys": {"tools": ["sys.ask_missing_info"], "state": {}}},
+            "current_time": "2026-10-14T20:00:00+07:00"}}
+        sim = Simulator(sample, catalog)
+        r = mod.ground_tool_call(
+            {"name": "reminders.create",
+             "arguments": {"time": "ngày mai lúc 8 giờ", "content": "x"}},
+            self.CTX)
+        self.assertEqual(r.status, "GROUNDED")
+        v = sim.validate(r.call["name"], r.call["arguments"])
+        self.assertEqual(v, {"ok": True, "error": None})
+        self.assertEqual(sim.log, [])
 
 
 if __name__ == "__main__":
