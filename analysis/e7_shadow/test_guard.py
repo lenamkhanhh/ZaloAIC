@@ -184,5 +184,8 @@ class ShadowGuardTests(unittest.TestCase):
         for text in ('đặt thứ năm ba giờ chiều, không thì bốn giờ', 'nhắc đọc sách, trong tên ghi "lúc 9 giờ tối"'):
             self.assertEqual(check('memo.create',{'time':'2024-02-03T21:00:00+07:00'},text)['status'],'UNKNOWN')
 
+    def test_ordinary_word_chinh_is_not_nine_h(self):
+        self.assertEqual(check('memo.create',{'time':'2024-02-03T20:00:00+07:00'},'tin về chính sách')['status'],'UNKNOWN')
+
 
 if __name__ == '__main__': unittest.main()
