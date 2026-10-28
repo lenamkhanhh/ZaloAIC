@@ -89,7 +89,7 @@ class NativeFormatError(ValueError):
         self.diagnostics = {**diagnostics,'format_valid':False,'format_error':message}
 
 
-def parse_native(text):
+def parse_native(text, *, reject_pseudo_calls=False):
     text = text.strip()
     blocks = re.findall(r'<tool_call>\s*(.*?)\s*</tool_call>',text,re.DOTALL)
     meta = {'blocks':len(blocks),'multi_block_turn':len(blocks)>1,
@@ -114,6 +114,9 @@ def parse_native(text):
         return {'name':obj['name'],'arguments':arguments},meta
     if '<tool_call' in text or '</tool_call' in text:
         fail('Incomplete tool_call tags')
+    if reject_pseudo_calls and re.match(r'^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\s*\(', text):
+        meta['pseudo_call_caught'] = True
+        fail('Function-like plain text is not an executable tagged tool call')
     candidate = text
     fence = re.fullmatch(r'```(?:json)?\s*(.*?)\s*```',text,re.DOTALL)
     if fence:
@@ -133,8 +136,9 @@ def parse_native(text):
 
 class NativeGenerator:
     """Share an already loaded legacy generator's weights; no second model."""
-    def __init__(self, base, seed=42):
+    def __init__(self, base, seed=42, *, reject_pseudo_calls=False):
         self.base, self.seed = base, seed
+        self.reject_pseudo_calls = reject_pseudo_calls
         self.last_diagnostics = {}
         if base.tokenizer.convert_tokens_to_ids('<|im_end|>') != EOS_ID:
             raise ValueError('Unexpected Qwen EOS: E1 requires the pinned tokenizer')
@@ -152,7 +156,7 @@ class NativeGenerator:
             params = SamplingParams(temperature=0.0,seed=self.seed,max_tokens=base.max_tokens,stop_token_ids=[EOS_ID])
             decoded = base.llm.generate([text],params)[0].outputs[0].text
         try:
-            call,self.last_diagnostics = parse_native(decoded)
+            call,self.last_diagnostics = parse_native(decoded, reject_pseudo_calls=self.reject_pseudo_calls)
             return call
         except NativeFormatError as exc:
             self.last_diagnostics = exc.diagnostics
