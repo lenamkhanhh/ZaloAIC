@@ -330,8 +330,15 @@ class NumberMoneyParser:
         for suffix, m in (("tỷ", 10 ** 9), ("triệu", 10 ** 6),
                           ("nghìn", 10 ** 3), ("ngàn", 10 ** 3)):
             if s.endswith(suffix):
+                rest = s[: -len(suffix)].strip()
+                # NEVER strip when the remainder still holds a big unit:
+                # "hai trieu tam tram nghin" must parse as 2,800,000, not
+                # as (2,000,800) x 1000. The strip is only for digit
+                # amounts ("150 nghin" -> 150 x 1000).
+                if any(tok in _BIG_UNITS for tok in _tokens(rest)):
+                    break
                 mult = m
-                s = s[: -len(suffix)].strip()
+                s = rest
                 break
         else:
             if re.fullmatch(r"\d+k", s):

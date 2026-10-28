@@ -125,6 +125,28 @@ class TestMoney(unittest.TestCase):
         self.assertIsNone(r.value)
         self.assertTrue(r.ambiguous)
 
+    def test_multi_unit_money_regression(self):
+        # Dry-run round 7 caught this: stripping a trailing big-unit
+        # suffix and then multiplying DOUBLE-SCALES strings that already
+        # contain a bigger unit ("hai trieu tam tram nghin" must be
+        # 2,800,000, not 2,000,800 x 1000).
+        cases = [
+            ("hai triệu tám trăm nghìn", Decimal(2800000)),
+            ("một triệu hai trăm nghìn", Decimal(1200000)),
+            ("sáu triệu năm trăm nghìn", Decimal(6500000)),
+            ("ba triệu sáu trăm nghìn", Decimal(3600000)),
+            ("bảy triệu tám trăm nghìn", Decimal(7800000)),
+            ("mười tám triệu năm trăm nghìn", Decimal(18500000)),
+            ("hai mươi ba triệu hai trăm hai mươi nghìn", Decimal(23220000)),
+            ("một tỷ hai trăm triệu", Decimal(1200000000)),
+            ("năm mươi nghìn", Decimal(50000)),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                r = self.p.parse_money(text)
+                self.assertEqual(r.value, expected)
+                self.assertFalse(r.ambiguous)
+
 
 # ---------------------------------------------------------------- dates
 ANCHOR_WED = datetime(2026, 10, 14, 20, 0)   # Wednesday
