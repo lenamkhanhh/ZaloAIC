@@ -131,6 +131,36 @@ Không chứa raw dataset, audio hay weights.
   RL shaped rewards → thu nhỏ decision space) kèm danh sách KHÔNG
   làm có bằng chứng chống và 2 câu phải hỏi organizers (XGrammar
   trên Docker A30, cách đếm params hệ thống).
+- `runtime/E5_V13_DEEP_ANALYSIS_AND_NEXT_STEP_2026-10-28.md` — Phân
+  tích sâu E5 V13 (main 8846ab1, 40/40 trial, verdict INCONCLUSIVE giữ
+  nguyên): vì sao rule sửa được 0116 (intent switch + omission +
+  validator chặn create thiếu time → ask) nhưng không sửa 6 target còn
+  lại; truy nguồn từng time (0220 copy current_time; 0219/0287/0360
+  current_time date + giờ tròn tiếp theo; 0353-control leak lịch ngày
+  mai 14:00 đi công viên; 0780 mơ hồ giữa default/giờ ra viện đã bị thay
+  thế/giờ ăn sáng); tách lỗi (fill-act 5, hỏi sai params 1, channel 0 ở
+  rule arm); control net 0 che 5/13 đổi hành vi + 2 premature stop mới;
+  pseudo-call key=value 0653 cả hai arm và giới hạn định nghĩa silent
+  (registered 0 vì đã có submitted read; đọc rộng sẽ thành CONFOUNDED —
+  công khai, không rescore); sửa 4 kết luận quá rộng trong bản SOTA
+  (E0 chỉ gold-current không phải thông tin hoàn hảo; trần prompt/
+  format/retry chưa chứng minh cho toàn họ; resolver ≠ ledger nguồn —
+  V13 fill-act chính là H5 residue paper tự loại trừ; trích dẫn
+  When2Call/SAGE/CAST/resolver đã verify lại kèm khoảng cách chuyển
+  giao); so sánh A/B/C + dự bị D và CHỌN E7 guard nguồn time/amount.
+- `runtime/E7_GUARD_DEPLOYMENT_BRIEF_2026-10-28.md` — Brief triển khai
+  E7 (đề xuất, chờ duyệt riêng trước khi làm): giả thuyết falsifiable
+  (guard chặn write thiếu provenance → chuyển fill-act thành ask);
+  base a472006, control fresh = V13 control y hệt, đúng một biến là
+  guard (không rule E5, không đổi parser/prompt/ASR); tập 20 mẫu E5 cố
+  định; spec provenance generic (A1–A4 allow, B1–B5 block, partial
+  provenance = block, reads/asks ngoài phạm vi); CPU gates G1–G5 +
+  shadow audit 3 tập (40 traces V13, gold writes dev, ASR-vs-gold gap)
+  là cửa bắt buộc trước GPU; key=value chỉ reporting, không đổi parser;
+  metric ask-first + breakdown sau block; tiêu chí CONFIRMED/PARTIAL/
+  REFUTED/INVALID; nguy cơ chặn nhầm (refer-back, supersession,
+  date-vs-hour, ASR gap, amount derivations); chi phí ~643s GPU theo
+  tốc độ V13 sau khi gates pass.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
