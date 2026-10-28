@@ -182,6 +182,10 @@ def _date_request(request, now):
 def _clocks(request):
     values = []
     for match in re.finditer(r'(?<!\w)(' + _NUM + r')\s*(?:giờ|h\b|:)\s*(?:(\d{1,2})(?:\s*phút)?)?\s*(rưỡi)?\s*(sáng|chiều|tối|trưa|đêm)?', request):
+        # "chính" is an ordinary word, not the number "chín" followed by h.
+        # Digit forms such as 9h remain supported; word numbers need a separator.
+        if not match[1][0].isdigit() and not request[match.end(1):match.end(1) + 1].isspace():
+            continue
         number = _number(match[1])
         if number is None:
             continue
