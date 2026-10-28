@@ -61,17 +61,21 @@ Arm B; Arm A không có nó.
 **Nội dung block (tiếng Việt, giữ nguyên khi implement):**
 
 > Quy tắc phân biệt nhắc–gọi: khi user nói "nhắc + <hành động>" thì
-> đó là tạo reminder, không phải làm hành động đó ngay. Thông tin
-> thiếu thường là thời gian — hỏi reminders.create với params
-> ["time"]. Chỉ khi user nói hành động ngay/lập tức thì mới là làm
-> ngay — khi đó mới hỏi entity của action đó (ví dụ phone.call thì
-> hỏi ["contact_id"]).
+> đó là tạo reminder, không phải làm hành động đó ngay. CHỈ hỏi time
+> khi time thực sự thiếu — tức không có giờ cụ thể nào trong request,
+> history hay observation. Nếu user đã cho giờ cụ thể thì dùng giờ
+> đó, không hỏi lại. Khi time thiếu thì hỏi reminders.create với
+> params ["time"]. Chỉ khi user nói hành động ngay/lập tức thì mới
+> là làm ngay — khi đó mới hỏi entity của action đó (ví dụ phone.call
+> thì hỏi ["contact_id"], và cũng chỉ hỏi khi entity đó thiếu).
 >
 > Ví dụ tổng quát (không phải yêu cầu thật): "nhắc tôi chúc mừng
 > sinh nhật Lan" → tạo reminder, thiếu giờ thì hỏi
-> reminders.create/time. Ngược lại, "gọi ngay cho Lan" → gọi ngay,
-> thiếu liên hệ thì hỏi phone.call/contact_id. Một mốc thời gian mơ
-> hồ (như "sáng mai") không phải là giờ cụ thể — vẫn phải hỏi time.
+> reminders.create/time. Ngược lại, "nhắc tôi gọi cho Lan lúc 9 giờ
+> tối" → giờ đã có cụ thể nên tạo reminder với giờ đó, KHÔNG hỏi
+> time. Và "gọi ngay cho Lan" → gọi ngay, thiếu liên hệ thì hỏi
+> phone.call/contact_id. Một mốc thời gian mơ hồ (như "sáng mai")
+> không phải là giờ cụ thể — vẫn tính là thiếu, vẫn phải hỏi time.
 
 Ba điểm trong rule cần giữ khi implement, không được lược:
 
@@ -79,9 +83,13 @@ Ba điểm trong rule cần giữ khi implement, không được lược:
    trên tên hành động (gọi, họp, uống thuốc đều có thể là reminder).
 2. Target ask cho nhánh nhắc LUÔN là reminders.create/time (không
    phải tool của hành động được nhắc tới).
-3. Mốc thời gian mơ hồ vẫn phải hỏi — đây là lỗi E0 của 0116 (tự
-   điền giờ) và của 0780-dạng (transcript có "sáng mai" nhưng gold
-   vẫn hỏi time).
+3. Hỏi time CÓ ĐIỀU KIỆN theo thiếu đủ: giờ cụ thể đã cho thì dùng,
+   không hỏi lại; mốc thời gian mơ hồ (như "sáng mai") vẫn tính là
+   thiếu nên vẫn phải hỏi — đây là lỗi E0 của 0116 (tự điền giờ khi
+   thiếu) và của 0780-dạng (transcript có "sáng mai" nhưng gold vẫn
+   hỏi time). Rule cũ viết "thiếu thường là time" dễ bị đọc thành
+   "luôn hỏi time cho mọi reminder" — bản sửa này chặn cách đọc đó
+   (điểm Codex nêu: chỉ hỏi time khi thiếu).
 
 ## 3. Mẫu và scoring key (build từ gold, diagnostic-only)
 
@@ -173,7 +181,8 @@ không được tính vào verdict rule (xem §5).
 |---|---|
 | Ask-vs-act rate | Tỉ lệ mẫu mà first call là write/call thay vì ask (lỗi 0116-dạng: tự làm thay vì hỏi) |
 | Tool_name-only accuracy | First call đúng tool_name nhưng sai params — chẩn đoán: model chọn đúng tool nhưng sai param |
-| Pseudo-call count | Số output text mang hình thức call nhưng không được submit (đo riêng, không gộp vào format_valid). Kỳ vọng = 0 sau E6-C; nếu > 0 thì phép đo E5 bị nhiễu → verdict CONFOUNDED (xem dưới) |
+| Pseudo-call caught | Số output text mang hình thức call mà parser E6-C BẮT được → validation_rejected + retry (không phải silent stop). Đây là bằng chứng channel fix đang hoạt động; caught KHÔNG làm FAIL ask-first vì nó chưa bao giờ là submitted call — ask-first chỉ chấm FIRST SUBMITTED call |
+| Pseudo-call silent | Số output text mang hình thức call mà KHÔNG bị bắt và kết thúc trace thành clean stop (E6-C không bắt được pattern đó). Silent mới là nhiễu đo: mẫu đó có 0 submitted calls → ask-first FAIL, và verdict toàn cục chuyển thành CONFOUNDED (xem dưới) |
 | Premature stop rate | Tỉ lệ mẫu 0 calls |
 | Full-trace (secondary) | Hash/F1/score — chỉ để tham khảo. Với mẫu ask_only, ask đúng → score 1; stop 0 calls → hash true nhưng F1 0 → score 0; write → thường hash sai → score 0. Vì vậy full-trace score gần như trùng ask-first, trừ trường hợp stop — lý do metric chính là ask-first chứ không phải score |
 | Spillover | Thay đổi ask-first trên nhóm CONTROL, báo riêng từng mẫu WATCH (0823, 0961) |
@@ -183,16 +192,27 @@ không được tính vào verdict rule (xem §5).
 - **CONFIRMED (phạm vi disambiguation)** nếu đồng thời: (a) net gain
   trên nhóm TARGET ≥ 2 mẫu (correct_B − correct_A ≥ 2); (b) net
   change trên nhóm CONTROL ≥ −1 (không phá control); (c)
-  pseudo-call count = 0 ở cả hai arm. Thiếu (c) → verdict là
-  CONFOUNDED, không phải confirmed hay refuted.
-- **PARTIAL** nếu (a) đạt nhưng control net change ≤ −2 (rule giúp
-  target nhưng leak sang control — cần thu hẹp rule, ví dụ chỉ kích
-  hoạt khi cue "nhắc" xuất hiện nguyên vẹn, không kích hoạt với từ
-  gần nghĩa như "quên").
-- **REFUTED** nếu net gain trên TARGET ≤ 0 trong khi pseudo-call = 0
-  (channel sạch mà rule vẫn không đổi hành vi → rule text không đủ
-  sức điều khiển disambiguation; cần cơ chế khác, không phải thêm
-  chữ).
+  pseudo_call_silent = 0 ở cả hai arm. (Pseudo-call caught > 0 vẫn
+  được — đó là channel fix đang hoạt động, không phải nhiễu.)
+- **PARTIAL** nếu TARGET net ≥ +1 nhưng CONTROL net ≤ −2 (và silent
+  = 0): rule giúp target nhưng leak sang control — cần thu hẹp
+  trigger, ví dụ chỉ kích hoạt khi cue "nhắc" xuất hiện nguyên vẹn,
+  không kích hoạt với từ gần nghĩa như "quên".
+- **INCONCLUSIVE (bổ sung theo Codex nêu)** nếu TARGET net = +1,
+  CONTROL net ≥ −1, silent = 0: tín hiệu yếu trên n = 7, chưa đủ để
+  kết luận theo hướng nào — khoảng trống trước đây (không thuộc
+  CONFIRMED vì < +2, không thuộc REFUTED vì > 0). Hành động đã đăng
+  ký trước tại đây (trước khi E5 chạy): MỞ RỘNG tập mẫu với 28 mẫu
+  ask_only còn lại (cùng hai arm, cùng base, cùng metric) rồi tính
+  lại verdict trên tập mở rộng — không adopt rule, không kết luận
+  rule vô dụng, chỉ vì +1.
+- **REFUTED** nếu TARGET net ≤ 0 trong khi silent = 0 (channel sạch
+  mà rule vẫn không đổi hành vi → rule text không đủ sức điều khiển
+  disambiguation; cần cơ chế khác, không phải thêm chữ).
+- **CONFOUNDED** nếu pseudo_call_silent > 0 ở arm nào (bất kể các số
+  khác) — phép đo bị nhiễu channel, các verdict khác không có giá
+  trị. Đây là lý do E5 bị gate bởi E6-C (§0): E6-C confirmed chính
+  là điều kiện để silent về 0.
 - **Không kết luận thống kê, không khái quát ngoài 20 mẫu.** Mọi câu
   trong report phải gắn với ID mẫu. E5 một mình không promote rule
   thành policy mặc định — adoption cần user duyệt riêng sau khi đọc
@@ -203,11 +223,22 @@ không được tính vào verdict rule (xem §5).
 GPU chỉ chạy khi tất cả pass. Một run GPU với CPU test fail là run
 không hợp lệ.
 
-- **G1 — Prompt hygiene:** grep block §2 + toàn bộ prompt mới để đảm
-  bảo không chứa ID/amount/tool-name của 20 mẫu, không chứa transcript
-  của mẫu nào (đặc biệt không chứa câu "nhắc tôi gọi điện cho mẹ"
-  của 0116 — ví dụ đã được thay bằng synthetic "Lan"). Ví dụ chỉ
-  được dùng nhân vật/hành động bịa.
+- **G1 — Prompt hygiene (phạm vi: CHỈ block mới §2, không phải toàn
+  bộ prompt):** prompt nền vốn đã chứa catalog tool, context và
+  history một cách hợp lệ, nên cấm tool-name trên toàn prompt là sai
+  và sẽ tự làm rule trượt kiểm tra (rule cần nhắc tên
+  reminders.create và phone.call). Vì vậy G1 chỉ grep block §2 mới
+  thêm (rule + ví dụ) và cấm trong đó: sample IDs (train_XXXX), giá
+  trị cụ thể từ mẫu (amount, giờ, số điện thoại, contact IDs),
+  fragment/quote transcript của mẫu nào (đặc biệt câu "nhắc tôi gọi
+  điện cho mẹ" của 0116 — ví dụ đã thay bằng synthetic "Lan"), tên
+  người/thực thể trong mẫu, và mọi liệt kê gold ask theo từng mẫu.
+  ĐƯỢC PHÉP trong block: tên tool catalog tổng quát mà rule cần
+  (reminders.create, phone.call) và tên param tổng quát (time,
+  contact_id) — đây là từ vựng của task, không phải đáp án mẫu.
+  Kiểm tra thêm: không cụm từ đặc trưng nào trong ví dụ xuất hiện
+  trong transcript của 20 mẫu (kiểm tra theo cụm, không phải theo
+  từ thường như "gọi" hay "nhắc").
 - **G2 — Sample/ASR integrity:** 20 mẫu đều thuộc dev (không
   held-out); ASR cache hash giống hệt giữa hai arm; ghi lại cue
   "nhắc" còn/mất cho 7 mẫu TARGET.
@@ -228,14 +259,14 @@ không hợp lệ.
       nếu E6-C refuted thì E5 không chạy và report ghi rõ là ON HOLD.
 - [ ] Log pass G1–G5 (CPU) trước GPU.
 - [ ] Bảng per-sample cho mỗi arm: first call, ask-first PASS/FAIL,
-      ask-vs-act, pseudo-call, ASR cue còn/mất (TARGET), full-trace
-      hash/F1/score (secondary).
+      ask-vs-act, pseudo-call caught/silent riêng biệt, ASR cue
+      còn/mất (TARGET), full-trace hash/F1/score (secondary).
 - [ ] Trace JSON định dạng v6/v7/E0/E1 (diagnostic-only: ASR của
       model, raw output, call đã chạy, tool feedback — không full
       prompt, không gold, không state dump).
-- [ ] Verdict theo đúng §5: CONFIRMED / PARTIAL / REFUTED /
-      CONFOUNDED + bằng chứng theo ID mẫu; báo riêng subgroup
-      gọi/họp/uống thuốc và 2 mẫu WATCH.
+- [ ] Verdict theo đúng §5: CONFIRMED / PARTIAL / INCONCLUSIVE /
+      REFUTED / CONFOUNDED + bằng chứng theo ID mẫu; báo riêng
+      subgroup gọi/họp/uống thuốc và 2 mẫu WATCH.
 - [ ] So sánh trực tiếp cùng mẫu giữa hai arm; không dùng mean
       chung 20 mẫu làm verdict; không đề xuất model khác, training,
       held-out hay merge main từ kết quả E5.
@@ -247,6 +278,8 @@ không hợp lệ.
   nên không confound).
 - Nếu PARTIAL → thu hẹp trigger rule rồi chạy lại E5 (chỉ đổi trigger,
   không đổi base).
+- Nếu INCONCLUSIVE → mở rộng 28 mẫu ask_only còn lại rồi tính lại
+  verdict; không adopt, không bỏ rule.
 - Nếu REFUTED → dừng hướng rule text cho disambiguation; xem xét cơ
   chế khác (brief riêng, không làm trong E5).
 - E4 (guard) vẫn đợi sau cùng; E3 (ASR) độc lập, chạy song song được.

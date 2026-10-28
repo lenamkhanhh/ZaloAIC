@@ -100,9 +100,13 @@ Không chứa raw dataset, audio hay weights.
   như nguyên văn transcript 0116), 20 mẫu ask_only với scoring key
   đã kiểm chứng (cue "nhắc" tách sạch 7 target vs 13 control theo
   kiểm tra không phân biệt hoa thường), metric chính ask-first
-  accuracy, tiêu chí CONFIRMED/PARTIAL/REFUTED/CONFOUNDED, 2 mẫu
-  WATCH spillover (0823, 0961), cột đo ASR cue, và gate CPU G1–G5.
-  Không sửa inference, không chạy GPU, không held-out.
+  accuracy, tiêu chí CONFIRMED/PARTIAL/INCONCLUSIVE/REFUTED/CONFOUNDED,
+  2 mẫu WATCH spillover (0823, 0961), cột đo ASR cue, và gate CPU
+  G1–G5. Bản sửa theo 4 điểm Codex nêu: hỏi time có điều kiện (chỉ
+  khi thiếu), G1 chỉ kiểm tra block mới (không cấm tool-name
+  catalog), tách pseudo-call caught khỏi silent, verdict
+  INCONCLUSIVE khi target tăng đúng 1 mẫu. Không sửa inference,
+  không chạy GPU, không held-out.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
