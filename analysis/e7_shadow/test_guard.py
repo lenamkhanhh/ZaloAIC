@@ -131,16 +131,58 @@ class ShadowGuardTests(unittest.TestCase):
                 self.assertEqual(check('memo.create', {'time': value}, 'nhắc đọc sách')['status'], 'UNKNOWN')
 
     def test_atomic_call_and_input_immutability(self):
-        call={'name': 'agenda.move', 'arguments': {'start': '2024-02-03T21:00:00+07:00', 'end': '2024-02-03T22:00:00+07:00'}}
+        call={'name': 'agenda.move', 'arguments': {'start': '2024-02-03T22:00:00+07:00', 'end': '2024-02-03T22:00:00+07:00'}}
         before=copy.deepcopy(call)
         result=assess(call, TOOLS, 'đặt dã ngoại lúc 9 giờ tối', NOW)
         self.assertEqual(call, before)
-        self.assertEqual(result['arguments']['start']['status'], 'ALLOW')
+        self.assertEqual(result['arguments']['start']['status'], 'BLOCK')
         self.assertEqual(result['status'], 'BLOCK')
 
     def test_clock_absence_and_no_pointed_amount_are_different(self):
         self.assertEqual(check('wallet.pay', {'amount': 73000}, 'chuyển tiền')['status'], 'UNKNOWN')
         self.assertEqual(check('memo.create', {'time': '2024-02-03T09:00:00+07:00'}, 'nhắc đọc sách')['status'], 'BLOCK')
+
+    def test_independent_review_event_anchor_beats_nua(self):
+        obs=[({}, {'ok': True, 'event': {'id': 'synthetic_event', 'title': 'dã ngoại', 'start': '2024-02-04T10:00:00+07:00'}})]
+        for value, expected in [('2024-02-03T18:20:00+07:00', 'BLOCK'), ('2024-02-04T12:00:00+07:00', 'ALLOW')]:
+            result=check('agenda.move', {'event_id': 'synthetic_event', 'start': value}, 'dời dã ngoại muộn hai giờ nữa', observations=obs)
+            self.assertEqual(result['status'], expected)
+
+    def test_independent_review_number_in_another_slot_or_clause(self):
+        for text, value in [('đặt cảnh báo điện lúc 9 giờ tối', 9), ('mua hai cuộn vải và đặt cảnh báo điện', 2)]:
+            self.assertEqual(check('meter.alert', {'threshold_kwh': value}, text)['status'], 'UNKNOWN')
+
+    def test_independent_review_unimplemented_weekday_modifier(self):
+        for value in ('2024-02-05', '2024-02-12'):
+            self.assertEqual(check('parcel.book', {'date': value}, 'đặt bưu tá thứ hai tuần sau nữa')['status'], 'UNKNOWN')
+
+    def test_independent_review_ids_require_exact_token_boundary(self):
+        h=[{'role':'assistant','tool_results':[{'ok':True,'event':{'id':'record_1','start':'2024-02-04T10:00:00+07:00'}}]}]
+        self.assertEqual(check('memo.create',{'time':'2024-02-04T10:00:00+07:00'},'nhắc theo giờ như lần trước của record_10',history=h)['status'],'UNKNOWN')
+
+    def test_half_hour_shift_does_not_silently_drop_fraction(self):
+        obs=[({}, {'ok':True,'event':{'id':'synthetic_event','title':'dã ngoại','start':'2024-02-04T10:00:00+07:00'}})]
+        self.assertEqual(check('agenda.move',{'event_id':'synthetic_event','start':'2024-02-04T11:30:00+07:00'},'dời dã ngoại muộn một tiếng rưỡi',observations=obs)['status'],'UNKNOWN')
+
+    def test_period_before_hour_is_respected(self):
+        self.assertEqual(check('memo.create',{'time':'2024-02-04T17:00:00+07:00'},'chiều mai 5 giờ nhắc đọc sách')['status'],'ALLOW')
+
+    def test_partial_million_currency_conversion_and_chuc_are_unknown(self):
+        for text, value in [('chuyển một triệu hai',1200000),('chuyển năm chục nghìn',50000),('đổi bốn trăm đô dưới mười triệu thì chuyển',8100000)]:
+            self.assertEqual(check('wallet.pay',{'amount':value},text)['status'],'UNKNOWN')
+
+    def test_inherited_end_date_completion_and_pending_intent_are_unknown(self):
+        cases=[('agenda.move',{'end':'2024-02-03T22:00:00+07:00'},'đặt dã ngoại lúc 9 giờ tối'),
+               ('memo.create',{'time':'2024-02-04T21:00:00+07:00'},'đặt lúc 9 giờ tối hôm đó'),
+               ('memo.create',{'time':'2024-02-03T17:00:00+07:00'},'nhắc khi máy giặt xong'),
+               ('memo.create',{'time':'2024-02-04T08:00:00+07:00'},'tạo cái nhắc đó nhé'),
+               ('memo.create',{'time':'2024-02-03T17:00:00+07:00'},'gói cá nhân thôi')]
+        for name,args,text in cases:
+            with self.subTest(text=text):self.assertEqual(check(name,args,text)['status'],'UNKNOWN')
+
+    def test_unparsed_or_quoted_clock_is_not_confirmed_evidence(self):
+        for text in ('đặt thứ năm ba giờ chiều, không thì bốn giờ', 'nhắc đọc sách, trong tên ghi "lúc 9 giờ tối"'):
+            self.assertEqual(check('memo.create',{'time':'2024-02-03T21:00:00+07:00'},text)['status'],'UNKNOWN')
 
 
 if __name__ == '__main__': unittest.main()
