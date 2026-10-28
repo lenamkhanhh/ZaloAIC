@@ -1,0 +1,1237 @@
+{
+  "scope": "E5_DIAGNOSTIC_ENGINEERING_PROXY_NOT_OFFICIAL",
+  "verified_trials": 40,
+  "generation_hashes_verified": 78,
+  "groups": {
+    "control": {
+      "TARGET": {
+        "correct": 0,
+        "total": 7
+      },
+      "CONTROL": {
+        "correct": 0,
+        "total": 13
+      }
+    },
+    "rule": {
+      "TARGET": {
+        "correct": 1,
+        "total": 7
+      },
+      "CONTROL": {
+        "correct": 0,
+        "total": 13
+      }
+    }
+  },
+  "stats": {
+    "control": {
+      "caught": 4,
+      "silent": 0,
+      "explicit_format_failure": 2,
+      "premature_stop": 3,
+      "first_write": 11,
+      "generations": 42,
+      "submitted_calls": 20,
+      "manual_scope_gap_after_calls": 1,
+      "clean_zero_call_stops": 1
+    },
+    "rule": {
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": 0,
+      "premature_stop": 3,
+      "first_write": 12,
+      "generations": 36,
+      "submitted_calls": 18,
+      "manual_scope_gap_after_calls": 1,
+      "clean_zero_call_stops": 3
+    }
+  },
+  "details": [
+    {
+      "id": "train_0116",
+      "arm": "control",
+      "group": "TARGET",
+      "first_call": null,
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": null,
+      "caught": 2,
+      "silent": 0,
+      "explicit_format_failure": true,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "CHANNEL_CAUGHT_FAILED",
+      "trace_outcome": "FORMAT_FAILURE_RETRY_EXHAUSTED",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0219",
+      "arm": "control",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "đi họp với nha",
+          "time": "2026-11-06T14:00:00+07:00",
+          "repeat": "once"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0220",
+      "arm": "control",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "khỏi cha mẹ",
+          "time": "2026-11-18T13:10:00+07:00",
+          "repeat": "once"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0287",
+      "arm": "control",
+      "group": "TARGET",
+      "first_call": null,
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": null,
+      "caught": 2,
+      "silent": 0,
+      "explicit_format_failure": true,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "CHANNEL_CAUGHT_FAILED",
+      "trace_outcome": "FORMAT_FAILURE_RETRY_EXHAUSTED",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0353",
+      "arm": "control",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "họ phụ huynh",
+          "time": "2026-11-09T14:00:00+07:00",
+          "repeat": "once"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0360",
+      "arm": "control",
+      "group": "TARGET",
+      "first_call": {
+        "name": "contacts.search",
+        "arguments": {
+          "query": "mẹ"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "read",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0780",
+      "arm": "control",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "Uống thuốc Cardiol",
+          "time": "2026-10-18T08:00:00+07:00",
+          "repeat": "once"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0498",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "sys.ask_missing_info",
+        "arguments": {
+          "tool_name": "ewallet.transfer",
+          "params": [
+            "contact_id",
+            "amount"
+          ]
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": true,
+      "first_kind": "meta",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_ASK_PARAMS",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0653",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "flights.search",
+        "arguments": {
+          "origin": "Hà Nội",
+          "destination": "Đà Nẵng",
+          "date": "2026-10-05"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "read",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": true
+    },
+    {
+      "id": "train_0683",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "video_meeting.create",
+        "arguments": {
+          "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con",
+          "start": "2026-10-01T10:00:00+07:00",
+          "attendees": []
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0684",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "sys.ask_missing_info",
+        "arguments": {
+          "tool_name": "maps.search_place",
+          "params": [
+            "query"
+          ]
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "meta",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0823",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "calendar.create_event",
+        "arguments": {
+          "title": "Kế hoạch ra mắt",
+          "start": "2026-10-10T10:00:00+07:00",
+          "end": "2026-10-10T11:00:00+07:00",
+          "location": "Phòng họp tầng năm",
+          "attendees": []
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0961",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "bill_payment.list_bills",
+        "arguments": {
+          "type": "water"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "read",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1029",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "email.reply",
+        "arguments": {
+          "email_id": "mail_6244",
+          "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1075",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "home_energy.set_alert",
+        "arguments": {
+          "threshold_kwh": 230
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1104",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "tv.tune",
+        "arguments": {
+          "channel": "VTV3"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1107",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "library.reserve",
+        "arguments": {
+          "book_id": "book_5170"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1111",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "email.archive",
+        "arguments": {
+          "email_id": "mail_90",
+          "action": "archive"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1223",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": null,
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": null,
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "PREMATURE_STOP",
+      "trace_outcome": "CLEAN_ZERO_CALL_STOP",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1234",
+      "arm": "control",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "email.read",
+        "arguments": {
+          "email_id": "mail_5554"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "read",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0116",
+      "arm": "rule",
+      "group": "TARGET",
+      "first_call": {
+        "name": "sys.ask_missing_info",
+        "arguments": {
+          "tool_name": "reminders.create",
+          "params": [
+            "time"
+          ]
+        }
+      },
+      "ask_first": true,
+      "tool_name_only": true,
+      "first_kind": "meta",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "PASS",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0219",
+      "arm": "rule",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "đi họp với nha",
+          "time": "2026-11-06T14:00:00+07:00"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0220",
+      "arm": "rule",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "khỏi cha mẹ",
+          "time": "2026-11-18T13:10:00+07:00"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0287",
+      "arm": "rule",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "gửi cho mẹ cay",
+          "time": "2026-11-13T09:00:00+07:00"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0353",
+      "arm": "rule",
+      "group": "TARGET",
+      "first_call": {
+        "name": "sys.ask_missing_info",
+        "arguments": {
+          "tool_name": "reminders.create",
+          "params": [
+            "content"
+          ]
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": true,
+      "first_kind": "meta",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_ASK_PARAMS",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0360",
+      "arm": "rule",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "gọi cho mẹ",
+          "time": "2026-11-15T20:00:00+07:00"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0780",
+      "arm": "rule",
+      "group": "TARGET",
+      "first_call": {
+        "name": "reminders.create",
+        "arguments": {
+          "content": "uống thuốc Cardiol",
+          "time": "2026-10-18T08:00:00+07:00"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": true,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0498",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "sys.ask_missing_info",
+        "arguments": {
+          "tool_name": "ewallet.transfer",
+          "params": [
+            "contact_id",
+            "amount"
+          ]
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": true,
+      "first_kind": "meta",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_ASK_PARAMS",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0653",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "flights.search",
+        "arguments": {
+          "origin": "Hà Nội",
+          "destination": "Đà Nẵng",
+          "date": "2026-10-05",
+          "passengers": 1
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "read",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": true
+    },
+    {
+      "id": "train_0683",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "video_meeting.create",
+        "arguments": {
+          "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố",
+          "start": "2026-10-01T09:00:00+07:00",
+          "attendees": []
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0684",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": null,
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": null,
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "PREMATURE_STOP",
+      "trace_outcome": "CLEAN_ZERO_CALL_STOP",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0823",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "calendar.create_event",
+        "arguments": {
+          "title": "Kế hoạch ra mắt",
+          "start": "2026-10-10T10:00:00+07:00",
+          "end": "2026-10-10T11:00:00+07:00",
+          "location": "Phòng họp tầng năm",
+          "attendees": []
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_0961",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "bill_payment.list_bills",
+        "arguments": {}
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "read",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1029",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "email.reply",
+        "arguments": {
+          "email_id": "mail_6244",
+          "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1075",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "home_energy.set_alert",
+        "arguments": {
+          "threshold_kwh": 230
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1104",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "tv.tune",
+        "arguments": {
+          "channel": "VTV3"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1107",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "library.reserve",
+        "arguments": {
+          "book_id": "book_5170"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1111",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": {
+        "name": "email.archive",
+        "arguments": {
+          "email_id": "mail_90",
+          "action": "archive"
+        }
+      },
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": "write",
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "WRONG_INTENT_OR_ASK_VS_ACT",
+      "trace_outcome": "RETURNED_WITH_CALLS",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1223",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": null,
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": null,
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "PREMATURE_STOP",
+      "trace_outcome": "CLEAN_ZERO_CALL_STOP",
+      "parser_scope_gap_after_submitted_call": false
+    },
+    {
+      "id": "train_1234",
+      "arm": "rule",
+      "group": "CONTROL",
+      "first_call": null,
+      "ask_first": false,
+      "tool_name_only": false,
+      "first_kind": null,
+      "caught": 0,
+      "silent": 0,
+      "explicit_format_failure": false,
+      "target_cue": null,
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "primary_diagnosis": "PREMATURE_STOP",
+      "trace_outcome": "CLEAN_ZERO_CALL_STOP",
+      "parser_scope_gap_after_submitted_call": false
+    }
+  ],
+  "control_0116_v11_exact_match": true,
+  "target_net": 1,
+  "control_net": 0,
+  "verdict": "INCONCLUSIVE",
+  "elapsed_seconds": 643.4446667730001,
+  "generation_partition": {
+    "control": {
+      "tagged": 22,
+      "caught": 4,
+      "legacy_stop": 5,
+      "plain_text": 11
+    },
+    "rule": {
+      "tagged": 19,
+      "legacy_stop": 9,
+      "plain_text": 8
+    }
+  },
+  "primary_diagnosis_counts": {
+    "control": {
+      "CHANNEL_CAUGHT_FAILED": 2,
+      "WRONG_INTENT_OR_ASK_VS_ACT": 16,
+      "WRONG_ASK_PARAMS": 1,
+      "PREMATURE_STOP": 1
+    },
+    "rule": {
+      "PASS": 1,
+      "WRONG_INTENT_OR_ASK_VS_ACT": 14,
+      "WRONG_ASK_PARAMS": 2,
+      "PREMATURE_STOP": 3
+    }
+  },
+  "trace_outcomes": {
+    "control": {
+      "FORMAT_FAILURE_RETRY_EXHAUSTED": 2,
+      "RETURNED_WITH_CALLS": 17,
+      "CLEAN_ZERO_CALL_STOP": 1
+    },
+    "rule": {
+      "RETURNED_WITH_CALLS": 17,
+      "CLEAN_ZERO_CALL_STOP": 3
+    }
+  },
+  "manual_plain_text_review_count": 19,
+  "verdict_scope": "INCONCLUSIVE under preregistered zero-submission silent definition; one unsubmitted key=value pseudo-stop after an already submitted read in each arm remains a channel limitation. Broader all-output silent interpretation would be CONFOUNDED; not substituted for the primary verdict after observing results."
+}

@@ -1,0 +1,154 @@
+[
+  {
+    "id": "train_0220",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Đã tạo nhắc việc \"khỏi cha mẹ\" vào lúc 13:10 hôm nay.",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0353",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Đã tạo nhắc việc: \"họ phụ huynh\" vào lúc 14:00 ngày 09/11.",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0360",
+    "arm": "control",
+    "generation_index": 3,
+    "raw_text": "Đã tạo nhắc việc: \"Gọi cho mẹ\" vào lúc 20:00 hôm nay.",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0780",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Đã đặt nhắc việc để anh uống thuốc Cardiol vào lúc 8h sáng ngày mai (18/10). Nhắc việc này chỉ được thực hiện một lần. Nếu cần điều chỉnh, vui lòng cho biết!",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0653",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "sys.ask_missing_info tool_name=flights.search params=[\"date\"]",
+    "manual_review": "UNSUBMITTED_PSEUDO_AFTER_READ",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0683",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Đã tạo phòng học trực tuyến cho bộ hướng dẫn bà con với thời gian bắt đầu vào 10:00 ngày 01/10/2026. Link tham gia là [https://meet.example.test/nit-zpun-vyc](https://meet.example.test/nit-zpun-vyc).",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0961",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Có hóa đơn nước Dawaco với số tiền 212.000 đồng, đến hạn vào thứ Bảy, ngày 28/11. Bạn đã quên bật tự động thanh toán cho hóa đơn này. Nếu muốn, tôi có thể giúp bạn bật tự động thanh toán cho hóa đơn nước này. Bạn có muốn tôi làm điều đó không?",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_1075",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Đã đặt cảnh báo điện nhà xuống mức 230 số/tháng. Mức này thấp hơn mức hiện tại (300 số/tháng), giúp tiết kiệm điện hơn. Nếu cần điều chỉnh thêm, cứ nói nhé!",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_1104",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Đã chuyển sang kênh VTV3 để xem phim \"Thương ngày nắng về\" trưa nay. Mưa rào nên em không cần ra ngoài, ở nhà xem phim là tốt nhất nhé!",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_1107",
+    "arm": "control",
+    "generation_index": 2,
+    "raw_text": "Em đã giúp chị giữ cuốn sách \"Mắt biếc\" của Nguyễn Nhật Ánh tại thư viện rồi ạ. Chị có thể lấy luôn vào ngày mai nhé!",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_1234",
+    "arm": "control",
+    "generation_index": 3,
+    "raw_text": "Ông Hải ơi, theo email từ Tư Lành, ông cần báo ngày cắt lúa để họ xuống tận ruộng cân với giá 7.200 đồng một ký. Còn Công ty Lương thực Hậu Giang đưa giá 7.400 đồng một ký, nhận cân tại ruộng, yêu cầu báo trước 3 ngày. Ông có muốn tôi soạn email trả lời để thông báo ngày thu hoạch cụ thể không?",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0360",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "Đã tạo nhắc việc: \"gọi cho mẹ\" vào lúc 20:00 hôm nay.",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0780",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "Đã tạo nhắc việc: \"uống thuốc Cardiol\" vào lúc 8:00 sáng ngày mai (18/10).",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0653",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "sys.ask_missing_info tool_name=flights.search params=[\"date\"]",
+    "manual_review": "UNSUBMITTED_PSEUDO_AFTER_READ",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0683",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "Đã tạo phòng họp trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố với thời gian bắt đầu vào 09:00 ngày 01/10/2026. Link tham gia: [https://meet.example.test/lhe-foiv-tty](https://meet.example.test/lhe-foiv-tty).",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_0961",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "Có vẻ như bạn đang nhắc đến các hóa đơn đến hạn, cụ thể là:\n\n- **Hóa đơn nước Dawaco**: 212.000 đồng, đến hạn **thứ Bảy (2026-11-27)**.  \n- **Hóa đơn truyền hình S+**: 147.000 đồng, đến hạn **chủ nhật (2026-11-28)**.  \n- **Hóa đơn mạng Vitech**: 220.000 đồng, đến hạn **chủ nhật (2026-11-28)**.\n\nBạn có muốn mình giúp thanh toán hoặc đặt lịch tự động thanh toán cho bất kỳ hóa đơn nào không?  \nHoặc bạn cần kiểm tra thêm thông tin về một hóa đơn cụ thể?",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_1075",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "Đã đặt cảnh báo điện nhà xuống mức 230 số/tháng. Mức này thấp hơn mức hiện tại (300 số/tháng), giúp tiết kiệm điện hơn. Nếu cần điều chỉnh thêm, cứ nói nhé!",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_1104",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "Đã chuyển sang kênh VTV3 để xem phim \"Thương ngày nắng về\" trưa nay. Mưa rào nên em không cần ra ngoài, ở nhà xem phim là tốt nhất nhé!",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  },
+  {
+    "id": "train_1107",
+    "arm": "rule",
+    "generation_index": 2,
+    "raw_text": "Em đã giúp chị giữ cuốn sách \"Mắt biếc\" của Nguyễn Nhật Ánh tại thư viện rồi ạ. Chị có thể đến lấy luôn vào sáng mai nhé!",
+    "manual_review": "ordinary_prose",
+    "zero_submitted_trace": false
+  }
+]

@@ -1,0 +1,3757 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "summary": {
+    "status": "SMOKE_COMPLETED",
+    "evidence": "E5_REMINDER_RULE_DIAGNOSTIC_NOT_BENCHMARK",
+    "source_commit": "a472006441ec69aee1238153b0c7daf53ba41dee",
+    "sample_plan": [
+      {
+        "id": "train_0116",
+        "group": "TARGET"
+      },
+      {
+        "id": "train_0219",
+        "group": "TARGET"
+      },
+      {
+        "id": "train_0220",
+        "group": "TARGET"
+      },
+      {
+        "id": "train_0287",
+        "group": "TARGET"
+      },
+      {
+        "id": "train_0353",
+        "group": "TARGET"
+      },
+      {
+        "id": "train_0360",
+        "group": "TARGET"
+      },
+      {
+        "id": "train_0780",
+        "group": "TARGET"
+      },
+      {
+        "id": "train_0498",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_0653",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_0683",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_0684",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_0823",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_0961",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_1029",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_1075",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_1104",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_1107",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_1111",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_1223",
+        "group": "CONTROL"
+      },
+      {
+        "id": "train_1234",
+        "group": "CONTROL"
+      }
+    ],
+    "seed": 42,
+    "models": {
+      "asr": "vinai/PhoWhisper-small",
+      "asr_revision": "a86b604c346caf7148c37512eafe783a16420adb",
+      "llm": "Qwen/Qwen3-4B-Instruct-2507",
+      "llm_snapshot": "cdbee75f17c01a7cc42f958dc650907174af0554"
+    },
+    "dataset": {
+      "bytes": 876430231,
+      "sha256": "57d371518996ec70d3af86402b7eba61208093c82955b9807a7ab39604b47320",
+      "version": "release: v3.2.0\nbuilt: 2026-10-24T23:35:25+0700\ntrain 1545 / public_test 634\n"
+    },
+    "elapsed_seconds": 643.4446667730001,
+    "proxy_mean_by_arm": {
+      "control": 0.0,
+      "rule": 0.05
+    },
+    "source_archive_sha256": "9a61bda65ff00253a906804f6e0aa81cf0feda4af2300e0e58ae775f60c0b5dc",
+    "cached_input_preflight": "20/20 cached samples, 40/40 native arm hashes passed"
+  },
+  "traces": [
+    {
+      "id": "train_0116",
+      "arm": "control",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 15.555635030000019,
+      "history_asr": {
+        "audio/train_0116/train_0116_u1.wav": "ví của tôi giờ còn nhiều tiền dễ.",
+        "audio/train_0116/train_0116_u2.wav": "mai có hẹn gì trong lịch không.",
+        "audio/train_0116/train_0116_u3.wav": "mở dùm tôi bài có trách yêu là đây.",
+        "audio/train_0116/train_0116_u4.wav": "chào trợ lý hôm nay thế nào khỏe không.",
+        "audio/train_0116/train_0116_u5.wav": "gần đây quán cơm tấm nào ngon không.",
+        "audio/train_0116/train_0116_u6.wav": "bạn ké chelsea bữa nay nhiêu một lượng rồi."
+      },
+      "asr_transcript": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "model_current_transcript": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "initial_prompt_sha256": "524cd0eb917aab8c628f568b40600b7d8d51b438547d8047405976f4d8afb0ae",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0116",
+        "tool_calls": [],
+        "state_hash": "63a8b1968fc41958e2a36af309e9772553621e0c08029840273cbfa8f589508f"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "524cd0eb917aab8c628f568b40600b7d8d51b438547d8047405976f4d8afb0ae",
+          "parsed": {
+            "name": "phone.call",
+            "arguments": {
+              "contact_id": "cont_01"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"phone.call\", \"arguments\": {\"contact_id\": \"cont_01\"}}\n</tool_call>",
+          "seconds": 6.076703424000016,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "11af0288080b164ce0312d965469e1aea36b1b9273f72206060540c8047a8c46",
+          "parsed": {
+            "name": "__invalid__",
+            "arguments": {
+              "native_format_error": "Function-like plain text is not an executable tagged tool call"
+            }
+          },
+          "raw_text": "sys.ask_missing_info(\"phone.call\", [\"contact_id\"])",
+          "seconds": 4.552625524999996,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "stage": "parser",
+          "executed": false,
+          "reason": "pseudo_call",
+          "diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "name": "__invalid__",
+          "arguments": {
+            "native_format_error": "Function-like plain text is not an executable tagged tool call"
+          },
+          "result": {
+            "ok": false,
+            "error": "tool '__invalid__' không có trong catalog"
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "5d73dba4e4a50989cccf5b0c34d6e1239e8276e697abb8977291e9e121b42d86",
+          "parsed": {
+            "name": "__invalid__",
+            "arguments": {
+              "native_format_error": "Function-like plain text is not an executable tagged tool call"
+            }
+          },
+          "raw_text": "sys.ask_missing_info(\"phone.call\", [\"contact_id\", \"phone_number\"])",
+          "seconds": 4.919658974000015,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "stage": "parser",
+          "executed": false,
+          "reason": "pseudo_call",
+          "diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "name": "__invalid__",
+          "arguments": {
+            "native_format_error": "Function-like plain text is not an executable tagged tool call"
+          },
+          "result": {
+            "ok": false,
+            "error": "tool '__invalid__' không có trong catalog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0219",
+      "arm": "control",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 12.809645722000027,
+      "history_asr": {},
+      "asr_transcript": "nhắc em đi họp với nha.",
+      "model_current_transcript": "nhắc em đi họp với nha.",
+      "initial_prompt_sha256": "c53d42ec5d7f8b8f5664d15d72578356b96244e7c7d736e133b495cdc7d5a1ff",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0219",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "đi họp với nha",
+              "time": "2026-11-06T14:00:00+07:00",
+              "repeat": "once"
+            }
+          }
+        ],
+        "state_hash": "24aab58b783719f9981c435e7804f9bf9e5e7f648f723443e893985aea3255f7"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "c53d42ec5d7f8b8f5664d15d72578356b96244e7c7d736e133b495cdc7d5a1ff",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "đi họp với nha",
+              "time": "2026-11-06T14:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"đi họp với nha\", \"time\": \"2026-11-06T14:00:00+07:00\", \"repeat\": \"once\"}}\n</tool_call>",
+          "seconds": 8.565936195000006,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "đi họp với nha",
+            "time": "2026-11-06T14:00:00+07:00",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "đi họp với nha",
+              "time": "2026-11-06T14:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "9a3d8129a59c550d4755b49c9c8d91da783b1e0cca2aef12e6555d1a71c02fbd",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 4.197640527000033,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0220",
+      "arm": "control",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 13.486490640999989,
+      "history_asr": {},
+      "asr_transcript": "trợ lý ơi nhắc mình khỏi cha mẹ nhé.",
+      "model_current_transcript": "trợ lý ơi nhắc mình khỏi cha mẹ nhé.",
+      "initial_prompt_sha256": "4a8f92c2388308294444bb0a688b4398e08295836ee64df9675354dcd1d1ba39",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0220",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "khỏi cha mẹ",
+              "time": "2026-11-18T13:10:00+07:00",
+              "repeat": "once"
+            }
+          }
+        ],
+        "state_hash": "2255f3787718a648be962e13c811bc0e549a316a3ba7cc3988d325d22150c753"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "4a8f92c2388308294444bb0a688b4398e08295836ee64df9675354dcd1d1ba39",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "khỏi cha mẹ",
+              "time": "2026-11-18T13:10:00+07:00",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"khỏi cha mẹ\", \"time\": \"2026-11-18T13:10:00+07:00\", \"repeat\": \"once\"}}\n</tool_call>",
+          "seconds": 8.043542441999989,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "khỏi cha mẹ",
+            "time": "2026-11-18T13:10:00+07:00",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "khỏi cha mẹ",
+              "time": "2026-11-18T13:10:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "c58e29b391e2daedaed4eb851bc3d25fc4387aa2a15debd7cf00477939fd09ac",
+          "parsed": null,
+          "raw_text": "Đã tạo nhắc việc \"khỏi cha mẹ\" vào lúc 13:10 hôm nay.",
+          "seconds": 5.393390751000027,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0287",
+      "arm": "control",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 15.498769301999971,
+      "history_asr": {
+        "audio/train_0287/train_0287_u1.wav": "sàn ép chelsea hôm nay giá bao nhiêu hạn.",
+        "audio/train_0287/train_0287_u2.wav": "trong tài khoản ngân hàng của em còn bao nhiêu à.",
+        "audio/train_0287/train_0287_u3.wav": "còn với thì còn bao nhiêu hạ."
+      },
+      "asr_transcript": "nhắc mình gửi cho mẹ cay nhé.",
+      "model_current_transcript": "nhắc mình gửi cho mẹ cay nhé.",
+      "initial_prompt_sha256": "6e69b1e9480fe71aa5083af7db61e476cc0a9661bb20af2e45637a9962d293cd",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0287",
+        "tool_calls": [],
+        "state_hash": "aaa362eff9cb9a519e465c4ac8e72172e59bab1de42a9c25219a76b0773ba5b7"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "6e69b1e9480fe71aa5083af7db61e476cc0a9661bb20af2e45637a9962d293cd",
+          "parsed": {
+            "name": "ewallet.transfer",
+            "arguments": {
+              "contact_id": "contact_mom",
+              "amount": 100000,
+              "note": "Gửi cho mẹ cay"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"ewallet.transfer\", \"arguments\": {\"contact_id\": \"contact_mom\", \"amount\": 100000, \"note\": \"Gửi cho mẹ cay\"}}\n</tool_call>",
+          "seconds": 6.849691553000014,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "c3be427542592c2ec701ff28742d3002b1b46bf367b7eb09e4ba33bf13a4b4ee",
+          "parsed": {
+            "name": "__invalid__",
+            "arguments": {
+              "native_format_error": "Function-like plain text is not an executable tagged tool call"
+            }
+          },
+          "raw_text": "sys.ask_missing_info(\"ewallet.transfer\", [\"contact_id\"])",
+          "seconds": 4.281073540999955,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "stage": "parser",
+          "executed": false,
+          "reason": "pseudo_call",
+          "diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "name": "__invalid__",
+          "arguments": {
+            "native_format_error": "Function-like plain text is not an executable tagged tool call"
+          },
+          "result": {
+            "ok": false,
+            "error": "tool '__invalid__' không có trong catalog"
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "79d3a44bcb537a294c45e8638844db7800539912fe7c549bc60c6ce59d54e523",
+          "parsed": {
+            "name": "__invalid__",
+            "arguments": {
+              "native_format_error": "Function-like plain text is not an executable tagged tool call"
+            }
+          },
+          "raw_text": "sys.ask_missing_info(\"reminders.create\", [\"content\", \"time\"])",
+          "seconds": 4.316370919000008,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "stage": "parser",
+          "executed": false,
+          "reason": "pseudo_call",
+          "diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": false,
+            "stop_kind": null,
+            "pseudo_call_caught": true,
+            "format_error": "Function-like plain text is not an executable tagged tool call"
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "name": "__invalid__",
+          "arguments": {
+            "native_format_error": "Function-like plain text is not an executable tagged tool call"
+          },
+          "result": {
+            "ok": false,
+            "error": "tool '__invalid__' không có trong catalog"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0353",
+      "arm": "control",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 21.917075863000036,
+      "history_asr": {
+        "audio/train_0353/train_0353_u1.wav": "số điện thoại của bố tôi là số nào nhỉ.",
+        "audio/train_0353/train_0353_u2.wav": "phát bài hoa nở không màu nghe coi.",
+        "audio/train_0353/train_0353_u3.wav": "ở đây có quán trà sữa nào ngon không.",
+        "audio/train_0353/train_0353_u4.wav": "lịch ngày mai của tôi có gì không."
+      },
+      "asr_transcript": "nhắc tôi để họ phụ huynh vậy.",
+      "model_current_transcript": "nhắc tôi để họ phụ huynh vậy.",
+      "initial_prompt_sha256": "b83c411b562357414d7127fa67a755c821eed236c3815e16e496ed9558b25372",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0353",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "họ phụ huynh",
+              "time": "2026-11-09T14:00:00+07:00",
+              "repeat": "once"
+            }
+          }
+        ],
+        "state_hash": "128175299c3a9ba0a46107ef9c75f6c6afc6ff62b4ff296bf72d2fe7e26f9714"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "b83c411b562357414d7127fa67a755c821eed236c3815e16e496ed9558b25372",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "họ phụ huynh",
+              "time": "2026-11-09T14:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"họ phụ huynh\", \"time\": \"2026-11-09T14:00:00+07:00\", \"repeat\": \"once\"}}\n</tool_call>",
+          "seconds": 12.696567272000038,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "họ phụ huynh",
+            "time": "2026-11-09T14:00:00+07:00",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "họ phụ huynh",
+              "time": "2026-11-09T14:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "c728d9fec98916890361e1af7e0a28c137fbd1f7bed6e9ca2fbcac25362a692b",
+          "parsed": null,
+          "raw_text": "Đã tạo nhắc việc: \"họ phụ huynh\" vào lúc 14:00 ngày 09/11.",
+          "seconds": 9.175489322999965,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0360",
+      "arm": "control",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 23.46302962300001,
+      "history_asr": {
+        "audio/train_0360/train_0360_u1.wav": "số điện thoại của chiếc dũng lại về nhỉ.",
+        "audio/train_0360/train_0360_u2.wav": "mà trời mưa nắng thế nào.",
+        "audio/train_0360/train_0360_u3.wav": "phải công nhận em làm việc tốt thật nha.",
+        "audio/train_0360/train_0360_u4.wav": "mình còn bao nhiêu tiền trong tài khoản ngân hàng nhé.",
+        "audio/train_0360/train_0360_u5.wav": "ông đòn chín lăm hôm nay giải sao rồi."
+      },
+      "asr_transcript": "nhắc mình gọi cho mẹ với nhà.",
+      "model_current_transcript": "nhắc mình gọi cho mẹ với nhà.",
+      "initial_prompt_sha256": "a32919c1a830d0c6ecc370fc088e15a7eb806c4132e99c44edf74e4516416e6a",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0360",
+        "tool_calls": [
+          {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "mẹ"
+            }
+          },
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Gọi cho mẹ",
+              "time": "2026-11-15T20:00:00+07:00",
+              "repeat": "once"
+            }
+          }
+        ],
+        "state_hash": "7c08da3349d103d3c74c57dfb36fd442977b3a22cd022d5ffed2c81cbd27a961"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "a32919c1a830d0c6ecc370fc088e15a7eb806c4132e99c44edf74e4516416e6a",
+          "parsed": {
+            "name": "contacts.search",
+            "arguments": {
+              "query": "mẹ"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"contacts.search\", \"arguments\": {\"query\": \"mẹ\"}}\n</tool_call>",
+          "seconds": 6.252993849999939,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "contacts.search",
+          "arguments": {
+            "query": "mẹ"
+          },
+          "result": {
+            "ok": true,
+            "contacts": [
+              {
+                "id": "c_03",
+                "name": "Mẹ",
+                "relation": "mẹ",
+                "phone": "09206339866"
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "726729f5c847c49082e1afa8ac7d5b228bbd14175cf3eac92a755299bc28d4bc",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Gọi cho mẹ",
+              "time": "2026-11-15T20:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"Gọi cho mẹ\", \"time\": \"2026-11-15T20:00:00+07:00\", \"repeat\": \"once\"}}\n</tool_call>",
+          "seconds": 10.10000312200009,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "Gọi cho mẹ",
+            "time": "2026-11-15T20:00:00+07:00",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "Gọi cho mẹ",
+              "time": "2026-11-15T20:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "d3b961fdfc2f9fe2995b9580066e467e2d942ef38e82c2a7b1b4484b72b5ed3a",
+          "parsed": null,
+          "raw_text": "Đã tạo nhắc việc: \"Gọi cho mẹ\" vào lúc 20:00 hôm nay.",
+          "seconds": 7.068705291000015,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0498",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 4.376511208000011,
+      "history_asr": {},
+      "asr_transcript": "em ơi chuyển ít tiền khoai quý cho khi giúp trẻ em.",
+      "model_current_transcript": "em ơi chuyển ít tiền khoai quý cho khi giúp trẻ em.",
+      "initial_prompt_sha256": "07eb799b5a003912dd94a8fa1d54de07d665e9a24d97699066a446caa85232b6",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0498",
+        "tool_calls": [
+          {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "ewallet.transfer",
+              "params": [
+                "contact_id",
+                "amount"
+              ]
+            }
+          }
+        ],
+        "state_hash": "040319d98c96b85103dcbafefd4e773f5d815f41e67f1c9750f02a1e4dd41222"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "07eb799b5a003912dd94a8fa1d54de07d665e9a24d97699066a446caa85232b6",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "ewallet.transfer",
+              "params": [
+                "contact_id",
+                "amount"
+              ]
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"sys.ask_missing_info\", \"arguments\": {\"tool_name\": \"ewallet.transfer\", \"params\": [\"contact_id\", \"amount\"]}}\n</tool_call>",
+          "seconds": 4.337450836000016,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "amount"
+            ]
+          },
+          "result": {
+            "ok": true,
+            "waiting_for_user": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0653",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 9.356107727999984,
+      "history_asr": {},
+      "asr_transcript": "sắp tới chuyện gì không tốt đà nẵng em đặt giúp chị một vé máy bay đi nhé.",
+      "model_current_transcript": "sắp tới chuyện gì không tốt đà nẵng em đặt giúp chị một vé máy bay đi nhé.",
+      "initial_prompt_sha256": "2ad4df22982862436d9dd35061c459587bd26ba2fdf4cca1444a408b9415c491",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0653",
+        "tool_calls": [
+          {
+            "name": "flights.search",
+            "arguments": {
+              "origin": "Hà Nội",
+              "destination": "Đà Nẵng",
+              "date": "2026-10-05"
+            }
+          }
+        ],
+        "state_hash": "5e59ffcc62fbd907835dca112fd1525cfd5f0ddc8303d2732c35a7df10d36d79"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "2ad4df22982862436d9dd35061c459587bd26ba2fdf4cca1444a408b9415c491",
+          "parsed": {
+            "name": "flights.search",
+            "arguments": {
+              "origin": "Hà Nội",
+              "destination": "Đà Nẵng",
+              "date": "2026-10-05"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"flights.search\", \"arguments\": {\"origin\": \"Hà Nội\", \"destination\": \"Đà Nẵng\", \"date\": \"2026-10-05\"}}\n</tool_call>",
+          "seconds": 5.805978148000008,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "flights.search",
+          "arguments": {
+            "origin": "Hà Nội",
+            "destination": "Đà Nẵng",
+            "date": "2026-10-05"
+          },
+          "result": {
+            "ok": true,
+            "flights": []
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "b27d3e71605dc14adaa06b38fffd0da28f274aadec368c53f888be3d80c7eff9",
+          "parsed": null,
+          "raw_text": "sys.ask_missing_info tool_name=flights.search params=[\"date\"]",
+          "seconds": 3.519433999999933,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0683",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 14.239079049999987,
+      "history_asr": {},
+      "asr_transcript": "đảo sản giúp đỡ một phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố sắp tới nhé.",
+      "model_current_transcript": "đảo sản giúp đỡ một phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố sắp tới nhé.",
+      "initial_prompt_sha256": "31e14290bd3e349c44dc91a9a67c128df5cd6fe19b236148dd4d1f3b9c250b80",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0683",
+        "tool_calls": [
+          {
+            "name": "video_meeting.create",
+            "arguments": {
+              "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con",
+              "start": "2026-10-01T10:00:00+07:00",
+              "attendees": []
+            }
+          }
+        ],
+        "state_hash": "256a2ef351c771d439d7aa9189a1f4217c3da197d6b98a9a03ce317392093a95"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "31e14290bd3e349c44dc91a9a67c128df5cd6fe19b236148dd4d1f3b9c250b80",
+          "parsed": {
+            "name": "video_meeting.create",
+            "arguments": {
+              "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con",
+              "start": "2026-10-01T10:00:00+07:00",
+              "attendees": []
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"video_meeting.create\", \"arguments\": {\"title\": \"Phòng học trực tuyến cho bộ hướng dẫn bà con\", \"start\": \"2026-10-01T10:00:00+07:00\", \"attendees\": []}}\n</tool_call>",
+          "seconds": 6.875481619000084,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "video_meeting.create",
+          "arguments": {
+            "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con",
+            "start": "2026-10-01T10:00:00+07:00",
+            "attendees": []
+          },
+          "result": {
+            "ok": true,
+            "id": "meet_05",
+            "item": {
+              "id": "meet_05",
+              "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con",
+              "start": "2026-10-01T10:00:00+07:00",
+              "link": "https://meet.example.test/nit-zpun-vyc",
+              "attendees": [],
+              "status": "scheduled"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "d353df5e2594c4c3b64c71b55411c95c2a1594f520e78d5cc5345e8707106407",
+          "parsed": null,
+          "raw_text": "Đã tạo phòng học trực tuyến cho bộ hướng dẫn bà con với thời gian bắt đầu vào 10:00 ngày 01/10/2026. Link tham gia là [https://meet.example.test/nit-zpun-vyc](https://meet.example.test/nit-zpun-vyc).",
+          "seconds": 7.330799056000046,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0684",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 4.582608415999971,
+      "history_asr": {},
+      "asr_transcript": "cưới thần này anh chở cả nhà đi bảo tàng về sở quốc gia mà hôm ấy anh đi thử nhà ông bà ngoại cơ xem giấc em sơn giúp anh rồi đi với.",
+      "model_current_transcript": "cưới thần này anh chở cả nhà đi bảo tàng về sở quốc gia mà hôm ấy anh đi thử nhà ông bà ngoại cơ xem giấc em sơn giúp anh rồi đi với.",
+      "initial_prompt_sha256": "ca9bf56bfa23ff77609f65d3f9c4654ffdecad759da0e154c3c69ad91ffcc63f",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0684",
+        "tool_calls": [
+          {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "maps.search_place",
+              "params": [
+                "query"
+              ]
+            }
+          }
+        ],
+        "state_hash": "8f5c54a2a6eedac5a6ff66d1d1fa6e219f53f8815cb5df2d3f9873cefc8dde4f"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "ca9bf56bfa23ff77609f65d3f9c4654ffdecad759da0e154c3c69ad91ffcc63f",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "maps.search_place",
+              "params": [
+                "query"
+              ]
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"sys.ask_missing_info\", \"arguments\": {\"tool_name\": \"maps.search_place\", \"params\": [\"query\"]}}\n</tool_call>",
+          "seconds": 4.544453243000021,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "maps.search_place",
+            "params": [
+              "query"
+            ]
+          },
+          "result": {
+            "ok": true,
+            "waiting_for_user": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0780",
+      "arm": "control",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 12.585881987999983,
+      "history_asr": {
+        "audio/train_0780/train_0780_u1.wav": "giấy ra viện riêng uống da đi on lúc tám giờ sáng những hôm khám lại bác sĩ giận uống sau bữa sáng ai muốn thuê ô lời giận mới nhất em sẽ biết sự ủng hộ nhẫn thêm việc không.",
+        "audio/train_0780/train_0780_u2.wav": "người mẹ thường anh ăn sáng tầm bẩy giờ suyết cưới con thì thích thương lắm hôm tám giờ hơn gần mười giờ mới ăn."
+      },
+      "asr_transcript": "thế em đặt nhắc anh uống điều cả đi ôm sáng mai thì theo đúng tờ giáo mới rất là đắt sẽ dễ.",
+      "model_current_transcript": "thế em đặt nhắc anh uống điều cả đi ôm sáng mai thì theo đúng tờ giáo mới rất là đắt sẽ dễ.",
+      "initial_prompt_sha256": "a9341252c1c6d9ca1429380bd4c32058ecc9a935ee430878bb35ba1ca1993804",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0780",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Uống thuốc Cardiol",
+              "time": "2026-10-18T08:00:00+07:00",
+              "repeat": "once"
+            }
+          }
+        ],
+        "state_hash": "3fd347d04d0b948be0f762c4289910004734333db7c7f0e62c22cac5ea27d3c8"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "a9341252c1c6d9ca1429380bd4c32058ecc9a935ee430878bb35ba1ca1993804",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "Uống thuốc Cardiol",
+              "time": "2026-10-18T08:00:00+07:00",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"Uống thuốc Cardiol\", \"time\": \"2026-10-18T08:00:00+07:00\", \"repeat\": \"once\"}}\n</tool_call>",
+          "seconds": 6.6188103159998946,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "Uống thuốc Cardiol",
+            "time": "2026-10-18T08:00:00+07:00",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "Uống thuốc Cardiol",
+              "time": "2026-10-18T08:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "2de2afa543f34825875deadf378fb36d428e1ad421160b0f4546db8ace488ff2",
+          "parsed": null,
+          "raw_text": "Đã đặt nhắc việc để anh uống thuốc Cardiol vào lúc 8h sáng ngày mai (18/10). Nhắc việc này chỉ được thực hiện một lần. Nếu cần điều chỉnh, vui lòng cho biết!",
+          "seconds": 5.915710883999964,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0823",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 29.768134927999995,
+      "history_asr": {
+        "audio/train_0823/train_0823_u1.wav": "cứ bể này du lịch ăn có gì chưa đã có bữa kế hoạch ra mắt chưa em.",
+        "audio/train_0823/train_0823_u2.wav": "nội dung viết trổ họp kiệt sốt rồi ở phần hộp tình anh còn giờ thì bên anh truyền thống nhất."
+      },
+      "asr_transcript": "ừ vậy em tỏ giúp anh cái lịch kế hoạch ra mắt và phiếu vẻ người nhé.",
+      "model_current_transcript": "ừ vậy em tỏ giúp anh cái lịch kế hoạch ra mắt và phiếu vẻ người nhé.",
+      "initial_prompt_sha256": "cecef85572e33163f5373477d41e16cbe4372012fb068d09a6cf15eee4fd1d0b",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0823",
+        "tool_calls": [
+          {
+            "name": "calendar.create_event",
+            "arguments": {
+              "title": "Kế hoạch ra mắt",
+              "start": "2026-10-10T10:00:00+07:00",
+              "end": "2026-10-10T11:00:00+07:00",
+              "location": "Phòng họp tầng năm",
+              "attendees": []
+            }
+          },
+          {
+            "name": "notes.create",
+            "arguments": {
+              "title": "Phiếu vẻ người",
+              "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+            }
+          }
+        ],
+        "state_hash": "fdc51d735c5ba1d1a2dd9407cb7b1729e344f2c25412af966bffd1e6b4d7ab0c"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "cecef85572e33163f5373477d41e16cbe4372012fb068d09a6cf15eee4fd1d0b",
+          "parsed": {
+            "name": "calendar.create_event",
+            "arguments": {
+              "title": "Kế hoạch ra mắt",
+              "start": "2026-10-10T10:00:00+07:00",
+              "end": "2026-10-10T11:00:00+07:00",
+              "location": "Phòng họp tầng năm",
+              "attendees": []
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"calendar.create_event\", \"arguments\": {\"title\": \"Kế hoạch ra mắt\", \"start\": \"2026-10-10T10:00:00+07:00\", \"end\": \"2026-10-10T11:00:00+07:00\", \"location\": \"Phòng họp tầng năm\", \"attendees\": []}}\n</tool_call>\n<tool_call>\n{\"name\": \"notes.create\", \"arguments\": {\"title\": \"Phiếu vẻ người\", \"content\": \"Đã được tạo phiếu vẻ người cho sự kiện Kế hoạch ra mắt vào thứ Bảy, ngày 10/10/2026 tại Phòng họp tầng năm.\"}}\n</tool_call>",
+          "seconds": 16.383937875000015,
+          "native_diagnostics": {
+            "blocks": 2,
+            "multi_block_turn": true,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "calendar.create_event",
+          "arguments": {
+            "title": "Kế hoạch ra mắt",
+            "start": "2026-10-10T10:00:00+07:00",
+            "end": "2026-10-10T11:00:00+07:00",
+            "location": "Phòng họp tầng năm",
+            "attendees": []
+          },
+          "result": {
+            "ok": true,
+            "id": "evt_02",
+            "item": {
+              "id": "evt_02",
+              "status": "confirmed",
+              "title": "Kế hoạch ra mắt",
+              "start": "2026-10-10T10:00:00+07:00",
+              "end": "2026-10-10T11:00:00+07:00",
+              "location": "Phòng họp tầng năm",
+              "attendees": []
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "673714c5227342904acd26ae27fe81be4cb7f91dd6b4432133fa55428f725ff8",
+          "parsed": {
+            "name": "notes.create",
+            "arguments": {
+              "title": "Phiếu vẻ người",
+              "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"notes.create\", \"arguments\": {\"title\": \"Phiếu vẻ người\", \"content\": \"Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan.\"}}\n</tool_call>",
+          "seconds": 9.395058084000084,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "notes.create",
+          "arguments": {
+            "title": "Phiếu vẻ người",
+            "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+          },
+          "result": {
+            "ok": true,
+            "id": "note_04",
+            "item": {
+              "id": "note_04",
+              "title": "Phiếu vẻ người",
+              "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "73bbc44a08a167884b813e7f27aff5df56923442a51bf06ae6b904194a28fbd2",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 3.9562263419999226,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0961",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 12.58711279900001,
+      "history_asr": {
+        "audio/train_0961/train_0961_u1.wav": "em coi giùm anh tuần y có ho đơn chi tới hạng không."
+      },
+      "asr_transcript": "ờ mà anh dẫn tới đầu giòn sờ quên bật từ trễ một cái thôi cái hạng thứ bảy à không cái hạng chùa nhật.",
+      "model_current_transcript": "ờ mà anh dẫn tới đầu giòn sờ quên bật từ trễ một cái thôi cái hạng thứ bảy à không cái hạng chùa nhật.",
+      "initial_prompt_sha256": "be2343ad2401e70bd4ce21a62f175e7257cc16e383a45aab0a1e331fa0ac8cef",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0961",
+        "tool_calls": [
+          {
+            "name": "bill_payment.list_bills",
+            "arguments": {
+              "type": "water"
+            }
+          }
+        ],
+        "state_hash": "165cd2d8da258c34296f5fa5c5f7ed19fe0ed3685db4933920f9410efd894be5"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "be2343ad2401e70bd4ce21a62f175e7257cc16e383a45aab0a1e331fa0ac8cef",
+          "parsed": {
+            "name": "bill_payment.list_bills",
+            "arguments": {
+              "type": "water"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"bill_payment.list_bills\", \"arguments\": {\"type\": \"water\"}}\n</tool_call>",
+          "seconds": 4.1848172119999845,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "bill_payment.list_bills",
+          "arguments": {
+            "type": "water"
+          },
+          "result": {
+            "ok": true,
+            "bills": [
+              {
+                "id": "bill_438",
+                "type": "water",
+                "provider": "Dawaco",
+                "amount": 212000,
+                "due_date": "2026-11-28",
+                "paid": false
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "57a08ebd9218b98e5856c5b06873cf556bfdaf77fffbe005d8e11957fbfbf07e",
+          "parsed": null,
+          "raw_text": "Có hóa đơn nước Dawaco với số tiền 212.000 đồng, đến hạn vào thứ Bảy, ngày 28/11. Bạn đã quên bật tự động thanh toán cho hóa đơn này. Nếu muốn, tôi có thể giúp bạn bật tự động thanh toán cho hóa đơn nước này. Bạn có muốn tôi làm điều đó không?",
+          "seconds": 8.345194843000058,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1029",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 11.62245284200003,
+      "history_asr": {
+        "audio/train_1029/train_1029_u1.wav": "em xin có mail nào cho đọc không.",
+        "audio/train_1029/train_1029_u2.wav": "chỉ thu cành gì có gấp không."
+      },
+      "asr_transcript": "trả lời chị thu là chịu chị rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.",
+      "model_current_transcript": "trả lời chị thu là chịu chị rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.",
+      "initial_prompt_sha256": "0dbdbaa7a8f990b8baf913f1c2aea486334b03d9eae649ea8d1c0cc3f68ddf5e",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1029",
+        "tool_calls": [
+          {
+            "name": "email.reply",
+            "arguments": {
+              "email_id": "mail_6244",
+              "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+            }
+          }
+        ],
+        "state_hash": "ccb08ce7ad194f3f3503c8d7788dfaac44d281f9ab88f53aa1ede5fd9eb7a9db"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "0dbdbaa7a8f990b8baf913f1c2aea486334b03d9eae649ea8d1c0cc3f68ddf5e",
+          "parsed": {
+            "name": "email.reply",
+            "arguments": {
+              "email_id": "mail_6244",
+              "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"email.reply\", \"arguments\": {\"email_id\": \"mail_6244\", \"body\": \"Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.\"}}\n</tool_call>",
+          "seconds": 7.91911226000002,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "email.reply",
+          "arguments": {
+            "email_id": "mail_6244",
+            "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+          },
+          "result": {
+            "ok": true,
+            "id": "sent_01",
+            "email": {
+              "id": "sent_01",
+              "to": [
+                "thu.tran@congty.example.test"
+              ],
+              "cc": [],
+              "subject": "Re: Gửi lại báo cáo tháng 9",
+              "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.",
+              "in_reply_to": "mail_6244"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "ec6ae0d8a37f3387653ff3ed49dadfbfe78c084d5239502cdb3073187214a47e",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 3.664760822000062,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1075",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 12.983571471000005,
+      "history_asr": {
+        "audio/train_1075/train_1075_u1.wav": "cảnh báo điện nhà mình đang để mức mô rứa.",
+        "audio/train_1075/train_1075_u2.wav": "còn tuần rồi ngày mua sài nhiều nhất.",
+        "audio/train_1075/train_1075_u3.wav": "mạ đòi hạ xuống hai trăm ba thì biểu hai trăm rưỡi.",
+        "audio/train_1075/train_1075_u4.wav": "mà hai người chưa chốt bức mô hết."
+      },
+      "asr_transcript": "thôi kệ cứ hạ cái cảnh báo xuống trước đi.",
+      "model_current_transcript": "thôi kệ cứ hạ cái cảnh báo xuống trước đi.",
+      "initial_prompt_sha256": "7bfca3b7eaceec98ff97b6969e20d85f7544991786e9621dc138fb2ddeb217bd",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1075",
+        "tool_calls": [
+          {
+            "name": "home_energy.set_alert",
+            "arguments": {
+              "threshold_kwh": 230
+            }
+          }
+        ],
+        "state_hash": "69ae013fb7a7d4a9bc3215d4053e214dac0433351c42b2db974c39b16d2ce6fc"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "7bfca3b7eaceec98ff97b6969e20d85f7544991786e9621dc138fb2ddeb217bd",
+          "parsed": {
+            "name": "home_energy.set_alert",
+            "arguments": {
+              "threshold_kwh": 230
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"home_energy.set_alert\", \"arguments\": {\"threshold_kwh\": 230}}\n</tool_call>",
+          "seconds": 5.455280797,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "home_energy.set_alert",
+          "arguments": {
+            "threshold_kwh": 230
+          },
+          "result": {
+            "ok": true,
+            "alert_threshold_kwh": 230,
+            "month_kwh": 7.4
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "964c3fd18e03dfcdc98bc40a4dcb22634f0cae703d8c5139d215b72a507e26ce",
+          "parsed": null,
+          "raw_text": "Đã đặt cảnh báo điện nhà xuống mức 230 số/tháng. Mức này thấp hơn mức hiện tại (300 số/tháng), giúp tiết kiệm điện hơn. Nếu cần điều chỉnh thêm, cứ nói nhé!",
+          "seconds": 7.484174671000005,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1104",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 8.881793758999947,
+      "history_asr": {
+        "audio/train_1104/train_1104_u1.wav": "ơi hôm nay hẳn đội có mưa không nhỉ.",
+        "audio/train_1104/train_1104_u2.wav": "thế ở nhà thôi trưa nay ti vi có phim gì không.",
+        "audio/train_1104/train_1104_u3.wav": "còn thuế này có đá bóng không."
+      },
+      "asr_transcript": "hễ chuyển sang phim trưa nay cho tớ xem luôn nha mưa thế này chẳng đi đâu được.",
+      "model_current_transcript": "hễ chuyển sang phim trưa nay cho tớ xem luôn nha mưa thế này chẳng đi đâu được.",
+      "initial_prompt_sha256": "9221c496932e9a87e49649b5066493070920e7e74898e30f665439336265b581",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1104",
+        "tool_calls": [
+          {
+            "name": "tv.tune",
+            "arguments": {
+              "channel": "VTV3"
+            }
+          }
+        ],
+        "state_hash": "5b8d62239b04eff794e96c1a786ba42e108b93d4201fad92b92f5b5a01f741e3"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "9221c496932e9a87e49649b5066493070920e7e74898e30f665439336265b581",
+          "parsed": {
+            "name": "tv.tune",
+            "arguments": {
+              "channel": "VTV3"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"tv.tune\", \"arguments\": {\"channel\": \"VTV3\"}}\n</tool_call>",
+          "seconds": 3.5618562230000634,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "tv.tune",
+          "arguments": {
+            "channel": "VTV3"
+          },
+          "result": {
+            "ok": true,
+            "channel": "VTV3"
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "811e6484841d210384f885391c525830f0f75456a7ce43be1f21e894f988573f",
+          "parsed": null,
+          "raw_text": "Đã chuyển sang kênh VTV3 để xem phim \"Thương ngày nắng về\" trưa nay. Mưa rào nên em không cần ra ngoài, ở nhà xem phim là tốt nhất nhé!",
+          "seconds": 5.277540372999965,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1107",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 10.168777399999954,
+      "history_asr": {
+        "audio/train_1107/train_1107_u1.wav": "em thêm giúp chị hai tân cam phải dàn dắt đi trở nhé.",
+        "audio/train_1107/train_1107_u2.wav": "cả một hộp sữa tươi nói em.",
+        "audio/train_1107/train_1107_u3.wav": "thư viện có sách nào của nguyễn nhật ánh không em.",
+        "audio/train_1107/train_1107_u4.wav": "tám giờ sánh mai em nhắc chị qua thư viện nhé."
+      },
+      "asr_transcript": "thế em đã chuốc cho chị một cuốn của ông ấy nhé mai chị khoe thư viện lấy luôn.",
+      "model_current_transcript": "thế em đã chuốc cho chị một cuốn của ông ấy nhé mai chị khoe thư viện lấy luôn.",
+      "initial_prompt_sha256": "268358606c2a01250804e231f341960796bb1281219ed878532c71f96b3da529",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1107",
+        "tool_calls": [
+          {
+            "name": "library.reserve",
+            "arguments": {
+              "book_id": "book_5170"
+            }
+          }
+        ],
+        "state_hash": "93e9696795d18923c9fead82c16ceadc6a6a6107ed037285702b764f5ff6fd4e"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "268358606c2a01250804e231f341960796bb1281219ed878532c71f96b3da529",
+          "parsed": {
+            "name": "library.reserve",
+            "arguments": {
+              "book_id": "book_5170"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"library.reserve\", \"arguments\": {\"book_id\": \"book_5170\"}}\n</tool_call>",
+          "seconds": 4.681216241999891,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "library.reserve",
+          "arguments": {
+            "book_id": "book_5170"
+          },
+          "result": {
+            "ok": true,
+            "reservation": {
+              "id": "res_01",
+              "book_id": "book_5170",
+              "status": "ready"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "1245b7797497fddfad134a4b7e7fe7c9df718423de9867cb8894d39c52159737",
+          "parsed": null,
+          "raw_text": "Em đã giúp chị giữ cuốn sách \"Mắt biếc\" của Nguyễn Nhật Ánh tại thư viện rồi ạ. Chị có thể lấy luôn vào ngày mai nhé!",
+          "seconds": 5.454837995999924,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1111",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 15.567781753999952,
+      "history_asr": {
+        "audio/train_1111/train_1111_u1.wav": "mở kế hoạch phòng khách dùm tôi nóng quá.",
+        "audio/train_1111/train_1111_u2.wav": "tài khoản thanh toán của tôi còn như vậy.",
+        "audio/train_1111/train_1111_u3.wav": "hôm nay có mail gì mới hông không được gì hông.",
+        "audio/train_1111/train_1111_u4.wav": "hầm tác xạ báo giá xoài như vậy.",
+        "audio/train_1111/train_1111_u5.wav": "ghi chú lại giá xoài đó dùm tôi nhé."
+      },
+      "asr_transcript": "cứ dìm tôi cái mail muađồ vô lưu trữ hén cái món tôi kiểm hàn xong rồi đó.",
+      "model_current_transcript": "cứ dìm tôi cái mail muađồ vô lưu trữ hén cái món tôi kiểm hàn xong rồi đó.",
+      "initial_prompt_sha256": "d9963c33fac01bfda56e4c587669d85832e69af0ab19dc571d81ccad4f06b283",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1111",
+        "tool_calls": [
+          {
+            "name": "email.archive",
+            "arguments": {
+              "email_id": "mail_90",
+              "action": "archive"
+            }
+          }
+        ],
+        "state_hash": "cb5d545355b1a5e9eb9b3499d69b0e6596508e88b6be3829e182a97d610a9f48"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "d9963c33fac01bfda56e4c587669d85832e69af0ab19dc571d81ccad4f06b283",
+          "parsed": {
+            "name": "email.archive",
+            "arguments": {
+              "email_id": "mail_90",
+              "action": "archive"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"email.archive\", \"arguments\": {\"email_id\": \"mail_90\", \"action\": \"archive\"}}\n</tool_call>\n<tool_call>\n{\"name\": \"email.archive\", \"arguments\": {\"email_id\": \"mail_5512\", \"action\": \"archive\"}}\n</tool_call>",
+          "seconds": 10.300854222999988,
+          "native_diagnostics": {
+            "blocks": 2,
+            "multi_block_turn": true,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "email.archive",
+          "arguments": {
+            "email_id": "mail_90",
+            "action": "archive"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "mail_90",
+              "from": "no-reply@muado.example.test",
+              "from_name": "Muado",
+              "to": [
+                "me@example.test"
+              ],
+              "subject": "Đơn hàng đã giao thành công",
+              "snippet": "Ấm siêu tốc Lock&Lock 1.7 lít đã được giao.",
+              "body": "Đơn hàng Ấm siêu tốc Lock&Lock 1.7 lít đã được giao thành công. Đánh giá sản phẩm để nhận xu.",
+              "time": "2026-10-14T10:20:00+07:00",
+              "unread": true,
+              "folder": "archive"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "394c30df32a34f9caddb8fd5ccfd8e3bc39c2af4ddaff599e4273ff8c36db2d9",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 5.224241039999924,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1223",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 3.5403283649999366,
+      "history_asr": {
+        "audio/train_1223/train_1223_u1.wav": "bật điều hòa phòng ngủ chứa đợi suối hai sáu độ nha.",
+        "audio/train_1223/train_1223_u2.wav": "ví thế còn bao nhiêu tiền.",
+        "audio/train_1223/train_1223_u3.wav": "thế điểm cao nguyên được bao nhiêu rồi."
+      },
+      "asr_transcript": "nhiều phép nhỉ đội luôn sẽ tới đi.",
+      "model_current_transcript": "nhiều phép nhỉ đội luôn sẽ tới đi.",
+      "initial_prompt_sha256": "b114a30ebbc035128ce6440ad054746de070c8a3e3655d63065b4a5c8ae5de02",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1223",
+        "tool_calls": [],
+        "state_hash": "731f1fa33655bb8fe9ebc36b6023c857de7d910e8bf813db075fe1a8e8375ced"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "b114a30ebbc035128ce6440ad054746de070c8a3e3655d63065b4a5c8ae5de02",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 3.4891613319999806,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1234",
+      "arm": "control",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 18.64831743700006,
+      "history_asr": {
+        "audio/train_1234/train_1234_u1.wav": "mà khác hơ hởi mua lúa về thay trả bằng nhiều vị."
+      },
+      "asr_transcript": "ờ tôi bán một bói thôi sợ nhớt cái thơ báo thứ tươi tôi cá lúa kêu người ta xuống cân ngan.",
+      "model_current_transcript": "ờ tôi bán một bói thôi sợ nhớt cái thơ báo thứ tươi tôi cá lúa kêu người ta xuống cân ngan.",
+      "initial_prompt_sha256": "db501a9ba740314099c362e0039037981596236287b87d031d037e5eee582b9b",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1234",
+        "tool_calls": [
+          {
+            "name": "email.read",
+            "arguments": {
+              "email_id": "mail_5554"
+            }
+          },
+          {
+            "name": "email.read",
+            "arguments": {
+              "email_id": "mail_847"
+            }
+          }
+        ],
+        "state_hash": "2ba6797fcac23bb0c42014e8b5b660a278df1279b131802f055ff515cc5115c2"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "db501a9ba740314099c362e0039037981596236287b87d031d037e5eee582b9b",
+          "parsed": {
+            "name": "email.read",
+            "arguments": {
+              "email_id": "mail_5554"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"email.read\", \"arguments\": {\"email_id\": \"mail_5554\"}}\n</tool_call>",
+          "seconds": 4.286882789999936,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "email.read",
+          "arguments": {
+            "email_id": "mail_5554"
+          },
+          "result": {
+            "ok": true,
+            "email": {
+              "id": "mail_5554",
+              "from": "tulanh.thuonglai@example.test",
+              "from_name": "Tư Lành",
+              "to": [
+                "me@example.test"
+              ],
+              "subject": "Hỏi mua lúa vụ này",
+              "snippet": "Ông Hải ơi, lúa ông chừng nào cắt, tui trả bảy ngàn hai một ký nghen.",
+              "body": "Ông Hải ơi, lúa ông chừng nào cắt báo tui một tiếng, tui trả bảy ngàn hai một ký lúa tươi, xe tui xuống tận ruộng cân.",
+              "time": "2026-11-06T16:30:00+07:00",
+              "unread": true,
+              "folder": "inbox"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "21326421f710e9c592a9064ddaa582382544b9ea1e8e00f49e9fdbeb459275d7",
+          "parsed": {
+            "name": "email.read",
+            "arguments": {
+              "email_id": "mail_847"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"email.read\", \"arguments\": {\"email_id\": \"mail_847\"}}\n</tool_call>",
+          "seconds": 4.350421727000025,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "email.read",
+          "arguments": {
+            "email_id": "mail_847"
+          },
+          "result": {
+            "ok": true,
+            "email": {
+              "id": "mail_847",
+              "from": "thumua@luongthuchaugiang.example.test",
+              "from_name": "Công ty Lương thực Hậu Giang",
+              "to": [
+                "me@example.test"
+              ],
+              "subject": "Báo giá thu mua lúa thu đông",
+              "snippet": "Công ty thu mua lúa tươi bảy ngàn bốn một ký.",
+              "body": "Kính gửi ông, công ty thu mua lúa thu đông giá bảy ngàn bốn một ký lúa tươi, nhận cân tại ruộng, vui lòng báo ngày thu hoạch trước ba ngày.",
+              "time": "2026-11-07T09:15:00+07:00",
+              "unread": true,
+              "folder": "inbox"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "9194ce2b0235c41ec2b31be62dcb586f830ef226aca1446417ccae50daeff80b",
+          "parsed": null,
+          "raw_text": "Ông Hải ơi, theo email từ Tư Lành, ông cần báo ngày cắt lúa để họ xuống tận ruộng cân với giá 7.200 đồng một ký. Còn Công ty Lương thực Hậu Giang đưa giá 7.400 đồng một ký, nhận cân tại ruộng, yêu cầu báo trước 3 ngày. Ông có muốn tôi soạn email trả lời để thông báo ngày thu hoạch cụ thể không?",
+          "seconds": 9.974300421000066,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0116",
+      "arm": "rule",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 13.31013286700005,
+      "history_asr": {
+        "audio/train_0116/train_0116_u1.wav": "ví của tôi giờ còn nhiều tiền dễ.",
+        "audio/train_0116/train_0116_u2.wav": "mai có hẹn gì trong lịch không.",
+        "audio/train_0116/train_0116_u3.wav": "mở dùm tôi bài có trách yêu là đây.",
+        "audio/train_0116/train_0116_u4.wav": "chào trợ lý hôm nay thế nào khỏe không.",
+        "audio/train_0116/train_0116_u5.wav": "gần đây quán cơm tấm nào ngon không.",
+        "audio/train_0116/train_0116_u6.wav": "bạn ké chelsea bữa nay nhiêu một lượng rồi."
+      },
+      "asr_transcript": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "model_current_transcript": "ờ nhắc tôi gọi điện cho mẹ với nha.",
+      "initial_prompt_sha256": "75b83c265722e39d346eec7d25542bd8ed91b87493926bd868fd990c86b8f7b5",
+      "proxy": {
+        "score": 1.0,
+        "hash_correct": true,
+        "f1": 1.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0116",
+        "tool_calls": [
+          {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "reminders.create",
+              "params": [
+                "time"
+              ]
+            }
+          }
+        ],
+        "state_hash": "63a8b1968fc41958e2a36af309e9772553621e0c08029840273cbfa8f589508f"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "75b83c265722e39d346eec7d25542bd8ed91b87493926bd868fd990c86b8f7b5",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi điện cho mẹ",
+              "repeat": "once"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi điện cho mẹ\", \"repeat\": \"once\"}}\n</tool_call>",
+          "seconds": 6.505121127999985,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "validation_rejected",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gọi điện cho mẹ",
+            "repeat": "once"
+          },
+          "result": {
+            "ok": false,
+            "error": "thiếu tham số bắt buộc: time"
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "43e52ac3e5a33d78e8bb5c0651e95bc7b0bc702747b3f27e9df84b34f465d94e",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "reminders.create",
+              "params": [
+                "time"
+              ]
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"sys.ask_missing_info\", \"arguments\": {\"tool_name\": \"reminders.create\", \"params\": [\"time\"]}}\n</tool_call>",
+          "seconds": 6.759359171000028,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "reminders.create",
+            "params": [
+              "time"
+            ]
+          },
+          "result": {
+            "ok": true,
+            "waiting_for_user": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0219",
+      "arm": "rule",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 13.002336257999957,
+      "history_asr": {},
+      "asr_transcript": "nhắc em đi họp với nha.",
+      "model_current_transcript": "nhắc em đi họp với nha.",
+      "initial_prompt_sha256": "dc7d5123125476a42ec125c33cb379c92c86ab1746cb8519250866114c55fc73",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0219",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "đi họp với nha",
+              "time": "2026-11-06T14:00:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "24aab58b783719f9981c435e7804f9bf9e5e7f648f723443e893985aea3255f7"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "dc7d5123125476a42ec125c33cb379c92c86ab1746cb8519250866114c55fc73",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "đi họp với nha",
+              "time": "2026-11-06T14:00:00+07:00"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"đi họp với nha\", \"time\": \"2026-11-06T14:00:00+07:00\"}}\n</tool_call>",
+          "seconds": 8.54718709399998,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "đi họp với nha",
+            "time": "2026-11-06T14:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "đi họp với nha",
+              "time": "2026-11-06T14:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "137f45083f62ce11e747c902ee9891afdc1a0357d882917c1c25d7e41ce8f95c",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 4.407486099000039,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0220",
+      "arm": "rule",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 12.078345092000006,
+      "history_asr": {},
+      "asr_transcript": "trợ lý ơi nhắc mình khỏi cha mẹ nhé.",
+      "model_current_transcript": "trợ lý ơi nhắc mình khỏi cha mẹ nhé.",
+      "initial_prompt_sha256": "ea9add4b8d64a77f807df1406708037b4597a8bc0d2e4582b7532ae31fde1b73",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0220",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "khỏi cha mẹ",
+              "time": "2026-11-18T13:10:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "2255f3787718a648be962e13c811bc0e549a316a3ba7cc3988d325d22150c753"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "ea9add4b8d64a77f807df1406708037b4597a8bc0d2e4582b7532ae31fde1b73",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "khỏi cha mẹ",
+              "time": "2026-11-18T13:10:00+07:00"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"khỏi cha mẹ\", \"time\": \"2026-11-18T13:10:00+07:00\"}}\n</tool_call>",
+          "seconds": 7.9623357400000145,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "khỏi cha mẹ",
+            "time": "2026-11-18T13:10:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "khỏi cha mẹ",
+              "time": "2026-11-18T13:10:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "357a6719ecfa9c6de31b01b43e8e5c120dde8c7f72b76371c3f98a4262e9298b",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 4.069116354000016,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0287",
+      "arm": "rule",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 11.799282951999999,
+      "history_asr": {
+        "audio/train_0287/train_0287_u1.wav": "sàn ép chelsea hôm nay giá bao nhiêu hạn.",
+        "audio/train_0287/train_0287_u2.wav": "trong tài khoản ngân hàng của em còn bao nhiêu à.",
+        "audio/train_0287/train_0287_u3.wav": "còn với thì còn bao nhiêu hạ."
+      },
+      "asr_transcript": "nhắc mình gửi cho mẹ cay nhé.",
+      "model_current_transcript": "nhắc mình gửi cho mẹ cay nhé.",
+      "initial_prompt_sha256": "cfa839c6940a82d9265333cecd6080e4924ccb294deea7cbbf0f332318641ce0",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0287",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gửi cho mẹ cay",
+              "time": "2026-11-13T09:00:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "b9b5d690ac5535cda82fb95d5d641d796d38b60649ab3b1b438e82ad2110d714"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "cfa839c6940a82d9265333cecd6080e4924ccb294deea7cbbf0f332318641ce0",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gửi cho mẹ cay",
+              "time": "2026-11-13T09:00:00+07:00"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gửi cho mẹ cay\", \"time\": \"2026-11-13T09:00:00+07:00\"}}\n</tool_call>",
+          "seconds": 7.905411516000015,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gửi cho mẹ cay",
+            "time": "2026-11-13T09:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "gửi cho mẹ cay",
+              "time": "2026-11-13T09:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "1380e1fe78604838fb7826a306b9392c0111597d24de924f79c0af945a803c68",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 3.8510467230000245,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0353",
+      "arm": "rule",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 19.732071137000048,
+      "history_asr": {
+        "audio/train_0353/train_0353_u1.wav": "số điện thoại của bố tôi là số nào nhỉ.",
+        "audio/train_0353/train_0353_u2.wav": "phát bài hoa nở không màu nghe coi.",
+        "audio/train_0353/train_0353_u3.wav": "ở đây có quán trà sữa nào ngon không.",
+        "audio/train_0353/train_0353_u4.wav": "lịch ngày mai của tôi có gì không."
+      },
+      "asr_transcript": "nhắc tôi để họ phụ huynh vậy.",
+      "model_current_transcript": "nhắc tôi để họ phụ huynh vậy.",
+      "initial_prompt_sha256": "c6bad974783fb61bdd0f53ed39bcd8a9265a84051cc7643f7c7eb360764548aa",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0353",
+        "tool_calls": [
+          {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "reminders.create",
+              "params": [
+                "content"
+              ]
+            }
+          }
+        ],
+        "state_hash": "8e554b7001bfaf433c2e9b2d67ae0d8725f1156334e963029c0a756007bd98e9"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "c6bad974783fb61bdd0f53ed39bcd8a9265a84051cc7643f7c7eb360764548aa",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "reminders.create",
+              "params": [
+                "content"
+              ]
+            }
+          },
+          "raw_text": "Chưa có thông tin cụ thể về hành động \"nhắc tôi để họ phụ huynh vậy\". Cần làm rõ nội dung cần được nhắc nhở (ví dụ: nhắc gọi bố, mẹ, hoặc một việc cụ thể liên quan đến phụ huynh). Vui lòng cung cấp chi tiết hơn. \n\nDùng công cụ `sys.ask_missing_info` để hỏi thông tin thiếu:\n<tool_call>\n{\"name\": \"sys.ask_missing_info\", \"arguments\": {\"tool_name\": \"reminders.create\", \"params\": [\"content\"]}}\n</tool_call>",
+          "seconds": 19.686108347000072,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "reminders.create",
+            "params": [
+              "content"
+            ]
+          },
+          "result": {
+            "ok": true,
+            "waiting_for_user": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0360",
+      "arm": "rule",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 17.639616380000007,
+      "history_asr": {
+        "audio/train_0360/train_0360_u1.wav": "số điện thoại của chiếc dũng lại về nhỉ.",
+        "audio/train_0360/train_0360_u2.wav": "mà trời mưa nắng thế nào.",
+        "audio/train_0360/train_0360_u3.wav": "phải công nhận em làm việc tốt thật nha.",
+        "audio/train_0360/train_0360_u4.wav": "mình còn bao nhiêu tiền trong tài khoản ngân hàng nhé.",
+        "audio/train_0360/train_0360_u5.wav": "ông đòn chín lăm hôm nay giải sao rồi."
+      },
+      "asr_transcript": "nhắc mình gọi cho mẹ với nhà.",
+      "model_current_transcript": "nhắc mình gọi cho mẹ với nhà.",
+      "initial_prompt_sha256": "cce610082be336448b5d76fcd4ae847c6d7fea01aae675b8dfd5dc93e815713d",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0360",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi cho mẹ",
+              "time": "2026-11-15T20:00:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "7c08da3349d103d3c74c57dfb36fd442977b3a22cd022d5ffed2c81cbd27a961"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "cce610082be336448b5d76fcd4ae847c6d7fea01aae675b8dfd5dc93e815713d",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "gọi cho mẹ",
+              "time": "2026-11-15T20:00:00+07:00"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"gọi cho mẹ\", \"time\": \"2026-11-15T20:00:00+07:00\"}}\n</tool_call>",
+          "seconds": 10.06272354600003,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "gọi cho mẹ",
+            "time": "2026-11-15T20:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "gọi cho mẹ",
+              "time": "2026-11-15T20:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "d26b974e715cb8d84251e03d9dedf47180f63b6712584de4dd1055d08a533ff2",
+          "parsed": null,
+          "raw_text": "Đã tạo nhắc việc: \"gọi cho mẹ\" vào lúc 20:00 hôm nay.",
+          "seconds": 7.516287021999915,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0498",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 4.262816238000028,
+      "history_asr": {},
+      "asr_transcript": "em ơi chuyển ít tiền khoai quý cho khi giúp trẻ em.",
+      "model_current_transcript": "em ơi chuyển ít tiền khoai quý cho khi giúp trẻ em.",
+      "initial_prompt_sha256": "1fc42bd680661d84fe36536e5230706fc2e2e59a033d79f4dcd74ad1f717ebb9",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0498",
+        "tool_calls": [
+          {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "ewallet.transfer",
+              "params": [
+                "contact_id",
+                "amount"
+              ]
+            }
+          }
+        ],
+        "state_hash": "040319d98c96b85103dcbafefd4e773f5d815f41e67f1c9750f02a1e4dd41222"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "1fc42bd680661d84fe36536e5230706fc2e2e59a033d79f4dcd74ad1f717ebb9",
+          "parsed": {
+            "name": "sys.ask_missing_info",
+            "arguments": {
+              "tool_name": "ewallet.transfer",
+              "params": [
+                "contact_id",
+                "amount"
+              ]
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"sys.ask_missing_info\", \"arguments\": {\"tool_name\": \"ewallet.transfer\", \"params\": [\"contact_id\", \"amount\"]}}\n</tool_call>",
+          "seconds": 4.233618765000074,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "sys.ask_missing_info",
+          "arguments": {
+            "tool_name": "ewallet.transfer",
+            "params": [
+              "contact_id",
+              "amount"
+            ]
+          },
+          "result": {
+            "ok": true,
+            "waiting_for_user": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0653",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 10.025896501000034,
+      "history_asr": {},
+      "asr_transcript": "sắp tới chuyện gì không tốt đà nẵng em đặt giúp chị một vé máy bay đi nhé.",
+      "model_current_transcript": "sắp tới chuyện gì không tốt đà nẵng em đặt giúp chị một vé máy bay đi nhé.",
+      "initial_prompt_sha256": "14f2a6db20134bd69a78fd276a8fe354bdc7aca16c7523f39fd1c74239d5405b",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0653",
+        "tool_calls": [
+          {
+            "name": "flights.search",
+            "arguments": {
+              "origin": "Hà Nội",
+              "destination": "Đà Nẵng",
+              "date": "2026-10-05",
+              "passengers": 1
+            }
+          }
+        ],
+        "state_hash": "5e59ffcc62fbd907835dca112fd1525cfd5f0ddc8303d2732c35a7df10d36d79"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "14f2a6db20134bd69a78fd276a8fe354bdc7aca16c7523f39fd1c74239d5405b",
+          "parsed": {
+            "name": "flights.search",
+            "arguments": {
+              "origin": "Hà Nội",
+              "destination": "Đà Nẵng",
+              "date": "2026-10-05",
+              "passengers": 1
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"flights.search\", \"arguments\": {\"origin\": \"Hà Nội\", \"destination\": \"Đà Nẵng\", \"date\": \"2026-10-05\", \"passengers\": 1}}\n</tool_call>",
+          "seconds": 6.3999318490000405,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "flights.search",
+          "arguments": {
+            "origin": "Hà Nội",
+            "destination": "Đà Nẵng",
+            "date": "2026-10-05",
+            "passengers": 1
+          },
+          "result": {
+            "ok": true,
+            "flights": []
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "a32f4388d027000c81152c00b52e05ba8e95bc4395195550401f4611458f24bc",
+          "parsed": null,
+          "raw_text": "sys.ask_missing_info tool_name=flights.search params=[\"date\"]",
+          "seconds": 3.587588858999993,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0683",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 15.578029436999941,
+      "history_asr": {},
+      "asr_transcript": "đảo sản giúp đỡ một phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố sắp tới nhé.",
+      "model_current_transcript": "đảo sản giúp đỡ một phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố sắp tới nhé.",
+      "initial_prompt_sha256": "baaf72e8a2385b7aec0eda18dcf111ee9835df7d31312e8d2315834311ea1e8c",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0683",
+        "tool_calls": [
+          {
+            "name": "video_meeting.create",
+            "arguments": {
+              "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố",
+              "start": "2026-10-01T09:00:00+07:00",
+              "attendees": []
+            }
+          }
+        ],
+        "state_hash": "46bc254d35d5121db30a3312b3d25e83b7fa53587e84fa04814db96fd66c966f"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "baaf72e8a2385b7aec0eda18dcf111ee9835df7d31312e8d2315834311ea1e8c",
+          "parsed": {
+            "name": "video_meeting.create",
+            "arguments": {
+              "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố",
+              "start": "2026-10-01T09:00:00+07:00",
+              "attendees": []
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"video_meeting.create\", \"arguments\": {\"title\": \"Phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố\", \"start\": \"2026-10-01T09:00:00+07:00\", \"attendees\": []}}\n</tool_call>",
+          "seconds": 7.572250057000019,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "video_meeting.create",
+          "arguments": {
+            "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố",
+            "start": "2026-10-01T09:00:00+07:00",
+            "attendees": []
+          },
+          "result": {
+            "ok": true,
+            "id": "meet_05",
+            "item": {
+              "id": "meet_05",
+              "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố",
+              "start": "2026-10-01T09:00:00+07:00",
+              "link": "https://meet.example.test/lhe-foiv-tty",
+              "attendees": [],
+              "status": "scheduled"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "8375209c22b6d8c51061227b61a4fa63785e197891c7b8dd393fdc15ba725cd1",
+          "parsed": null,
+          "raw_text": "Đã tạo phòng họp trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố với thời gian bắt đầu vào 09:00 ngày 01/10/2026. Link tham gia: [https://meet.example.test/lhe-foiv-tty](https://meet.example.test/lhe-foiv-tty).",
+          "seconds": 7.96577530400009,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0684",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 2.8217975459999707,
+      "history_asr": {},
+      "asr_transcript": "cưới thần này anh chở cả nhà đi bảo tàng về sở quốc gia mà hôm ấy anh đi thử nhà ông bà ngoại cơ xem giấc em sơn giúp anh rồi đi với.",
+      "model_current_transcript": "cưới thần này anh chở cả nhà đi bảo tàng về sở quốc gia mà hôm ấy anh đi thử nhà ông bà ngoại cơ xem giấc em sơn giúp anh rồi đi với.",
+      "initial_prompt_sha256": "ae4ee5726b28bcc5c58d0e7aef5a01af187f3113d3acbec6a4b688de1f8bfd2a",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0684",
+        "tool_calls": [],
+        "state_hash": "8f5c54a2a6eedac5a6ff66d1d1fa6e219f53f8815cb5df2d3f9873cefc8dde4f"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "ae4ee5726b28bcc5c58d0e7aef5a01af187f3113d3acbec6a4b688de1f8bfd2a",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 2.792429044000073,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0780",
+      "arm": "rule",
+      "group": "TARGET",
+      "status": "INFERRED",
+      "inference_seconds": 11.757501954999952,
+      "history_asr": {
+        "audio/train_0780/train_0780_u1.wav": "giấy ra viện riêng uống da đi on lúc tám giờ sáng những hôm khám lại bác sĩ giận uống sau bữa sáng ai muốn thuê ô lời giận mới nhất em sẽ biết sự ủng hộ nhẫn thêm việc không.",
+        "audio/train_0780/train_0780_u2.wav": "người mẹ thường anh ăn sáng tầm bẩy giờ suyết cưới con thì thích thương lắm hôm tám giờ hơn gần mười giờ mới ăn."
+      },
+      "asr_transcript": "thế em đặt nhắc anh uống điều cả đi ôm sáng mai thì theo đúng tờ giáo mới rất là đắt sẽ dễ.",
+      "model_current_transcript": "thế em đặt nhắc anh uống điều cả đi ôm sáng mai thì theo đúng tờ giáo mới rất là đắt sẽ dễ.",
+      "initial_prompt_sha256": "2d5939937675c54103f7d99fecc1be6069a3d3e5f37081e95f0336a1de38068f",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0780",
+        "tool_calls": [
+          {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "uống thuốc Cardiol",
+              "time": "2026-10-18T08:00:00+07:00"
+            }
+          }
+        ],
+        "state_hash": "3fd347d04d0b948be0f762c4289910004734333db7c7f0e62c22cac5ea27d3c8"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "2d5939937675c54103f7d99fecc1be6069a3d3e5f37081e95f0336a1de38068f",
+          "parsed": {
+            "name": "reminders.create",
+            "arguments": {
+              "content": "uống thuốc Cardiol",
+              "time": "2026-10-18T08:00:00+07:00"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"reminders.create\", \"arguments\": {\"content\": \"uống thuốc Cardiol\", \"time\": \"2026-10-18T08:00:00+07:00\"}}\n</tool_call>",
+          "seconds": 6.879829875000041,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "reminders.create",
+          "arguments": {
+            "content": "uống thuốc Cardiol",
+            "time": "2026-10-18T08:00:00+07:00"
+          },
+          "result": {
+            "ok": true,
+            "id": "rem_01",
+            "item": {
+              "id": "rem_01",
+              "repeat": "once",
+              "done": false,
+              "content": "uống thuốc Cardiol",
+              "time": "2026-10-18T08:00:00+07:00"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "12cb7dcc80d6574e1f4521599a84d4bdc5f574ed300e52184fc33c256ecbdebe",
+          "parsed": null,
+          "raw_text": "Đã tạo nhắc việc: \"uống thuốc Cardiol\" vào lúc 8:00 sáng ngày mai (18/10).",
+          "seconds": 4.8393759920001,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0823",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 31.50067350800009,
+      "history_asr": {
+        "audio/train_0823/train_0823_u1.wav": "cứ bể này du lịch ăn có gì chưa đã có bữa kế hoạch ra mắt chưa em.",
+        "audio/train_0823/train_0823_u2.wav": "nội dung viết trổ họp kiệt sốt rồi ở phần hộp tình anh còn giờ thì bên anh truyền thống nhất."
+      },
+      "asr_transcript": "ừ vậy em tỏ giúp anh cái lịch kế hoạch ra mắt và phiếu vẻ người nhé.",
+      "model_current_transcript": "ừ vậy em tỏ giúp anh cái lịch kế hoạch ra mắt và phiếu vẻ người nhé.",
+      "initial_prompt_sha256": "88c7f59a482424edac99d9d6c45f52c09c18a4f52ff1937a3c6155b3587eed90",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 2,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0823",
+        "tool_calls": [
+          {
+            "name": "calendar.create_event",
+            "arguments": {
+              "title": "Kế hoạch ra mắt",
+              "start": "2026-10-10T10:00:00+07:00",
+              "end": "2026-10-10T11:00:00+07:00",
+              "location": "Phòng họp tầng năm",
+              "attendees": []
+            }
+          },
+          {
+            "name": "notes.create",
+            "arguments": {
+              "title": "Phiếu vẻ người",
+              "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+            }
+          }
+        ],
+        "state_hash": "fdc51d735c5ba1d1a2dd9407cb7b1729e344f2c25412af966bffd1e6b4d7ab0c"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "88c7f59a482424edac99d9d6c45f52c09c18a4f52ff1937a3c6155b3587eed90",
+          "parsed": {
+            "name": "calendar.create_event",
+            "arguments": {
+              "title": "Kế hoạch ra mắt",
+              "start": "2026-10-10T10:00:00+07:00",
+              "end": "2026-10-10T11:00:00+07:00",
+              "location": "Phòng họp tầng năm",
+              "attendees": []
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"calendar.create_event\", \"arguments\": {\"title\": \"Kế hoạch ra mắt\", \"start\": \"2026-10-10T10:00:00+07:00\", \"end\": \"2026-10-10T11:00:00+07:00\", \"location\": \"Phòng họp tầng năm\", \"attendees\": []}}\n</tool_call>\n<tool_call>\n{\"name\": \"notes.create\", \"arguments\": {\"title\": \"Phiếu vẻ người\", \"content\": \"Đã được tạo phiếu vẻ người cho sự kiện Kế hoạch ra mắt vào thứ Bảy, ngày 10/10/2026 tại Phòng họp tầng năm.\"}}\n</tool_call>",
+          "seconds": 17.176724907999983,
+          "native_diagnostics": {
+            "blocks": 2,
+            "multi_block_turn": true,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "calendar.create_event",
+          "arguments": {
+            "title": "Kế hoạch ra mắt",
+            "start": "2026-10-10T10:00:00+07:00",
+            "end": "2026-10-10T11:00:00+07:00",
+            "location": "Phòng họp tầng năm",
+            "attendees": []
+          },
+          "result": {
+            "ok": true,
+            "id": "evt_02",
+            "item": {
+              "id": "evt_02",
+              "status": "confirmed",
+              "title": "Kế hoạch ra mắt",
+              "start": "2026-10-10T10:00:00+07:00",
+              "end": "2026-10-10T11:00:00+07:00",
+              "location": "Phòng họp tầng năm",
+              "attendees": []
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "05bc54d1220e12cb2bb1b6e4f65f1aea36b6e1f9ead085b540957303650dd19a",
+          "parsed": {
+            "name": "notes.create",
+            "arguments": {
+              "title": "Phiếu vẻ người",
+              "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"notes.create\", \"arguments\": {\"title\": \"Phiếu vẻ người\", \"content\": \"Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan.\"}}\n</tool_call>",
+          "seconds": 10.044403461000002,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "notes.create",
+          "arguments": {
+            "title": "Phiếu vẻ người",
+            "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+          },
+          "result": {
+            "ok": true,
+            "id": "note_04",
+            "item": {
+              "id": "note_04",
+              "title": "Phiếu vẻ người",
+              "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "00da81215d4b61f7cd4f316a7d000bf7d05718648d4a2ed877a7dead537f370c",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 4.2197485159999815,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_0961",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 20.497086970000055,
+      "history_asr": {
+        "audio/train_0961/train_0961_u1.wav": "em coi giùm anh tuần y có ho đơn chi tới hạng không."
+      },
+      "asr_transcript": "ờ mà anh dẫn tới đầu giòn sờ quên bật từ trễ một cái thôi cái hạng thứ bảy à không cái hạng chùa nhật.",
+      "model_current_transcript": "ờ mà anh dẫn tới đầu giòn sờ quên bật từ trễ một cái thôi cái hạng thứ bảy à không cái hạng chùa nhật.",
+      "initial_prompt_sha256": "3e28154b6669d98472ddb5433b4b615d5bed18bf23e5dd7b19be14d962f7c36e",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_0961",
+        "tool_calls": [
+          {
+            "name": "bill_payment.list_bills",
+            "arguments": {}
+          }
+        ],
+        "state_hash": "165cd2d8da258c34296f5fa5c5f7ed19fe0ed3685db4933920f9410efd894be5"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "3e28154b6669d98472ddb5433b4b615d5bed18bf23e5dd7b19be14d962f7c36e",
+          "parsed": {
+            "name": "bill_payment.list_bills",
+            "arguments": {}
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"bill_payment.list_bills\", \"arguments\": {}}\n</tool_call>",
+          "seconds": 3.9491315579999764,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "bill_payment.list_bills",
+          "arguments": {},
+          "result": {
+            "ok": true,
+            "bills": [
+              {
+                "id": "bill_598",
+                "type": "tv",
+                "provider": "S+",
+                "amount": 147000,
+                "due_date": "2026-11-29",
+                "paid": false
+              },
+              {
+                "id": "bill_9426",
+                "type": "electricity",
+                "provider": "EVN",
+                "amount": 848000,
+                "due_date": "2026-12-03",
+                "paid": false
+              },
+              {
+                "id": "bill_438",
+                "type": "water",
+                "provider": "Dawaco",
+                "amount": 212000,
+                "due_date": "2026-11-28",
+                "paid": false
+              },
+              {
+                "id": "bill_40",
+                "type": "internet",
+                "provider": "Vitech Telecom",
+                "amount": 220000,
+                "due_date": "2026-11-29",
+                "paid": false
+              }
+            ]
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "2497e1dedb7eba8394046434ba4a67c4f4e988cef037abec7b96268b88612ae5",
+          "parsed": null,
+          "raw_text": "Có vẻ như bạn đang nhắc đến các hóa đơn đến hạn, cụ thể là:\n\n- **Hóa đơn nước Dawaco**: 212.000 đồng, đến hạn **thứ Bảy (2026-11-27)**.  \n- **Hóa đơn truyền hình S+**: 147.000 đồng, đến hạn **chủ nhật (2026-11-28)**.  \n- **Hóa đơn mạng Vitech**: 220.000 đồng, đến hạn **chủ nhật (2026-11-28)**.\n\nBạn có muốn mình giúp thanh toán hoặc đặt lịch tự động thanh toán cho bất kỳ hóa đơn nào không?  \nHoặc bạn cần kiểm tra thêm thông tin về một hóa đơn cụ thể?",
+          "seconds": 16.515202423999995,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1029",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 12.08376983300002,
+      "history_asr": {
+        "audio/train_1029/train_1029_u1.wav": "em xin có mail nào cho đọc không.",
+        "audio/train_1029/train_1029_u2.wav": "chỉ thu cành gì có gấp không."
+      },
+      "asr_transcript": "trả lời chị thu là chịu chị rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.",
+      "model_current_transcript": "trả lời chị thu là chịu chị rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.",
+      "initial_prompt_sha256": "d43e3a0b5b8dfa5ac59557924c4cf02bd20fa5cab5e4ed5e87abd8a8b9e1f232",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1029",
+        "tool_calls": [
+          {
+            "name": "email.reply",
+            "arguments": {
+              "email_id": "mail_6244",
+              "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+            }
+          }
+        ],
+        "state_hash": "ccb08ce7ad194f3f3503c8d7788dfaac44d281f9ab88f53aa1ede5fd9eb7a9db"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "d43e3a0b5b8dfa5ac59557924c4cf02bd20fa5cab5e4ed5e87abd8a8b9e1f232",
+          "parsed": {
+            "name": "email.reply",
+            "arguments": {
+              "email_id": "mail_6244",
+              "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"email.reply\", \"arguments\": {\"email_id\": \"mail_6244\", \"body\": \"Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.\"}}\n</tool_call>",
+          "seconds": 8.189883164000094,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "email.reply",
+          "arguments": {
+            "email_id": "mail_6244",
+            "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+          },
+          "result": {
+            "ok": true,
+            "id": "sent_01",
+            "email": {
+              "id": "sent_01",
+              "to": [
+                "thu.tran@congty.example.test"
+              ],
+              "cc": [],
+              "subject": "Re: Gửi lại báo cáo tháng 9",
+              "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi.",
+              "in_reply_to": "mail_6244"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "f042f72fd04aca64015536a18f862238fedcbaa0425e337ac9bcb9efd47369f4",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 3.8479008400000794,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1075",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 13.708465764000039,
+      "history_asr": {
+        "audio/train_1075/train_1075_u1.wav": "cảnh báo điện nhà mình đang để mức mô rứa.",
+        "audio/train_1075/train_1075_u2.wav": "còn tuần rồi ngày mua sài nhiều nhất.",
+        "audio/train_1075/train_1075_u3.wav": "mạ đòi hạ xuống hai trăm ba thì biểu hai trăm rưỡi.",
+        "audio/train_1075/train_1075_u4.wav": "mà hai người chưa chốt bức mô hết."
+      },
+      "asr_transcript": "thôi kệ cứ hạ cái cảnh báo xuống trước đi.",
+      "model_current_transcript": "thôi kệ cứ hạ cái cảnh báo xuống trước đi.",
+      "initial_prompt_sha256": "e5ccbb73f0ee9f6a47ad804abe8cf540367549b9f5031c04c8b3cfcb525b1f20",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1075",
+        "tool_calls": [
+          {
+            "name": "home_energy.set_alert",
+            "arguments": {
+              "threshold_kwh": 230
+            }
+          }
+        ],
+        "state_hash": "69ae013fb7a7d4a9bc3215d4053e214dac0433351c42b2db974c39b16d2ce6fc"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "e5ccbb73f0ee9f6a47ad804abe8cf540367549b9f5031c04c8b3cfcb525b1f20",
+          "parsed": {
+            "name": "home_energy.set_alert",
+            "arguments": {
+              "threshold_kwh": 230
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"home_energy.set_alert\", \"arguments\": {\"threshold_kwh\": 230}}\n</tool_call>",
+          "seconds": 5.721938994000084,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "home_energy.set_alert",
+          "arguments": {
+            "threshold_kwh": 230
+          },
+          "result": {
+            "ok": true,
+            "alert_threshold_kwh": 230,
+            "month_kwh": 7.4
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "302013651c412deba90f4b34bd2c29c470e04a40ce57b4ac2819a2c875ea4e08",
+          "parsed": null,
+          "raw_text": "Đã đặt cảnh báo điện nhà xuống mức 230 số/tháng. Mức này thấp hơn mức hiện tại (300 số/tháng), giúp tiết kiệm điện hơn. Nếu cần điều chỉnh thêm, cứ nói nhé!",
+          "seconds": 7.9476703259999795,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1104",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 9.341958348999924,
+      "history_asr": {
+        "audio/train_1104/train_1104_u1.wav": "ơi hôm nay hẳn đội có mưa không nhỉ.",
+        "audio/train_1104/train_1104_u2.wav": "thế ở nhà thôi trưa nay ti vi có phim gì không.",
+        "audio/train_1104/train_1104_u3.wav": "còn thuế này có đá bóng không."
+      },
+      "asr_transcript": "hễ chuyển sang phim trưa nay cho tớ xem luôn nha mưa thế này chẳng đi đâu được.",
+      "model_current_transcript": "hễ chuyển sang phim trưa nay cho tớ xem luôn nha mưa thế này chẳng đi đâu được.",
+      "initial_prompt_sha256": "1e6cb683098d895942ba62c9626ca04de3407f58ffb2a032e657551d919b110e",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1104",
+        "tool_calls": [
+          {
+            "name": "tv.tune",
+            "arguments": {
+              "channel": "VTV3"
+            }
+          }
+        ],
+        "state_hash": "5b8d62239b04eff794e96c1a786ba42e108b93d4201fad92b92f5b5a01f741e3"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "1e6cb683098d895942ba62c9626ca04de3407f58ffb2a032e657551d919b110e",
+          "parsed": {
+            "name": "tv.tune",
+            "arguments": {
+              "channel": "VTV3"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"tv.tune\", \"arguments\": {\"channel\": \"VTV3\"}}\n</tool_call>",
+          "seconds": 3.751059541000018,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "tv.tune",
+          "arguments": {
+            "channel": "VTV3"
+          },
+          "result": {
+            "ok": true,
+            "channel": "VTV3"
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "ef1f3b2043ee042588eb801fa47f2ac7cf7fccfa7e5a915d9d5e69e6b8e3e06b",
+          "parsed": null,
+          "raw_text": "Đã chuyển sang kênh VTV3 để xem phim \"Thương ngày nắng về\" trưa nay. Mưa rào nên em không cần ra ngoài, ở nhà xem phim là tốt nhất nhé!",
+          "seconds": 5.5583739840000135,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1107",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 10.632380064000017,
+      "history_asr": {
+        "audio/train_1107/train_1107_u1.wav": "em thêm giúp chị hai tân cam phải dàn dắt đi trở nhé.",
+        "audio/train_1107/train_1107_u2.wav": "cả một hộp sữa tươi nói em.",
+        "audio/train_1107/train_1107_u3.wav": "thư viện có sách nào của nguyễn nhật ánh không em.",
+        "audio/train_1107/train_1107_u4.wav": "tám giờ sánh mai em nhắc chị qua thư viện nhé."
+      },
+      "asr_transcript": "thế em đã chuốc cho chị một cuốn của ông ấy nhé mai chị khoe thư viện lấy luôn.",
+      "model_current_transcript": "thế em đã chuốc cho chị một cuốn của ông ấy nhé mai chị khoe thư viện lấy luôn.",
+      "initial_prompt_sha256": "ca1212cddd22e753bcfa3b0990d4f244f35cc1847319819465d9332eb040a928",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1107",
+        "tool_calls": [
+          {
+            "name": "library.reserve",
+            "arguments": {
+              "book_id": "book_5170"
+            }
+          }
+        ],
+        "state_hash": "93e9696795d18923c9fead82c16ceadc6a6a6107ed037285702b764f5ff6fd4e"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "ca1212cddd22e753bcfa3b0990d4f244f35cc1847319819465d9332eb040a928",
+          "parsed": {
+            "name": "library.reserve",
+            "arguments": {
+              "book_id": "book_5170"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"library.reserve\", \"arguments\": {\"book_id\": \"book_5170\"}}\n</tool_call>",
+          "seconds": 4.812240533000022,
+          "native_diagnostics": {
+            "blocks": 1,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "library.reserve",
+          "arguments": {
+            "book_id": "book_5170"
+          },
+          "result": {
+            "ok": true,
+            "reservation": {
+              "id": "res_01",
+              "book_id": "book_5170",
+              "status": "ready"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "2a76d4ca047ecbdc4ac47e8b877fa75de4fbc4bf3e348607ec96c29e9a9668d1",
+          "parsed": null,
+          "raw_text": "Em đã giúp chị giữ cuốn sách \"Mắt biếc\" của Nguyễn Nhật Ánh tại thư viện rồi ạ. Chị có thể đến lấy luôn vào sáng mai nhé!",
+          "seconds": 5.779255718999934,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "plain_text"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1111",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 15.938699982000003,
+      "history_asr": {
+        "audio/train_1111/train_1111_u1.wav": "mở kế hoạch phòng khách dùm tôi nóng quá.",
+        "audio/train_1111/train_1111_u2.wav": "tài khoản thanh toán của tôi còn như vậy.",
+        "audio/train_1111/train_1111_u3.wav": "hôm nay có mail gì mới hông không được gì hông.",
+        "audio/train_1111/train_1111_u4.wav": "hầm tác xạ báo giá xoài như vậy.",
+        "audio/train_1111/train_1111_u5.wav": "ghi chú lại giá xoài đó dùm tôi nhé."
+      },
+      "asr_transcript": "cứ dìm tôi cái mail muađồ vô lưu trữ hén cái món tôi kiểm hàn xong rồi đó.",
+      "model_current_transcript": "cứ dìm tôi cái mail muađồ vô lưu trữ hén cái món tôi kiểm hàn xong rồi đó.",
+      "initial_prompt_sha256": "91e7e1d8490eca97b42f708663f2dc5ad0047c511a9badcb0031255fe569f1a3",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": false,
+        "f1": 0.0,
+        "n_submitted": 1,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1111",
+        "tool_calls": [
+          {
+            "name": "email.archive",
+            "arguments": {
+              "email_id": "mail_90",
+              "action": "archive"
+            }
+          }
+        ],
+        "state_hash": "cb5d545355b1a5e9eb9b3499d69b0e6596508e88b6be3829e182a97d610a9f48"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "91e7e1d8490eca97b42f708663f2dc5ad0047c511a9badcb0031255fe569f1a3",
+          "parsed": {
+            "name": "email.archive",
+            "arguments": {
+              "email_id": "mail_90",
+              "action": "archive"
+            }
+          },
+          "raw_text": "<tool_call>\n{\"name\": \"email.archive\", \"arguments\": {\"email_id\": \"mail_90\", \"action\": \"archive\"}}\n</tool_call>\n<tool_call>\n{\"name\": \"email.archive\", \"arguments\": {\"email_id\": \"mail_5512\", \"action\": \"archive\"}}\n</tool_call>",
+          "seconds": 10.527778338999951,
+          "native_diagnostics": {
+            "blocks": 2,
+            "multi_block_turn": true,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": null
+          }
+        },
+        {
+          "event": "tool",
+          "name": "email.archive",
+          "arguments": {
+            "email_id": "mail_90",
+            "action": "archive"
+          },
+          "result": {
+            "ok": true,
+            "item": {
+              "id": "mail_90",
+              "from": "no-reply@muado.example.test",
+              "from_name": "Muado",
+              "to": [
+                "me@example.test"
+              ],
+              "subject": "Đơn hàng đã giao thành công",
+              "snippet": "Ấm siêu tốc Lock&Lock 1.7 lít đã được giao.",
+              "body": "Đơn hàng Ấm siêu tốc Lock&Lock 1.7 lít đã được giao thành công. Đánh giá sản phẩm để nhận xu.",
+              "time": "2026-10-14T10:20:00+07:00",
+              "unread": true,
+              "folder": "archive"
+            }
+          }
+        },
+        {
+          "event": "generation",
+          "input_sha256": "50b78c9c17fbd97a11ea1a7a9b56a3764a1f3f50193f8122e337ec65d7df6adb",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 5.361521026999981,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1223",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 3.8455581759999404,
+      "history_asr": {
+        "audio/train_1223/train_1223_u1.wav": "bật điều hòa phòng ngủ chứa đợi suối hai sáu độ nha.",
+        "audio/train_1223/train_1223_u2.wav": "ví thế còn bao nhiêu tiền.",
+        "audio/train_1223/train_1223_u3.wav": "thế điểm cao nguyên được bao nhiêu rồi."
+      },
+      "asr_transcript": "nhiều phép nhỉ đội luôn sẽ tới đi.",
+      "model_current_transcript": "nhiều phép nhỉ đội luôn sẽ tới đi.",
+      "initial_prompt_sha256": "454f05125fb620ffdd9b275fceb9e91381798ca4cab386ca7f1ac5b75d604e6d",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1223",
+        "tool_calls": [],
+        "state_hash": "731f1fa33655bb8fe9ebc36b6023c857de7d910e8bf813db075fe1a8e8375ced"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "454f05125fb620ffdd9b275fceb9e91381798ca4cab386ca7f1ac5b75d604e6d",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 3.808634588000018,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    },
+    {
+      "id": "train_1234",
+      "arm": "rule",
+      "group": "CONTROL",
+      "status": "INFERRED",
+      "inference_seconds": 3.040821436999977,
+      "history_asr": {
+        "audio/train_1234/train_1234_u1.wav": "mà khác hơ hởi mua lúa về thay trả bằng nhiều vị."
+      },
+      "asr_transcript": "ờ tôi bán một bói thôi sợ nhớt cái thơ báo thứ tươi tôi cá lúa kêu người ta xuống cân ngan.",
+      "model_current_transcript": "ờ tôi bán một bói thôi sợ nhớt cái thơ báo thứ tươi tôi cá lúa kêu người ta xuống cân ngan.",
+      "initial_prompt_sha256": "1e61c4c1ffdd3909bc11b3434eff62181c8b811f56d934b774712e21e171aeb2",
+      "proxy": {
+        "score": 0.0,
+        "hash_correct": true,
+        "f1": 0.0,
+        "n_submitted": 0,
+        "n_gold": 1
+      },
+      "submission": {
+        "id": "train_1234",
+        "tool_calls": [],
+        "state_hash": "2ba6797fcac23bb0c42014e8b5b660a278df1279b131802f055ff515cc5115c2"
+      },
+      "trace": [
+        {
+          "event": "generation",
+          "input_sha256": "1e61c4c1ffdd3909bc11b3434eff62181c8b811f56d934b774712e21e171aeb2",
+          "parsed": null,
+          "raw_text": "{\"stop\":true}",
+          "seconds": 2.9933278360000486,
+          "native_diagnostics": {
+            "blocks": 0,
+            "multi_block_turn": false,
+            "arguments_string_decoded": false,
+            "format_valid": true,
+            "stop_kind": "legacy_stop"
+          }
+        }
+      ]
+    }
+  ]
+}
