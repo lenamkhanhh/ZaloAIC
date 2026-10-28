@@ -107,6 +107,18 @@ Không chứa raw dataset, audio hay weights.
   catalog), tách pseudo-call caught khỏi silent, verdict
   INCONCLUSIVE khi target tăng đúng 1 mẫu. Không sửa inference,
   không chạy GPU, không held-out.
+- `runtime/E5_HANDOFF_AFTER_E6C_V11_2026-10-28.md` — Bản bàn giao
+  ngắn cho Codex chạy E5 sau khi E6-C V11 confirmed (main 4b2695a,
+  nhánh explicit-format-failure, không phải khôi phục ask; proxy và
+  prerequisite không tăng): gate E6-C satisfied, base pin commit
+  a472006; cách đếm theo generation (không cộng dồn event validator
+  — V11: 4 validation_rejected events = 2 attempts), budget attempts
+  dùng chung, outcome theo trace, định nghĩa silent có soát mắt do
+  parser chỉ bắt prefix lowercase app.tool(; cây chẩn đoán 7 nhánh
+  (channel caught→failed/silent, premature stop, ASR cue loss, wrong
+  intent, wrong ask params, pass); rà verdict/G1–G5 chỉ ra một lỗi
+  cụ thể (format-failure làm nhiễu verdict rule) với một đề xuất báo
+  cáo hai cột cần user duyệt, không đổi arms/mẫu/rule.
 
 ## Hai bộ smoke — đừng nhầm lẫn
 
