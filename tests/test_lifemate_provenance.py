@@ -505,6 +505,18 @@ class TestFixRoundRegressions(unittest.TestCase):
         v = prove_argument("contact_id", "c_05", "sms.send", ev)
         self.assertEqual(v.status, "AMBIGUOUS")
 
+    def test_proposal_contact_name_is_not_intent(self):
+        # Fix round 2: a model-invented contact_name must not prove
+        # the user chose that person. Intent comes from user text only.
+        ev = Evidence(
+            current_text="nhắn cho anh ấy nhé",
+            rosters=[{"id": "c_05", "name": "Minh"}],
+            anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_05", "sms.send", ev,
+                           call_args={"contact_name": "Minh"})
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertEqual(v.rule, "roster_no_intent")
+
 
 if __name__ == "__main__":
     unittest.main()

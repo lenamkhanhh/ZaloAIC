@@ -79,10 +79,11 @@ class TestGate2(unittest.TestCase):
     def test_entity_id_needs_succeeded_result(self):
         call = {"name": "alarm.delete",
                 "arguments": {"alarm_id": "alm_01"}}
-        # A succeeded read whose result carries the id: pass.
+        # A succeeded read whose result carries the id field: pass.
         r = gate_read_before_write(
             call, [PriorCall("alarm.list", {},
-                             result_scalars=["alm_01"], succeeded=True)],
+                             result_entries=[("id", "alm_01")],
+                             succeeded=True)],
             [])
         self.assertFalse(r.fired)
         # No evidence at all: fires.
@@ -95,18 +96,129 @@ class TestGate2(unittest.TestCase):
                              succeeded=True)],
             [])
         self.assertTrue(r.fired)
-        # Fix round F2: a result scalar that echoes the call's own
-        # argument proves nothing (sms/phone never validate contacts).
+        # Fix round F2: a result echoing the call's own argument proves
+        # nothing (sms/phone never validate contacts).
         r = gate_read_before_write(
             {"name": "sms.send", "arguments": {"contact_id": "c_05"}},
             [PriorCall("sms.send", {"contact_id": "c_05"},
-                       result_scalars=["c_05"], succeeded=True)],
+                       result_entries=[("contact_id", "c_05")],
+                       succeeded=True)],
             [])
         self.assertTrue(r.fired)
         # A failed read establishes nothing.
         r = gate_read_before_write(
             call, [PriorCall("alarm.list", {},
-                             result_scalars=[], succeeded=False)],
+                             result_entries=[], succeeded=False)],
+            [])
+        self.assertTrue(r.fired)
+
+    def test_flat_string_is_not_entity_evidence(self):
+        # Fix round 2 (Codex): a free-text scalar from another tool
+        # that merely equals an id proves nothing.
+        r = gate_read_before_write(
+            {"name": "phone.call", "arguments": {"contact_id": "c_fake"}},
+            [PriorCall("calendar.list_events", {},
+                       result_entries=[(None, "c_fake")],
+                       succeeded=True)],
+            [])
+        self.assertTrue(r.fired)
+        r = gate_read_before_write(
+            {"name": "phone.call", "arguments": {"contact_id": "c_fake"}},
+            [PriorCall("calendar.list_events", {},
+                       result_entries=[("description", "c_fake")],
+                       succeeded=True)],
+            [])
+        self.assertTrue(r.fired)
+        # Even a same-app id field of the WRONG entity type does not
+        # establish a contact: contacts come from contacts-app only.
+        r = gate_read_before_write(
+            {"name": "phone.call", "arguments": {"contact_id": "c_fake"}},
+            [PriorCall("calendar.list_events", {},
+                       result_entries=[("id", "c_fake")],
+                       succeeded=True)],
+            [])
+        self.assertTrue(r.fired)
+
+    def test_shared_registry_read_passes_message_history_contact_fires(self):
+        # Fix round 2: smart_home.get_status lists device ids that
+        # home_automation.create_rule references -- one shared
+        # registry (create_rule's docstring: device_id "must exist in
+        # smart_home.devices"), so the cross-app read passes.
+        r = gate_read_before_write(
+            {"name": "home_automation.create_rule",
+             "arguments": {"device_id": "fan_bedroom"}},
+            [PriorCall("smart_home.get_status", {},
+                       result_entries=[("id", "fan_bedroom")],
+                       succeeded=True)],
+            [])
+        self.assertFalse(r.fired)
+        # But a message-history contact reference does NOT prove
+        # address-book membership (sms/phone never validate contacts):
+        # only contacts-app results establish contacts.
+        r = gate_read_before_write(
+            {"name": "sms.send", "arguments": {"contact_id": "c_778"}},
+            [PriorCall("sms.read_recent", {"contact_id": "c_778"},
+                       result_entries=[("contact_id", "c_778")],
+                       succeeded=True)],
+            [])
+        self.assertTrue(r.fired)
+
+    def test_read_lookup_verifies_but_noop_does_not(self):
+        # Fix round 2 (Codex, ride_hailing.get_ride): a succeeded read
+        # verifies its input id by lookup (find or noop); a noop read
+        # (unknown id -> done False) verifies nothing.
+        call = {"name": "ride_hailing.cancel",
+                "arguments": {"ride_id": "ride_real"}}
+        r = gate_read_before_write(
+            call, [PriorCall("ride_hailing.get_ride",
+                             {"ride_id": "ride_real"},
+                             result_entries=[("id", "ride_real")],
+                             succeeded=True)],
+            [])
+        self.assertFalse(r.fired)
+        r = gate_read_before_write(
+            call, [PriorCall("ride_hailing.get_ride",
+                             {"ride_id": "ride_real"},
+                             result_entries=[], succeeded=False)],
+            [])
+        self.assertTrue(r.fired)
+
+    def test_write_non_echo_id_passes_patch_echo_fires(self):        # A succeeded create returning a NEW id establishes it.
+        r = gate_read_before_write(
+            {"name": "banking.get_balance",
+             "arguments": {"account_id": "acc_99"}},
+            [PriorCall("banking.open_savings", {},
+                       result_entries=[("account_id", "acc_99")],
+                       succeeded=True)],
+            [])
+        # get_balance is a read: gate does not apply at all.
+        self.assertFalse(r.applicable)
+        r = gate_read_before_write(
+            {"name": "banking.close_account",
+             "arguments": {"account_id": "acc_99"}},
+            [PriorCall("banking.open_savings", {},
+                       result_entries=[("account_id", "acc_99")],
+                       succeeded=True)],
+            [])
+        self.assertFalse(r.fired)
+        # Conservative residual: a patch-style write returning the full
+        # record of the id it looked up is still treated as echo when
+        # the id equals its argument (shape cannot distinguish it from
+        # a non-validating echo).
+        r = gate_read_before_write(
+            {"name": "ride_hailing.get_ride",
+             "arguments": {"ride_id": "ride_real"}},
+            [PriorCall("ride_hailing.cancel", {"ride_id": "ride_real"},
+                       result_entries=[("id", "ride_real")],
+                       succeeded=True)],
+            [])
+        self.assertFalse(r.applicable)  # get_ride is a read
+        r = gate_read_before_write(
+            {"name": "ride_hailing.book",
+             "arguments": {"ride_id": "ride_real"}},
+            [PriorCall("ride_hailing.cancel", {"ride_id": "ride_real"},
+                       result_entries=[("id", "ride_real")],
+                       succeeded=True)],
             [])
         self.assertTrue(r.fired)
 
@@ -134,13 +246,13 @@ class TestGate2(unittest.TestCase):
         self.assertTrue(r.fired)
         r = gate_read_before_write(
             call, [PriorCall("calendar.list_events", {},
-                             result_scalars=[], succeeded=True)],
+                             result_entries=[], succeeded=True)],
             [])
         self.assertFalse(r.fired)
         # A failed read does not count as a read.
         r = gate_read_before_write(
             call, [PriorCall("calendar.list_events", {},
-                             result_scalars=[], succeeded=False)],
+                             result_entries=[], succeeded=False)],
             [])
         self.assertTrue(r.fired)
 

@@ -7,18 +7,19 @@ counterfactuals built from real gold situations (should-fire):
     evaluated against a roster doctored to duplicate the write's contact.
   * Gate 2 (read-before-write): gold entity-referencing writes with full
     session evidence vs the same writes evaluated with the evidence
-    removed (empty PriorCall list + empty rosters). FIX ROUND: the gate
-    now takes PriorCall objects (tool, args, result_scalars, succeeded)
-    -- prior-call ARGUMENTS never count (a proposal is not evidence)
-    and result scalars that echo the call's own arguments are excluded
-    (sms/phone never validate contacts). ALL references are checked.
-    An old-vs-new effect count is reported when the round-10 module is
-    available (--old-gates-path): gold applicable writes where the OLD
-    rule passed but the NEW gate fires (the F-effect: stricter evidence
-    blocks gold) and vice versa. The verdict follows the re-audit:
-    if stricter evidence pushes precision below 95%, the verdict
-    becomes DROP with the FP breakdown -- the old counting is NOT
-    smuggled back in to rescue it.
+    removed (empty PriorCall list + empty rosters). FIX ROUND 2: the
+    gate now takes structured PriorCall entries (field, value) --
+    a flat string set is not evidence (a free-text scalar equalling an
+    id proves nothing); contacts come only from rosters or
+    contacts-app results; other *_ids from id-typed fields, with reads
+    verifying by lookup and writes needing non-echo ids. An old-vs-new
+    effect count is reported when the previous-round module is
+    available (--old-gates-path, default the e00c864c copy): gold
+    applicable writes where the OLD rule passed but the NEW gate fires
+    and vice versa. The verdict follows the re-audit: if stricter
+    evidence pushes precision below 95%, the verdict becomes DROP
+    with the FP breakdown -- the old counting is NOT smuggled back in
+    to rescue it.
   * Gate 3 literal (transfer confirmation): gold transfers checked for
     confirmation markers. Because gold transfers ARE correct executions,
     a fire here is a gold contradiction, not a false positive in the
@@ -84,6 +85,28 @@ def flatten_scalars(obj, out):
         out.append(obj)
 
 
+def flatten_entries(obj, out):
+    """(field, value) pairs for scalar leaves of a result, phones
+    dropped. field is None for a bare scalar result. This is the
+    structured evidence the fix-round-2 gate consumes: the field is
+    what separates an id from a free-text mention of the same string.
+    """
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == "phone":
+                continue
+            if isinstance(value, (dict, list)):
+                flatten_entries(value, out)
+            elif isinstance(value, (str, int, float)) \
+                    and not isinstance(value, bool):
+                out.append((key, value))
+    elif isinstance(obj, list):
+        for value in obj:
+            flatten_entries(value, out)
+    elif isinstance(obj, (str, int, float)) and not isinstance(obj, bool):
+        out.append((None, obj))
+
+
 def collect_rosters(results, out):
     if isinstance(results, dict):
         contacts = results.get("contacts")
@@ -145,19 +168,21 @@ def main():
     ap.add_argument("--split", required=True)
     ap.add_argument("--out-json", default="/tmp/gates_audit.json")
     ap.add_argument("--old-gates-path",
-                    default=str(Path.home() / "workspace" / "round10-base"
-                                / "lifemate_gates.py"),
-                    help="Round-10 gates module for the old-vs-new G2 "
-                         "effect count; skipped if the file is missing.")
+                    default=str(Path.home() / "workspace"
+                                / "round10-fix-base" / "lifemate_gates.py"),
+                    help="Previous-round gates module for the old-vs-new "
+                         "G2 effect count; skipped if missing.")
     args = ap.parse_args()
 
     old_g2 = None
+    old_PriorCall = None
     if Path(args.old_gates_path).exists():
         spec = importlib.util.spec_from_file_location(
             "old_lifemate_gates", args.old_gates_path)
         old_mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(old_mod)
         old_g2 = old_mod.gate_read_before_write
+        old_PriorCall = old_mod.PriorCall
 
     split = json.load(open(args.split))
     dev_ids = {k for k, v in split.items() if v == "dev"}
@@ -177,12 +202,12 @@ def main():
             continue
         gold = s["label"]["tool_calls"]
         current_text = s.get("audio_text", "")
-        # History evidence: PriorCall objects (fix-round G2 contract)
-        # plus the legacy tuple/scalar forms for the old-vs-new count.
+        # History evidence: new-style PriorCall objects (structured
+        # entries) plus the legacy tuple/scalar forms for the
+        # old-vs-new count (previous-round gate module).
         hist_user = []
-        hist_calls = []
-        hist_obs = []
         hist_priors = []
+        hist_old_priors = []
         hist_rosters = []
         hist_ask_positions = []  # indices into hist_user after each ask
         for h in s.get("history", []):
@@ -192,27 +217,30 @@ def main():
                 calls = h.get("tool_calls") or []
                 results = h.get("tool_results") or []
                 for idx, call in enumerate(calls):
-                    hist_calls.append((call.get("name"),
-                                       call.get("arguments") or {}))
                     if call.get("name") == "sys.ask_missing_info":
                         hist_ask_positions.append(len(hist_user))
                     res = results[idx] if idx < len(results) else None
                     ok = isinstance(res, dict) and res.get("ok") is True \
                         and res.get("done") is not False
+                    entries = []
                     flat = []
                     if res is not None:
+                        flatten_entries(res, entries)
                         flatten_scalars(res, flat)
                     hist_priors.append(PriorCall(
                         call.get("name"), call.get("arguments") or {},
-                        result_scalars=flat, succeeded=ok))
+                        result_entries=entries, succeeded=ok))
+                    if old_PriorCall is not None:
+                        hist_old_priors.append(old_PriorCall(
+                            call.get("name"), call.get("arguments") or {},
+                            result_scalars=flat, succeeded=ok))
                 for res in results:
-                    flatten_scalars(res, hist_obs)
                     collect_rosters(res, hist_rosters)
         # Full-trajectory replay (reads AND writes, in gold order).
         env = ToolEnv("train", s["id"], root=args.data_root)
-        replay_obs = []       # (position, scalars)
         replay_rosters = []   # (position, entry)
         replay_priors = []    # (position, PriorCall)
+        replay_old_priors = []  # (position, old-module PriorCall)
         for idx, call in enumerate(gold):
             try:
                 res = env.call(call.get("name"),
@@ -222,11 +250,17 @@ def main():
             ok = isinstance(res, dict) and res.get("ok") is True \
                 and res.get("done") is not False
             flat = []
+            entries = []
             if res is not None:
                 flatten_scalars(res, flat)
+                flatten_entries(res, entries)
             replay_priors.append((idx, PriorCall(
                 call.get("name"), call.get("arguments") or {},
-                result_scalars=flat, succeeded=ok)))
+                result_entries=entries, succeeded=ok)))
+            if old_PriorCall is not None:
+                replay_old_priors.append((idx, old_PriorCall(
+                    call.get("name"), call.get("arguments") or {},
+                    result_scalars=flat, succeeded=ok)))
             if call.get("name") == "contacts.search" \
                     and isinstance(res, dict) and res.get("ok"):
                 for entry in res.get("contacts") or []:
@@ -234,7 +268,6 @@ def main():
                         replay_rosters.append(
                             (idx, {"id": entry["id"],
                                    "name": entry.get("name", "")}))
-            replay_obs.append((idx, flat))
         # Evaluate every gold write.
         for pos, call in enumerate(gold):
             name = call.get("name", "")
@@ -245,11 +278,8 @@ def main():
                                             if p < pos]
             priors = list(hist_priors) + [pc for p, pc in replay_priors
                                           if p < pos]
-            old_prior_calls = list(hist_calls) + [
-                (c.get("name"), c.get("arguments") or {})
-                for c in gold[:pos]]
-            old_prior_obs = list(hist_obs) + [
-                v for p, flat in replay_obs if p < pos for v in flat]
+            old_priors = list(hist_old_priors) + [
+                pc for p, pc in replay_old_priors if p < pos]
             # ---- Gate 1
             g1 = gate_contact_ambiguity(call, rosters)
             if g1.applicable:
@@ -273,7 +303,7 @@ def main():
                         stats["g1"]["synthetic_TP"] += 1
                     else:
                         stats["g1"]["synthetic_FN"] += 1
-            # ---- Gate 2 (fix-round PriorCall contract)
+            # ---- Gate 2 (fix-round-2 structured PriorCall contract)
             g2 = gate_read_before_write(call, priors, rosters)
             if g2.applicable:
                 stats["g2"]["gold_applicable"] += 1
@@ -285,10 +315,11 @@ def main():
                     stats["g2"]["synthetic_TP"] += 1
                 else:
                     stats["g2"]["synthetic_FN"] += 1
-                # Old-vs-new effect (round-10 module, if available).
+                # Old-vs-new effect (previous-round module, if
+                # available): its gate takes (call, prior_calls,
+                # rosters) with old-style PriorCall objects.
                 if old_g2 is not None:
-                    old = old_g2(call, old_prior_calls, old_prior_obs,
-                                 rosters)
+                    old = old_g2(call, old_priors, rosters)
                     if old.applicable:
                         stats["g2"]["old_new_both_applicable"] += 1
                         if not old.fired and g2.fired:
@@ -347,10 +378,14 @@ def main():
     g2["old_passed_new_fired"] = stats["g2"]["old_passed_new_fired"]
     g2["old_fired_new_passed"] = stats["g2"]["old_fired_new_passed"]
     g2["old_new_note"] = (
-        "old_passed_new_fired = gold writes the round-10 rule passed "
-        "but the fixed gate fires (stricter evidence: prior args and "
-        "echoes no longer count). If this pushes precision below 95%, "
-        "the verdict is DROP; the old counting is not restored.")
+        "old = previous-round (e00c864c) flat-string gate; new = "
+        "structured-entry gate. old_passed_new_fired = gold writes the "
+        "old rule passed but the new gate fires (stricter evidence: "
+        "free-text scalars no longer count, and contacts come only "
+        "from rosters or contacts-app results -- message-history "
+        "contact references do not prove address-book membership). "
+        "If this pushes precision below 95%, the verdict is DROP; the "
+        "old counting is not restored.")
     g3s = precision_report("g3_scoped")
     lit_total = stats["g3_literal"]["gold_transfers"]
     lit_fired = stats["g3_literal"]["gold_fired"]

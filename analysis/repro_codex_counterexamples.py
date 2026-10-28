@@ -93,40 +93,70 @@ def main():
                         "start": "2026-11-10T10:30:00+07:00"}))
 
     # --- F: a prior write's args must not establish a contact.
+    def gcase(cid, expected_fired, call_, priors, rosters):
+        r = gate_read_before_write(call_, priors, rosters)
+        ok = r.fired == expected_fired
+        CASES.append((cid, "fired" if expected_fired else "passed",
+                      "fired" if r.fired else "passed", r.reason, ok))
+        print(f"{'PASS' if ok else 'FAIL'} {cid}: "
+              f"expected={'fired' if expected_fired else 'passed'} "
+              f"actual_fired={r.fired} :: {r.reason}")
+
     call = {"name": "sms.send", "arguments": {"contact_id": "c_05"}}
-    r = gate_read_before_write(
-        call, [PriorCall("sms.send", {"contact_id": "c_05"},
-                         result_scalars=[], succeeded=True)], [])
-    print(f"{'PASS' if r.fired else 'FAIL'} F-prior-write-args: "
-          f"expected=fired actual_fired={r.fired} :: {r.reason}")
-    CASES.append(("F-prior-write-args", "fired",
-                  "fired" if r.fired else "passed", r.reason, r.fired))
+    gcase("F-prior-write-args", True, call,
+          [PriorCall("sms.send", {"contact_id": "c_05"},
+                     result_entries=[], succeeded=True)], [])
     # F2: a prior write whose RESULT merely echoes its own id: not proof.
-    r = gate_read_before_write(
-        call, [PriorCall("sms.send", {"contact_id": "c_05"},
-                         result_scalars=["c_05"], succeeded=True)], [])
-    print(f"{'PASS' if r.fired else 'FAIL'} F2-echo-result: "
-          f"expected=fired actual_fired={r.fired} :: {r.reason}")
-    CASES.append(("F2-echo-result", "fired",
-                  "fired" if r.fired else "passed", r.reason, r.fired))
-    # F3 (control): a prior successful READ result containing the id: pass.
-    r = gate_read_before_write(
-        call, [PriorCall("contacts.search", {"query": "Minh"},
-                         result_scalars=["c_05"], succeeded=True)],
-        [{"id": "c_05", "name": "Minh"}])
-    print(f"{'PASS' if not r.fired else 'FAIL'} F3-read-result-passes: "
-          f"expected=passed actual_fired={r.fired} :: {r.reason}")
-    CASES.append(("F3-read-result-passes", "passed",
-                  "passed" if not r.fired else "fired", r.reason,
-                  not r.fired))
+    gcase("F2-echo-result", True, call,
+          [PriorCall("sms.send", {"contact_id": "c_05"},
+                     result_entries=[("contact_id", "c_05")],
+                     succeeded=True)], [])
+    # F3 (control): a prior successful contacts READ result carrying
+    # the id field passes -- with NO roster, so the read is really
+    # what establishes it.
+    gcase("F3-read-result-passes", False, call,
+          [PriorCall("contacts.search", {"query": "Minh"},
+                     result_entries=[("id", "c_05"), ("name", "Minh")],
+                     succeeded=True)], [])
     # F4: a FAILED prior read must not establish.
-    r = gate_read_before_write(
-        call, [PriorCall("contacts.search", {"query": "Minh"},
-                         result_scalars=[], succeeded=False)], [])
-    print(f"{'PASS' if r.fired else 'FAIL'} F4-failed-read: "
-          f"expected=fired actual_fired={r.fired} :: {r.reason}")
-    CASES.append(("F4-failed-read", "fired",
-                  "fired" if r.fired else "passed", r.reason, r.fired))
+    gcase("F4-failed-read", True, call,
+          [PriorCall("contacts.search", {"query": "Minh"},
+                     result_entries=[], succeeded=False)], [])
+    # F5 (fix round 2, Codex): a free-text scalar from another tool
+    # that merely equals an id proves nothing.
+    gcase("F5-flat-string-not-evidence", True,
+          {"name": "phone.call", "arguments": {"contact_id": "c_fake"}},
+          [PriorCall("calendar.list_events", {},
+                     result_entries=[(None, "c_fake")],
+                     succeeded=True)], [])
+    # F6 (fix round 2, Codex, ride_hailing.get_ride): a succeeded read
+    # verifies its input id by lookup -- cancel passes.
+    gcase("F6-read-lookup-verifies", False,
+          {"name": "ride_hailing.cancel",
+           "arguments": {"ride_id": "ride_real"}},
+          [PriorCall("ride_hailing.get_ride", {"ride_id": "ride_real"},
+                     result_entries=[("id", "ride_real")],
+                     succeeded=True)], [])
+    # F7: the same read returning noop (unknown id) verifies nothing.
+    gcase("F7-noop-read-verifies-nothing", True,
+          {"name": "ride_hailing.cancel",
+           "arguments": {"ride_id": "ride_real"}},
+          [PriorCall("ride_hailing.get_ride", {"ride_id": "ride_real"},
+                     result_entries=[], succeeded=False)], [])
+    # F8: a succeeded create returning a NEW id establishes it.
+    gcase("F8-create-new-id-passes", False,
+          {"name": "banking.close_account",
+           "arguments": {"account_id": "acc_99"}},
+          [PriorCall("banking.open_savings", {},
+                     result_entries=[("account_id", "acc_99")],
+                     succeeded=True)], [])
+    # F9: an id inside a free-text field never establishes.
+    gcase("F9-free-text-field-fires", True,
+          {"name": "ride_hailing.cancel",
+           "arguments": {"ride_id": "ride_real"}},
+          [PriorCall("ride_hailing.get_ride", {},
+                     result_entries=[("description", "ride_real")],
+                     succeeded=True)], [])
 
     # --- G: gate must check ALL references, not stop at the contact.
     # NOTE: no tool in the real 147-tool catalog takes both a contact
@@ -142,19 +172,35 @@ def main():
                   "fired" if r.fired else "passed", r.reason, r.fired))
 
     # --- H: adversarial variants.
-    # H4: cancellation disables history reference.
+    # H4: cancellation disables history reference. The history call
+    # MUST be succeeded=True: with a 2-tuple (unknown outcome) the
+    # case would pass vacuously (no evidence at all) instead of
+    # testing the cancel logic.
     ev = Evidence(
         current_text="thôi khỏi chuyển số tiền cũ",
-        history_call_args=[("banking.transfer", {"amount": 500000})],
+        history_call_args=[("banking.transfer", {"amount": 500000},
+                            True)],
         anchor=ANCHOR)
     case("H4-cancel-blocks-history", "UNPROVEN", None,
          prove_argument("amount", 500000, "banking.transfer", ev))
-    # H5: a correction supersedes a history reference.
+    # H5: a correction supersedes a history reference (succeeded
+    # history call, so the supersede machinery is really exercised).
+    ev = Evidence(
+        current_text="chuyển số tiền cũ à không 700000",
+        history_call_args=[("banking.transfer", {"amount": 500000},
+                            True)],
+        anchor=ANCHOR)
+    case("H5-correction-beats-history", "SUPERSEDED", "supersede",
+         prove_argument("amount", 500000, "banking.transfer", ev))
+    # H5b: unknown outcome is NOT evidence. Same correction text as
+    # H5, but the history call is a 2-tuple (outcome unknown): the
+    # value must stay UNPROVEN, never SUPERSEDED, because there is
+    # nothing proven to supersede.
     ev = Evidence(
         current_text="chuyển số tiền cũ à không 700000",
         history_call_args=[("banking.transfer", {"amount": 500000})],
         anchor=ANCHOR)
-    case("H5-correction-beats-history", "SUPERSEDED", "supersede",
+    case("H5b-unknown-outcome-no-evidence", "UNPROVEN", None,
          prove_argument("amount", 500000, "banking.transfer", ev))
     # H9: duration needs a PROVEN start, not a hallucinated one.
     event = {"id": "evt_02", "start": "2026-11-10T15:00:00+07:00",

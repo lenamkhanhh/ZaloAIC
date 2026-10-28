@@ -1155,17 +1155,23 @@ def _observation_candidates(value, turn_obs, history_obs, tool, slot,
     return (None, None, None)
 
 
-def _roster_intent(entry, rosters, current_text, call_args):
+def _roster_intent(entry, rosters, current_text):
     """Does the current request identify this roster entry, and only it?
 
     Returns "proven" (an exclusive mention), "ambiguous" (the mention is
     shared with another entry, e.g. a duplicate name), or "none" (no
     mention). A roster proves a contact EXISTS; picking the right
-    person needs a distinguishing mention: the call's contact_name, the
+    person needs a distinguishing mention IN THE USER'S OWN TEXT: the
     entry's full name as a phrase, or a name token no other entry
     shares. Token-level matching prevents "Minh" from claiming "Minh Ha"
     (a full-name phrase match is void when it extends into another
     entry's full name at the same position).
+
+    Deliberately NOT a mention source: the proposal's own contact_name
+    argument. That value comes from the model, not the user -- a model
+    that invents contact_name="Minh" must not thereby prove the user
+    chose Minh. (Fix round 2: the contact_name clause was removed
+    after this self-generation loophole was found.)
     """
     target_id = entry.get("id")
     target_name = nfc_lower(entry.get("name"))
@@ -1175,16 +1181,9 @@ def _roster_intent(entry, rosters, current_text, call_args):
     text_tokens = [nfc_lower(t) for t in
                    re.findall(r"[^\W_]+", current_text or "",
                               flags=re.UNICODE)]
-    # Mentions from the call itself (contact_name) or from the text.
-    contact_name = nfc_lower((call_args or {}).get("contact_name"))
+    # Mentions come from the user text only.
     shared = False
     found = False
-    if contact_name and contact_name == target_name:
-        found = True
-        for other in rosters or []:
-            if other.get("id") != target_id \
-                    and nfc_lower(other.get("name")) == target_name:
-                shared = True
     # Full-name phrase occurrences (token level).
     n = len(target_tokens)
     for pos in range(len(text_tokens) - n + 1):
@@ -1500,7 +1499,7 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
         for entry in evidence.rosters:
             if isinstance(entry, dict) and entry.get("id") == value:
                 intent = _roster_intent(entry, evidence.rosters,
-                                        texts_current, call_args)
+                                        texts_current)
                 if intent == "proven":
                     return Verdict("PROVEN", "roster",
                                    "contact_id in roster + exclusive "

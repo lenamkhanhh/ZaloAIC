@@ -29,7 +29,11 @@ chưa làm, ghi ở §7.
 ## 1. Từng lỗi: trước / sau
 
 Mỗi ca có input synthetic tối thiểu trong
-`analysis/repro_codex_counterexamples.py` (17/17 PASS sau sửa).
+`analysis/repro_codex_counterexamples.py` (17/17 PASS tại thời điểm
+báo cáo này; ĐÍNH CHÍNH Round 2: con số này đã stale — sau khi
+`_call_entry_succeeded` được siết (2-tuple = unknown, không phải
+evidence), ca H5 fail vì fixture của nó dùng 2-tuple; xem báo cáo
+Round 2, script hiện tại là 23/23).
 "Trước" = code 219d7fec; "sau" = code branch này.
 
 ### A. Substring số — CONFIRMED, FIXED
@@ -221,7 +225,8 @@ Mỗi ca có input synthetic tối thiểu trong
 
 ```bash
 cd ~/workspace/zalo-aic-round3
-# Repro 17 ca (expect: 17/17 PASS, exit 0)
+# Repro 17 ca tại thời điểm báo cáo này (expect: 17/17 PASS, exit 0;
+ĐÍNH CHÍNH Round 2: xem ghi chú ở §1 — script hiện tại là 23/23)
 python3 analysis/repro_codex_counterexamples.py
 # Unit tests, cả hai backend (expect: 112 tests OK mỗi backend)
 python3 -m unittest discover -s tests
@@ -303,8 +308,11 @@ cận dưới loose-baseline), dù baseline mới nghiêm hơn nhiều.
 
 ### 4.2 Synthetic counterfactuals
 
-- Repro script: 17/17 PASS (A, A2, A3, A4, B, C, D, E, F, F2, F3
-  control, F4 control, G synthetic-schema, H4, H5, H9, H10).
+- Repro script: 17/17 PASS tại thời điểm báo cáo này (A, A2, A3, A4,
+  B, C, D, E, F, F2, F3 control, F4 control, G synthetic-schema, H4,
+  H5, H9, H10) — ĐÍNH CHÍNH Round 2: con số này đã stale sau khi
+  `_call_entry_succeeded` siết 2-tuple (H5 fail, fixture dùng
+  2-tuple); script hiện tại là 23/23 (thêm H5b, F5–F9).
 - Unit tests: 112 tests, PASS trên cả hai backend (difflib và
   RapidFuzz). Gồm 13 regression tests mới cho các ca A–H10 +
   roster duplicate ambiguous, và các test cũ đã sửa expectation theo
@@ -448,17 +456,32 @@ fix là một nguyên tắc đã có nguồn, áp dụng vào prover CPU nhỏ:
   cần field + entity + typed equality (re-derivation) mới PROVEN.
   [SOURCE: CaMeL; INFERENCE: áp dụng field/entity typing vào
   observation rule.]
-- **Temporal typing DATE/TIME/DATETIME**: chuẩn TIMEX3/TimeML phân
-  biệt ba loại giá trị thời gian; việc gán date-only thành 00:00 là
-  lỗi typing cổ điển. Fix B áp dụng đúng phân biệt này, không phát
-  minh gì mới. [SOURCE: TimeML/TIMEX3; INFERENCE: dispatch theo
-  kind của gold value.]
+- **Temporal typing DATE/TIME/DATETIME (phân loại nội bộ)**: chuẩn
+  TIMEX3/TimeML phân biệt DATE, TIME, DURATION, SET — KHÔNG có type
+  DATETIME riêng (đính chính Round 2: bản Round 1 ghi \"phân biệt
+  ba loại giá trị thời gian\" là gán sai taxonomy cho chuẩn). Phân
+  loại date-only / time-only / datetime trong code là phân loại NỘI
+  BỘ lấy cảm hứng từ temporal typing đó: prover phải phân biệt ba
+  dạng giá trị gold, và việc gán date-only thành 00:00 là lỗi typing
+  (underspecification: phần chưa biết phải để trống, không bịa —
+  TIMEX3 dùng placeholder XXXX cho phần chưa biết). Fix B áp dụng
+  đúng phân biệt này, không phát minh gì mới. [SOURCE: TimeML/
+  TIMEX3 (DATE/TIME/DURATION/SET, underspecification); INFERENCE:
+  dispatch theo kind của gold value + phân loại datetime nội bộ.]
 - **Span-exact matching, không substring**: chuẩn trong extractive
   QA/NER — một span phải khớp toàn bộ biên mới là bằng chứng.
   Fix A/A2/A3 áp dụng biên span + filter phone/identifier.
   [INFERENCE từ thực hành chuẩn; không claim paper nào "chứng minh"
   cho LifeMate.]
 - **Deterministic preconditions trên effect, không trên intent**:
+  Reddy et al., "Reason Less, Verify More: Deterministic Gates"
+  (arXiv:2607.07405) + ToolGuards (arXiv:2507.16459): gate đọc state
+  vận hành trước khi mutating call chạy, không gọi model, không dùng
+  ground truth — chỉ hỗ trợ CƠ CHẾ, không phải bằng chứng G2 của
+  mình đúng hay đạt precision nào (precision của G2 chỉ có từ audit
+  §4). Và G2 KHÔNG dùng khả năng đọc state riêng của harness khác
+  để truy cập state ẩn trong LifeMate: mọi evidence của G2 đều là
+  observation log + roster mà agent đã tự quan sát trong session.
   τ-bench (Yao et al. 2024) cho thấy bỏ policy làm pass^1 rơi mạnh
   (retail 61.2→56.8, airline 33.2→10.8); τ² cho thấy gate tiền-thực-
   thi rẻ, đo được per-gate precision (airline gpt-4o-mini
@@ -466,8 +489,9 @@ fix là một nguyên tắc đã có nguồn, áp dụng vào prover CPU nhỏ:
   evidence" tương ứng với việc precondition phải đọc state/effect
   đã thành công, không đọc intent đã đề xuất. Fix F/F2/G2 áp dụng:
   succeeded + non-echo + all-references.
-  [SOURCE: τ-bench policy ablation; τ² gate measurement; INFERENCE:
-  hợp đồng succeeded/non-echo cho G2.]
+  [SOURCE: gates paper 2607.07405 (cơ chế) + τ-bench policy ablation
+  + τ² gate measurement; INFERENCE: hợp đồng succeeded/non-echo
+  cho G2.]
 - **Không lấy benchmark của paper làm kết quả LifeMate**: mọi con số
   paper (τ² +12.4pp, PolicyGuard +12/+6/+12pp) đều là evidence
   frontier-model/harness khác, không transfer sang ≤6B offline —
