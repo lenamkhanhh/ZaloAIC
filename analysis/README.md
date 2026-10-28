@@ -222,3 +222,10 @@ history của mẫu, không bao giờ gồm metadata probe hay đáp án gold.
   trong repo (giữ ở máy phân tích) đúng theo thiết kế này.
 - **Hỏi chưa có đáp án (Q-L1/Q-L3/Q-L5):** cách chấm ask, read có
   tính F1 không, và hết vòng lặp nộp gì — vẫn mở, xem `gaps.md`.
+
+
+## E7 Phase 0 shadow result
+
+- `runtime/E7_PHASE0_SHADOW_AUDIT_2026-10-28.md` — CPU_NOT_READY. Of459 monitored gold writes:31 ALLOW,428 UNKNOWN,0 BLOCK;5/6 known fills blocked. No inference integration/GPU;UNKNOWN is not a pass.
+- `runtime/e7_phase0_verified_summary.json` — v1/v2/v3 results and source hashes;the initial40 candidate false-blocks remain disclosed.
+- `e7_shadow/README.md` — reproducible pure-CPU guard/tests/runner/spec and bounded independent review.

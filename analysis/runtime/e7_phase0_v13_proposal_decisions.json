@@ -1,0 +1,845 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "records": [
+    {
+      "id": "train_0116",
+      "arm": "control",
+      "generation": 1,
+      "tool": "phone.call",
+      "proposed_arguments": {
+        "contact_id": "cont_01"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0116",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "gọi điện cho mẹ",
+        "repeat": "once"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0219",
+      "arm": "control",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "đi họp với nha",
+        "time": "2026-11-06T14:00:00+07:00",
+        "repeat": "once"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0219",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "đi họp với nha",
+        "time": "2026-11-06T14:00:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0220",
+      "arm": "control",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "khỏi cha mẹ",
+        "time": "2026-11-18T13:10:00+07:00",
+        "repeat": "once"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0220",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "khỏi cha mẹ",
+        "time": "2026-11-18T13:10:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0287",
+      "arm": "control",
+      "generation": 1,
+      "tool": "ewallet.transfer",
+      "proposed_arguments": {
+        "contact_id": "contact_mom",
+        "amount": 100000,
+        "note": "Gửi cho mẹ cay"
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "amount": {
+            "status": "UNKNOWN",
+            "reason": "numeric_expression_or_source_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "amount": {
+            "status": "UNKNOWN",
+            "reason": "numeric_expression_or_source_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0287",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "gửi cho mẹ cay",
+        "time": "2026-11-13T09:00:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0353",
+      "arm": "control",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "họ phụ huynh",
+        "time": "2026-11-09T14:00:00+07:00",
+        "repeat": "once"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0360",
+      "arm": "control",
+      "generation": 2,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "Gọi cho mẹ",
+        "time": "2026-11-15T20:00:00+07:00",
+        "repeat": "once"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 1
+    },
+    {
+      "id": "train_0360",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "gọi cho mẹ",
+        "time": "2026-11-15T20:00:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0780",
+      "arm": "control",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "Uống thuốc Cardiol",
+        "time": "2026-10-18T08:00:00+07:00",
+        "repeat": "once"
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_reference_or_entity",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_field_level_supersession",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0780",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "uống thuốc Cardiol",
+        "time": "2026-10-18T08:00:00+07:00"
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_reference_or_entity",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_field_level_supersession",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0683",
+      "arm": "control",
+      "generation": 1,
+      "tool": "video_meeting.create",
+      "proposed_arguments": {
+        "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con",
+        "start": "2026-10-01T10:00:00+07:00",
+        "attendees": []
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "current_task_or_pending_intent_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "current_task_or_pending_intent_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0683",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "video_meeting.create",
+      "proposed_arguments": {
+        "title": "Phòng học trực tuyến cho bộ hướng dẫn bà con trong tổ dân phố",
+        "start": "2026-10-01T09:00:00+07:00",
+        "attendees": []
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "current_task_or_pending_intent_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "current_task_or_pending_intent_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0823",
+      "arm": "control",
+      "generation": 1,
+      "tool": "calendar.create_event",
+      "proposed_arguments": {
+        "title": "Kế hoạch ra mắt",
+        "start": "2026-10-10T10:00:00+07:00",
+        "end": "2026-10-10T11:00:00+07:00",
+        "location": "Phòng họp tầng năm",
+        "attendees": []
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "unparsed_correction_range_or_multiple_actions",
+            "source": null
+          },
+          "end": {
+            "status": "UNKNOWN",
+            "reason": "unparsed_correction_range_or_multiple_actions",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_reference_or_entity",
+            "source": null
+          },
+          "end": {
+            "status": "UNKNOWN",
+            "reason": "end_or_duration_slot_not_bound",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0823",
+      "arm": "control",
+      "generation": 2,
+      "tool": "notes.create",
+      "proposed_arguments": {
+        "title": "Phiếu vẻ người",
+        "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 1
+    },
+    {
+      "id": "train_0823",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "calendar.create_event",
+      "proposed_arguments": {
+        "title": "Kế hoạch ra mắt",
+        "start": "2026-10-10T10:00:00+07:00",
+        "end": "2026-10-10T11:00:00+07:00",
+        "location": "Phòng họp tầng năm",
+        "attendees": []
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "unparsed_correction_range_or_multiple_actions",
+            "source": null
+          },
+          "end": {
+            "status": "UNKNOWN",
+            "reason": "unparsed_correction_range_or_multiple_actions",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "start": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_reference_or_entity",
+            "source": null
+          },
+          "end": {
+            "status": "UNKNOWN",
+            "reason": "end_or_duration_slot_not_bound",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0823",
+      "arm": "rule",
+      "generation": 2,
+      "tool": "notes.create",
+      "proposed_arguments": {
+        "title": "Phiếu vẻ người",
+        "content": "Đã tạo sự kiện Kế hoạch ra mắt vào thứ Bảy, 10/10/2026 tại Phòng họp tầng năm. Vui lòng chuẩn bị phiếu vẻ người và các tài liệu liên quan."
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 1
+    },
+    {
+      "id": "train_1029",
+      "arm": "control",
+      "generation": 1,
+      "tool": "email.reply",
+      "proposed_arguments": {
+        "email_id": "mail_6244",
+        "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1029",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "email.reply",
+      "proposed_arguments": {
+        "email_id": "mail_6244",
+        "body": "Chị Thu ơi, chị chịu rủi nhất à thôi phải kích sau kê chị anh ra rồi xám em đó đi."
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1075",
+      "arm": "control",
+      "generation": 1,
+      "tool": "home_energy.set_alert",
+      "proposed_arguments": {
+        "threshold_kwh": 230
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "threshold_kwh": {
+            "status": "UNKNOWN",
+            "reason": "numeric_expression_or_source_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "threshold_kwh": {
+            "status": "UNKNOWN",
+            "reason": "numeric_expression_or_source_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1075",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "home_energy.set_alert",
+      "proposed_arguments": {
+        "threshold_kwh": 230
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "threshold_kwh": {
+            "status": "UNKNOWN",
+            "reason": "numeric_expression_or_source_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "threshold_kwh": {
+            "status": "UNKNOWN",
+            "reason": "numeric_expression_or_source_not_resolved",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1104",
+      "arm": "control",
+      "generation": 1,
+      "tool": "tv.tune",
+      "proposed_arguments": {
+        "channel": "VTV3"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1104",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "tv.tune",
+      "proposed_arguments": {
+        "channel": "VTV3"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1107",
+      "arm": "control",
+      "generation": 1,
+      "tool": "library.reserve",
+      "proposed_arguments": {
+        "book_id": "book_5170"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1107",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "library.reserve",
+      "proposed_arguments": {
+        "book_id": "book_5170"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1111",
+      "arm": "control",
+      "generation": 1,
+      "tool": "email.archive",
+      "proposed_arguments": {
+        "email_id": "mail_90",
+        "action": "archive"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_1111",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "email.archive",
+      "proposed_arguments": {
+        "email_id": "mail_90",
+        "action": "archive"
+      },
+      "asr": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "gold_text": {
+        "status": "ALLOW",
+        "scoped": false,
+        "arguments": {}
+      },
+      "observation_prefix_length": 0
+    }
+  ]
+}

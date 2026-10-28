@@ -1,0 +1,204 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "records": [
+    {
+      "id": "train_0219",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "đi họp với nha",
+        "time": "2026-11-06T14:00:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0220",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "khỏi cha mẹ",
+        "time": "2026-11-18T13:10:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0287",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "gửi cho mẹ cay",
+        "time": "2026-11-13T09:00:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0353",
+      "arm": "control",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "họ phụ huynh",
+        "time": "2026-11-09T14:00:00+07:00",
+        "repeat": "once"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0360",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "gọi cho mẹ",
+        "time": "2026-11-15T20:00:00+07:00"
+      },
+      "asr": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "gold_text": {
+        "status": "BLOCK",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "BLOCK",
+            "reason": "no_request_hour_or_supported_reference",
+            "source": "request_hour_absent"
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    },
+    {
+      "id": "train_0780",
+      "arm": "rule",
+      "generation": 1,
+      "tool": "reminders.create",
+      "proposed_arguments": {
+        "content": "uống thuốc Cardiol",
+        "time": "2026-10-18T08:00:00+07:00"
+      },
+      "asr": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_reference_or_entity",
+            "source": null
+          }
+        }
+      },
+      "gold_text": {
+        "status": "UNKNOWN",
+        "scoped": true,
+        "arguments": {
+          "time": {
+            "status": "UNKNOWN",
+            "reason": "unresolved_field_level_supersession",
+            "source": null
+          }
+        }
+      },
+      "observation_prefix_length": 0
+    }
+  ]
+}

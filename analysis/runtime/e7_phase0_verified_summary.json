@@ -1,0 +1,1210 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "versions": {
+    "v1": {
+      "scope": "E7_PHASE0_SHADOW_ONLY_NOT_LIVE_READY",
+      "guard_sha256": "9d0f1d488f5e34ba5f9d59faed98fb8a284ef0bec35c4852c4b05b85371f2dd9",
+      "split_sha256": "eefd0faa163285b23d2634bc4cc04f515b58367a2344599e46e85d48818280aa",
+      "trace_zip_sha256": "f1cd3df132622660765d03412a9defa84a225fc9e80c44994acbf5daa7d6ac71",
+      "dev_samples": 1237,
+      "heldout_assessed": 0,
+      "models_run": 0,
+      "gpu_jobs": 0,
+      "v13_traces": 40,
+      "v13_write_proposals": 29,
+      "v13_scoped_proposals": 17,
+      "v13_ASR_decisions": {
+        "BLOCK": 10,
+        "UNKNOWN": 7
+      },
+      "v13_GOLD_TEXT_decisions": {
+        "BLOCK": 10,
+        "UNKNOWN": 7
+      },
+      "known_fill_total": 6,
+      "known_fill_ASR_status": {
+        "BLOCK": 5,
+        "UNKNOWN": 1
+      },
+      "gold_write_count": 1389,
+      "gold_scoped_writes": 459,
+      "gold_decisions": {
+        "UNKNOWN": 373,
+        "ALLOW": 46,
+        "BLOCK": 40
+      },
+      "candidate_gold_false_blocks": 40,
+      "false_blocks_with_failed_gold_result": 0,
+      "gold_writes_ASR_unavailable": 1389,
+      "ASR_GOLD_transition_on_observed_V13_prefixes": {
+        "BLOCK->BLOCK": 10,
+        "UNKNOWN->UNKNOWN": 7
+      },
+      "gold_slot_breakdown": [
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_reference_not_uniquely_bound",
+          "count": 5
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 93
+        },
+        {
+          "slot": "amount",
+          "status": "ALLOW",
+          "reason": "single_explicit_numeric_expression",
+          "count": 6
+        },
+        {
+          "slot": "time",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 23
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 61
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "pointed_time_arithmetic",
+          "count": 2
+        },
+        {
+          "slot": "end",
+          "status": "ALLOW",
+          "reason": "pointed_time_arithmetic",
+          "count": 2
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 14
+        },
+        {
+          "slot": "amount",
+          "status": "BLOCK",
+          "reason": "single_explicit_numeric_expression",
+          "count": 5
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 9
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 9
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_time_expression",
+          "count": 18
+        },
+        {
+          "slot": "amount",
+          "status": "ALLOW",
+          "reason": "pointed_numeric_value",
+          "count": 2
+        },
+        {
+          "slot": "schedule_time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 18
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 35
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 26
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 29
+        },
+        {
+          "slot": "schedule_time",
+          "status": "BLOCK",
+          "reason": "explicit_pointed_reference_check",
+          "count": 2
+        },
+        {
+          "slot": "time",
+          "status": "BLOCK",
+          "reason": "explicit_pointed_reference_check",
+          "count": 3
+        },
+        {
+          "slot": "time",
+          "status": "BLOCK",
+          "reason": "explicit_request_clock_check",
+          "count": 6
+        },
+        {
+          "slot": "times",
+          "status": "UNKNOWN",
+          "reason": "unsupported_multivalue_or_type",
+          "count": 5
+        },
+        {
+          "slot": "start",
+          "status": "BLOCK",
+          "reason": "pointed_time_arithmetic",
+          "count": 1
+        },
+        {
+          "slot": "end",
+          "status": "BLOCK",
+          "reason": "pointed_time_arithmetic",
+          "count": 1
+        },
+        {
+          "slot": "start",
+          "status": "BLOCK",
+          "reason": "explicit_pointed_reference_check",
+          "count": 1
+        },
+        {
+          "slot": "end",
+          "status": "BLOCK",
+          "reason": "explicit_pointed_reference_check",
+          "count": 1
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unresolved_reference_or_entity",
+          "count": 6
+        },
+        {
+          "slot": "date",
+          "status": "UNKNOWN",
+          "reason": "date_reference_not_resolved",
+          "count": 3
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 5
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 14
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 10
+        },
+        {
+          "slot": "end",
+          "status": "BLOCK",
+          "reason": "explicit_request_clock_check",
+          "count": 9
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_proposed_datetime",
+          "count": 12
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 1
+        },
+        {
+          "slot": "start",
+          "status": "BLOCK",
+          "reason": "explicit_request_clock_check",
+          "count": 6
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "explicit_pointed_reference_check",
+          "count": 1
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 3
+        },
+        {
+          "slot": "due",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 4
+        },
+        {
+          "slot": "quantity",
+          "status": "ALLOW",
+          "reason": "single_explicit_numeric_expression",
+          "count": 1
+        },
+        {
+          "slot": "due",
+          "status": "BLOCK",
+          "reason": "explicit_request_clock_check",
+          "count": 4
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unresolved_reference_or_entity",
+          "count": 4
+        },
+        {
+          "slot": "schedule_time",
+          "status": "BLOCK",
+          "reason": "explicit_request_clock_check",
+          "count": 2
+        },
+        {
+          "slot": "due",
+          "status": "BLOCK",
+          "reason": "no_request_hour_or_supported_reference",
+          "count": 1
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 5
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "unresolved_reference_or_entity",
+          "count": 2
+        },
+        {
+          "slot": "date",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 6
+        },
+        {
+          "slot": "time",
+          "status": "BLOCK",
+          "reason": "no_request_hour_or_supported_reference",
+          "count": 3
+        },
+        {
+          "slot": "date",
+          "status": "ALLOW",
+          "reason": "derived_date_check",
+          "count": 2
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "relative_event_or_slot_not_uniquely_bound",
+          "count": 1
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "relative_event_or_slot_not_uniquely_bound",
+          "count": 3
+        },
+        {
+          "slot": "schedule_time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_time_expression",
+          "count": 1
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "unparsed_time_expression",
+          "count": 1
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 7
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 4
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 2
+        },
+        {
+          "slot": "schedule_time",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 1
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 3
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "half_requires_one_pointed_base",
+          "count": 1
+        }
+      ],
+      "gate": "CPU_NOT_READY"
+    },
+    "v2": {
+      "scope": "E7_PHASE0_SHADOW_ONLY_NOT_LIVE_READY",
+      "guard_sha256": "2a3afd846d311187332e2a196a7b587dcc61be34eef9dcb57d05ad8cee326712",
+      "split_sha256": "eefd0faa163285b23d2634bc4cc04f515b58367a2344599e46e85d48818280aa",
+      "trace_zip_sha256": "f1cd3df132622660765d03412a9defa84a225fc9e80c44994acbf5daa7d6ac71",
+      "dev_samples": 1237,
+      "heldout_assessed": 0,
+      "models_run": 0,
+      "gpu_jobs": 0,
+      "v13_traces": 40,
+      "v13_write_proposals": 29,
+      "v13_scoped_proposals": 17,
+      "v13_ASR_decisions": {
+        "BLOCK": 8,
+        "UNKNOWN": 9
+      },
+      "v13_GOLD_TEXT_decisions": {
+        "BLOCK": 8,
+        "UNKNOWN": 9
+      },
+      "known_fill_total": 6,
+      "known_fill_ASR_status": {
+        "BLOCK": 5,
+        "UNKNOWN": 1
+      },
+      "gold_write_count": 1389,
+      "gold_scoped_writes": 459,
+      "gold_decisions": {
+        "UNKNOWN": 429,
+        "ALLOW": 29,
+        "BLOCK": 1
+      },
+      "candidate_gold_false_blocks": 1,
+      "false_blocks_with_failed_gold_result": 0,
+      "gold_writes_ASR_unavailable": 1389,
+      "ASR_GOLD_transition_on_observed_V13_prefixes": {
+        "BLOCK->BLOCK": 8,
+        "UNKNOWN->UNKNOWN": 9
+      },
+      "gold_slot_breakdown": [
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_reference_not_uniquely_bound",
+          "count": 4
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 97
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "unconsumed_numeric_fragment",
+          "count": 3
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 33
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "pointed_time_arithmetic",
+          "count": 2
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "end_or_duration_slot_not_bound",
+          "count": 24
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 22
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 17
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_time_expression",
+          "count": 10
+        },
+        {
+          "slot": "amount",
+          "status": "ALLOW",
+          "reason": "pointed_numeric_value",
+          "count": 1
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_arithmetic_limit_or_expression_not_resolved",
+          "count": 61
+        },
+        {
+          "slot": "time",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 20
+        },
+        {
+          "slot": "schedule_time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 18
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 35
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 26
+        },
+        {
+          "slot": "schedule_time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 5
+        },
+        {
+          "slot": "times",
+          "status": "UNKNOWN",
+          "reason": "unsupported_multivalue_or_type",
+          "count": 5
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 9
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 4
+        },
+        {
+          "slot": "date",
+          "status": "UNKNOWN",
+          "reason": "date_reference_not_resolved",
+          "count": 4
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 3
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 5
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 14
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_proposed_datetime",
+          "count": 12
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 1
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 4
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "explicit_pointed_reference_check",
+          "count": 1
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "numeric_arithmetic_limit_or_expression_not_resolved",
+          "count": 2
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 5
+        },
+        {
+          "slot": "due",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 2
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 4
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 5
+        },
+        {
+          "slot": "quantity",
+          "status": "ALLOW",
+          "reason": "single_explicit_numeric_expression",
+          "count": 1
+        },
+        {
+          "slot": "due",
+          "status": "BLOCK",
+          "reason": "explicit_request_clock_check",
+          "count": 1
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "current_task_or_pending_intent_not_resolved",
+          "count": 1
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 4
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unresolved_reference_or_entity",
+          "count": 1
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unresolved_reference_or_entity",
+          "count": 4
+        },
+        {
+          "slot": "date",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 6
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "number_may_belong_to_temporal_slot",
+          "count": 2
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "relative_event_or_slot_not_uniquely_bound",
+          "count": 1
+        },
+        {
+          "slot": "date",
+          "status": "ALLOW",
+          "reason": "derived_date_check",
+          "count": 1
+        },
+        {
+          "slot": "amount",
+          "status": "ALLOW",
+          "reason": "single_explicit_numeric_expression",
+          "count": 1
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "relative_event_or_slot_not_uniquely_bound",
+          "count": 3
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 1
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 7
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 2
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 2
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "numeric_arithmetic_limit_or_expression_not_resolved",
+          "count": 2
+        },
+        {
+          "slot": "schedule_time",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 1
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 3
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 1
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "half_requires_one_pointed_base",
+          "count": 1
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 1
+        }
+      ],
+      "gate": "CPU_NOT_READY"
+    },
+    "v3": {
+      "scope": "E7_PHASE0_SHADOW_ONLY_NOT_LIVE_READY",
+      "guard_sha256": "02562c37bf8c98dd5dddb1b06f6706208513cdacade9bdbb2309c26072102295",
+      "split_sha256": "eefd0faa163285b23d2634bc4cc04f515b58367a2344599e46e85d48818280aa",
+      "trace_zip_sha256": "f1cd3df132622660765d03412a9defa84a225fc9e80c44994acbf5daa7d6ac71",
+      "dev_samples": 1237,
+      "heldout_assessed": 0,
+      "models_run": 0,
+      "gpu_jobs": 0,
+      "v13_traces": 40,
+      "v13_write_proposals": 29,
+      "v13_scoped_proposals": 17,
+      "v13_ASR_decisions": {
+        "BLOCK": 8,
+        "UNKNOWN": 9
+      },
+      "v13_GOLD_TEXT_decisions": {
+        "BLOCK": 8,
+        "UNKNOWN": 9
+      },
+      "known_fill_total": 6,
+      "known_fill_ASR_status": {
+        "BLOCK": 5,
+        "UNKNOWN": 1
+      },
+      "gold_write_count": 1389,
+      "gold_scoped_writes": 459,
+      "gold_decisions": {
+        "UNKNOWN": 428,
+        "ALLOW": 31
+      },
+      "candidate_gold_false_blocks": 0,
+      "false_blocks_with_failed_gold_result": 0,
+      "gold_writes_ASR_unavailable": 1389,
+      "ASR_GOLD_transition_on_observed_V13_prefixes": {
+        "BLOCK->BLOCK": 8,
+        "UNKNOWN->UNKNOWN": 9
+      },
+      "ASR_GOLD_argument_transition_on_observed_V13_prefixes": {
+        "BLOCK->BLOCK": 8,
+        "UNKNOWN->UNKNOWN": 11
+      },
+      "gold_scoped_arguments": 511,
+      "gold_slot_breakdown": [
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_reference_not_uniquely_bound",
+          "count": 4
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 97
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "unconsumed_numeric_fragment",
+          "count": 3
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 33
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "pointed_time_arithmetic",
+          "count": 2
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "end_or_duration_slot_not_bound",
+          "count": 24
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 22
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 17
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_time_expression",
+          "count": 10
+        },
+        {
+          "slot": "amount",
+          "status": "ALLOW",
+          "reason": "pointed_numeric_value",
+          "count": 1
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_arithmetic_limit_or_expression_not_resolved",
+          "count": 61
+        },
+        {
+          "slot": "time",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 20
+        },
+        {
+          "slot": "schedule_time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 18
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 35
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 26
+        },
+        {
+          "slot": "schedule_time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 5
+        },
+        {
+          "slot": "times",
+          "status": "UNKNOWN",
+          "reason": "unsupported_multivalue_or_type",
+          "count": 5
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 9
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 4
+        },
+        {
+          "slot": "date",
+          "status": "UNKNOWN",
+          "reason": "date_reference_not_resolved",
+          "count": 4
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 3
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 5
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 14
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unparsed_proposed_datetime",
+          "count": 12
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 1
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 4
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "explicit_pointed_reference_check",
+          "count": 1
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "numeric_arithmetic_limit_or_expression_not_resolved",
+          "count": 2
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 5
+        },
+        {
+          "slot": "due",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 2
+        },
+        {
+          "slot": "start",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 4
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unparsed_temporal_operation_or_binding",
+          "count": 5
+        },
+        {
+          "slot": "quantity",
+          "status": "ALLOW",
+          "reason": "single_explicit_numeric_expression",
+          "count": 1
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "current_task_or_pending_intent_not_resolved",
+          "count": 2
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "multiple_clocks_or_unparsed_date",
+          "count": 4
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "end",
+          "status": "UNKNOWN",
+          "reason": "unresolved_field_level_supersession",
+          "count": 2
+        },
+        {
+          "slot": "start",
+          "status": "UNKNOWN",
+          "reason": "unresolved_reference_or_entity",
+          "count": 1
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "unresolved_reference_or_entity",
+          "count": 4
+        },
+        {
+          "slot": "date",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 6
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "number_may_belong_to_temporal_slot",
+          "count": 2
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "relative_event_or_slot_not_uniquely_bound",
+          "count": 1
+        },
+        {
+          "slot": "date",
+          "status": "ALLOW",
+          "reason": "derived_date_check",
+          "count": 1
+        },
+        {
+          "slot": "amount",
+          "status": "ALLOW",
+          "reason": "single_explicit_numeric_expression",
+          "count": 1
+        },
+        {
+          "slot": "time",
+          "status": "UNKNOWN",
+          "reason": "relative_event_or_slot_not_uniquely_bound",
+          "count": 3
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 1
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "multiple_action_slot_binding_not_implemented",
+          "count": 7
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 2
+        },
+        {
+          "slot": "valid_until",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 2
+        },
+        {
+          "slot": "threshold_kwh",
+          "status": "UNKNOWN",
+          "reason": "numeric_arithmetic_limit_or_expression_not_resolved",
+          "count": 2
+        },
+        {
+          "slot": "schedule_time",
+          "status": "ALLOW",
+          "reason": "explicit_request_clock_check",
+          "count": 1
+        },
+        {
+          "slot": "valid_until",
+          "status": "UNKNOWN",
+          "reason": "unparsed_correction_range_or_multiple_actions",
+          "count": 3
+        },
+        {
+          "slot": "due",
+          "status": "UNKNOWN",
+          "reason": "unparsed_or_multiple_clock_mentions",
+          "count": 1
+        },
+        {
+          "slot": "amount",
+          "status": "UNKNOWN",
+          "reason": "half_requires_one_pointed_base",
+          "count": 1
+        },
+        {
+          "slot": "quantity",
+          "status": "UNKNOWN",
+          "reason": "numeric_expression_or_source_not_resolved",
+          "count": 1
+        }
+      ],
+      "gate_reasons": [
+        "GOLD_SOURCE_COVERAGE_UNRESOLVED",
+        "KNOWN_FILL_NOT_CONFIDENTLY_BLOCKED"
+      ],
+      "gate": "CPU_NOT_READY"
+    }
+  },
+  "reporting": {
+    "raw_stops": 19,
+    "positive": [
+      {
+        "id": "train_0653",
+        "arm": "control"
+      },
+      {
+        "id": "train_0653",
+        "arm": "rule"
+      }
+    ],
+    "negative_count": 17,
+    "ordinary_prose_false_positive": 0,
+    "parser_changed": false
+  },
+  "source_versions": {
+    "v1": {
+      "commit": "1018ae9c740601b7778fe1908f7d8be4a0abd9f9",
+      "guard_sha256": "9d0f1d488f5e34ba5f9d59faed98fb8a284ef0bec35c4852c4b05b85371f2dd9"
+    },
+    "v2": {
+      "commit": "4c692b7bb1d0858484dfa0ae2d4a9b7c2322b3c3",
+      "guard_sha256": "2a3afd846d311187332e2a196a7b587dcc61be34eef9dcb57d05ad8cee326712"
+    },
+    "v3": {
+      "commit": "f2727921476775d9aecb197c443d994dc61e646a",
+      "guard_sha256": "02562c37bf8c98dd5dddb1b06f6706208513cdacade9bdbb2309c26072102295"
+    }
+  }
+}

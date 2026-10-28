@@ -1,0 +1,309 @@
+{
+  "usage": "DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT",
+  "records": [
+    {
+      "id": "train_0219",
+      "arm": "control",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0219",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0220",
+      "arm": "control",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0220",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0287",
+      "arm": "control",
+      "generation": 1,
+      "slot": "amount",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "numeric_expression_or_source_not_resolved",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "numeric_expression_or_source_not_resolved",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0287",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0353",
+      "arm": "control",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0360",
+      "arm": "control",
+      "generation": 2,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0360",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      },
+      "GOLD_TEXT": {
+        "status": "BLOCK",
+        "reason": "no_request_hour_or_supported_reference",
+        "source": "request_hour_absent"
+      }
+    },
+    {
+      "id": "train_0780",
+      "arm": "control",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "unresolved_reference_or_entity",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "unresolved_field_level_supersession",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0780",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "time",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "unresolved_reference_or_entity",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "unresolved_field_level_supersession",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0683",
+      "arm": "control",
+      "generation": 1,
+      "slot": "start",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "current_task_or_pending_intent_not_resolved",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "current_task_or_pending_intent_not_resolved",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0683",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "start",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "current_task_or_pending_intent_not_resolved",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "current_task_or_pending_intent_not_resolved",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0823",
+      "arm": "control",
+      "generation": 1,
+      "slot": "start",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "unparsed_correction_range_or_multiple_actions",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "unresolved_reference_or_entity",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0823",
+      "arm": "control",
+      "generation": 1,
+      "slot": "end",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "unparsed_correction_range_or_multiple_actions",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "end_or_duration_slot_not_bound",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0823",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "start",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "unparsed_correction_range_or_multiple_actions",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "unresolved_reference_or_entity",
+        "source": null
+      }
+    },
+    {
+      "id": "train_0823",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "end",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "unparsed_correction_range_or_multiple_actions",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "end_or_duration_slot_not_bound",
+        "source": null
+      }
+    },
+    {
+      "id": "train_1075",
+      "arm": "control",
+      "generation": 1,
+      "slot": "threshold_kwh",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "numeric_expression_or_source_not_resolved",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "numeric_expression_or_source_not_resolved",
+        "source": null
+      }
+    },
+    {
+      "id": "train_1075",
+      "arm": "rule",
+      "generation": 1,
+      "slot": "threshold_kwh",
+      "ASR": {
+        "status": "UNKNOWN",
+        "reason": "numeric_expression_or_source_not_resolved",
+        "source": null
+      },
+      "GOLD_TEXT": {
+        "status": "UNKNOWN",
+        "reason": "numeric_expression_or_source_not_resolved",
+        "source": null
+      }
+    }
+  ]
+}
