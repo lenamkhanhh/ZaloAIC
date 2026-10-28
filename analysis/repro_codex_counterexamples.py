@@ -143,12 +143,24 @@ def main():
            "arguments": {"ride_id": "ride_real"}},
           [PriorCall("ride_hailing.get_ride", {"ride_id": "ride_real"},
                      result_entries=[], succeeded=False)], [])
-    # F8: a succeeded create returning a NEW id establishes it.
+    # F8 (CONTRACT CORRECTED in round 3, Thread 1): a succeeded
+    # create returning a NEW id establishes ONLY that id's registry.
+    # The round-2 form used banking.open_savings' account_id as the
+    # "new id"; under registry typing that field is a FOREIGN KEY
+    # inside the savings record (and in a real call an echo of
+    # from_account_id), not the create's new id -- so it must FIRE,
+    # not pass. The true new-id case is calendar.create_event.
     gcase("F8-create-new-id-passes", False,
+          {"name": "calendar.update_event",
+           "arguments": {"event_id": "evt_42"}},
+          [PriorCall("calendar.create_event", {},
+                     result_entries=[("id", "evt_42", "")],
+                     succeeded=True)], [])
+    gcase("F8b-savings-foreign-key-fires", True,
           {"name": "banking.close_account",
            "arguments": {"account_id": "acc_99"}},
           [PriorCall("banking.open_savings", {},
-                     result_entries=[("account_id", "acc_99")],
+                     result_entries=[("account_id", "acc_99", "savings")],
                      succeeded=True)], [])
     # F9: an id inside a free-text field never establishes.
     gcase("F9-free-text-field-fires", True,
@@ -170,6 +182,118 @@ def main():
           f"expected=fired actual_fired={r.fired} :: {r.reason}")
     CASES.append(("G-early-return-synthetic", "fired",
                   "fired" if r.fired else "passed", r.reason, r.fired))
+
+    # --- R3: round-3 reviewer findings (registry + prover fixes).
+    # R3-1B: generic id from any app no longer establishes any *_id.
+    gcase("R3-1B-calendar-id-not-ride", True,
+          {"name": "ride_hailing.cancel",
+           "arguments": {"ride_id": "evt_01"}},
+          [PriorCall("calendar.list_events", {},
+                     result_entries=[("id", "evt_01", "events")],
+                     succeeded=True)], [])
+    # R3-1S: smart_home.get_status mixes devices + scenes under "id".
+    gcase("R3-1S-scene-id-not-device", True,
+          {"name": "smart_home.light_set",
+           "arguments": {"device_id": "scn_41"}},
+          [PriorCall("smart_home.get_status", {},
+                     result_entries=[("id", "scn_41", "scenes")],
+                     succeeded=True)], [])
+    gcase("R3-1S-device-path-passes", False,
+          {"name": "smart_home.light_set",
+           "arguments": {"device_id": "dev_01"}},
+          [PriorCall("smart_home.get_status", {},
+                     result_entries=[("id", "dev_01", "devices")],
+                     succeeded=True)], [])
+    # R3-2P: spaced phone digits are not amounts.
+    ev = Evidence(
+        current_text="gọi cho Minh số 0914 061 230 nhé",
+        anchor=ANCHOR)
+    case("R3-2P-spaced-phone-not-amount", "UNPROVEN", None,
+         prove_argument("amount", 914, "banking.transfer", ev,
+                        call_args={"contact_id": "c_01", "amount": 914}))
+    # R3-2P-boundary (adjacent fix): amounts at text start/end prove.
+    ev = Evidence(current_text="chuyển 500000", anchor=ANCHOR)
+    case("R3-2P-boundary-amount-proves", "PROVEN", None,
+         prove_argument("amount", 500000, "banking.transfer", ev,
+                        call_args={"contact_id": "c_01",
+                                   "amount": 500000}))
+    # R3-2O: offset direction bound to the duration's neighbourhood.
+    ev = Evidence(
+        current_text="đừng để muộn nhé, dời lịch họp mai "
+                     "sớm hơn một tiếng nhé",
+        observation_events=[("calendar.list_events",
+                             {"id": "evt_01",
+                              "start": "2026-11-19T10:00:00+07:00",
+                              "end": "2026-11-19T11:00:00+07:00"})],
+        anchor=ANCHOR)
+    case("R3-2O-nearby-direction-proves", "PROVEN", "offset",
+         prove_argument("start", "2026-11-19T09:00:00+07:00",
+                        "calendar.update_event", ev,
+                        call_args={"event_id": "evt_01",
+                                   "start": "2026-11-19T09:00:00+07:00"}))
+    case("R3-2O-stray-direction-unproven", "UNPROVEN", None,
+         prove_argument("start", "2026-11-19T11:00:00+07:00",
+                        "calendar.update_event", ev,
+                        call_args={"event_id": "evt_01",
+                                   "start": "2026-11-19T11:00:00+07:00"}))
+    # R3-2N: entity-less observation never proves an id-linked write.
+    ev = Evidence(
+        current_text="chuyển tiền cho Minh",
+        history_observations=[("banking.get_balance", "amount",
+                               500000, None)],
+        anchor=ANCHOR)
+    case("R3-2N-none-entity-observation", "UNPROVEN", None,
+         prove_argument("amount", 500000, "banking.transfer", ev,
+                        call_args={"contact_id": "c_01",
+                                   "amount": 500000}))
+    # R3-3PH: phone_number from the call log passes; unknown fires.
+    gcase("R3-3PH-call-log-phone-passes", False,
+          {"name": "phone.call",
+           "arguments": {"phone_number": "09046612750"}},
+          [PriorCall("phone.recent_calls", {},
+                     result_entries=[("phone_number", "09046612750",
+                                      "calls")],
+                     succeeded=True)], [])
+    gcase("R3-3PH-unknown-phone-fires", True,
+          {"name": "phone.call",
+           "arguments": {"phone_number": "0999999999"}}, [], [])
+    # R3-3SL: a value under two slots needs BOTH registries.
+    gcase("R3-3SL-dual-slot-fires", True,
+          {"name": "banking.transfer",
+           "arguments": {"from_account_id": "acc_01",
+                         "beneficiary_id": "acc_01"}},
+          [PriorCall("banking.get_balance", {},
+                     result_entries=[("id", "acc_01", "accounts")],
+                     succeeded=True)], [])
+    # R3-4PV: a succeeded patch looked the entity up, so a later
+    # write on the same id passes (chained writes, not echo).
+    gcase("R3-4PV-patch-chain-passes", False,
+          {"name": "calendar.delete_event",
+           "arguments": {"event_id": "evt_99"}},
+          [PriorCall("calendar.update_event", {"event_id": "evt_99"},
+                     result_entries=[("id", "evt_99", "item")],
+                     succeeded=True)], [])
+    # R3-4EO: free-text args are not echo evidence -- a create whose
+    # title coincidentally equals its new record id still counts
+    # as a genuine new id (old code suppressed it because the title
+    # was in the all-strings echo set), so the later write passes.
+    gcase("R3-4EO-free-text-title-passes", False,
+          {"name": "calendar.update_event",
+           "arguments": {"event_id": "evt_99"}},
+          [PriorCall("calendar.create_event", {"title": "evt_99"},
+                     result_entries=[("id", "evt_99", "item")],
+                     succeeded=True)], [])
+    # R3-6HR: one match among several history candidates is
+    # UNPROVEN, not AMBIGUOUS (AMBIGUOUS needs >= 2 supporters).
+    ev = Evidence(
+        current_text="chuyển số tiền cũ cho Minh",
+        history_call_args=[("banking.transfer", {"amount": 500000},
+                            True),
+                           ("banking.transfer", {"amount": 700000},
+                            True)],
+        anchor=ANCHOR)
+    case("R3-6HR-single-match-unproven", "UNPROVEN", None,
+         prove_argument("amount", 500000, "banking.transfer", ev))
 
     # --- H: adversarial variants.
     # H4: cancellation disables history reference. The history call

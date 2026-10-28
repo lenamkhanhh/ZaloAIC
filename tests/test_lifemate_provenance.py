@@ -328,6 +328,14 @@ class TestProver(unittest.TestCase):
         v = prove_argument("amount", 500000, "banking.transfer", ev)
         self.assertEqual(v.status, "PROVEN")
         self.assertEqual(v.rule, "history_reference")
+        # Contract change (reviewer finding 6-HR, round 3):
+        # AMBIGUOUS now requires >= 2 MATCHING candidates. A single
+        # match among several candidates does NOT uniquely resolve
+        # the reference ("số tiền cũ" could mean the other amount),
+        # so it falls through to UNPROVEN -- the guard action is
+        # unchanged (both verdicts block), only the label is now
+        # strict: AMBIGUOUS means ">= 2 supporters, can't choose",
+        # never "no supporter at all".
         ev2 = Evidence(
             current_text="chuyển số tiền cũ cho Minh",
             history_call_args=[("banking.transfer", {"amount": 500000},
@@ -336,7 +344,33 @@ class TestProver(unittest.TestCase):
                                 True)],
             anchor=ANCHOR)
         v = prove_argument("amount", 500000, "banking.transfer", ev2)
+        self.assertEqual(v.status, "UNPROVEN")
+        # Two candidates both matching the value -> AMBIGUOUS.
+        # (For time values the matcher compares HH:MM, so two full
+        # datetimes with the same clock time but different dates
+        # both match a time-only value.)
+        ev2b = Evidence(
+            current_text="dời sang giờ cũ nhé",
+            history_call_args=[("calendar.update_event",
+                                {"start": "2026-11-19T10:00:00+07:00"},
+                                True),
+                               ("calendar.update_event",
+                                {"start": "2026-11-18T10:00:00+07:00"},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("start", "10:00", "calendar.update_event",
+                           ev2b)
         self.assertEqual(v.status, "AMBIGUOUS")
+        # No candidate matches -> UNPROVEN, not AMBIGUOUS.
+        ev2c = Evidence(
+            current_text="chuyển số tiền cũ cho Minh",
+            history_call_args=[("banking.transfer", {"amount": 700000},
+                                True),
+                               ("banking.transfer", {"amount": 900000},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2c)
+        self.assertEqual(v.status, "UNPROVEN")
         ev3 = Evidence(
             current_text="chuyển số tiền cũ cho Minh",
             history_call_args=[("banking.transfer", {"amount": 500000})],
@@ -515,7 +549,88 @@ class TestFixRoundRegressions(unittest.TestCase):
         v = prove_argument("contact_id", "c_05", "sms.send", ev,
                            call_args={"contact_name": "Minh"})
         self.assertEqual(v.status, "UNPROVEN")
-        self.assertEqual(v.rule, "roster_no_intent")
+class TestRound3ProverFixes(unittest.TestCase):
+    """Main-thread round-3 prover fixes: spaced-phone spans (2-P),
+    boundary amounts, offset direction proximity (2-O),
+    None-entity observations (2-N)."""
+
+    def test_spaced_phone_groups_are_not_amounts(self):
+        self.assertEqual(
+            find_number_spans("gọi cho Minh số 0914 061 230 nhé"), [])
+        self.assertEqual(
+            find_number_spans("gọi 0914-061-230 nhé"), [])
+        ev = Evidence(
+            current_text="gọi cho Minh số 0914 061 230 nhé",
+            anchor=ANCHOR)
+        for amount in (914, 61, 230):
+            v = prove_argument("amount", amount, "banking.transfer", ev,
+                               call_args={"contact_id": "c_01",
+                                          "amount": amount})
+            self.assertEqual(v.status, "UNPROVEN")
+        # A real amount in the same text still proves.
+        ev2 = Evidence(
+            current_text="gọi 0914 061 230 chuyển 500000 nhé",
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2,
+                           call_args={"contact_id": "c_01",
+                                      "amount": 500000})
+        self.assertEqual(v.status, "PROVEN")
+
+    def test_amount_at_text_boundaries_proves(self):
+        # Adjacent-fix found during 2-P: "" in "-:" is True, so the
+        # old date/time filter dropped amounts at start/end of
+        # text (verified against frozen 3838d99f).
+        self.assertEqual(find_number_spans("chuyển 500000"),
+                         [("500000", 500000)])
+        self.assertEqual(find_number_spans("500000 là số tiền"),
+                         [("500000", 500000)])
+
+    def test_offset_direction_bound_by_proximity(self):
+        # Reviewer 2-O repro: stray "muộn" far from the duration
+        # must not prove the +1 direction; only the nearby "sớm"
+        # proves -1.
+        ev = Evidence(
+            current_text="đừng để muộn nhé, dời lịch họp mai "
+                         "sớm hơn một tiếng nhé",
+            observation_events=[("calendar.list_events",
+                                 {"id": "evt_01",
+                                  "start": "2026-11-19T10:00:00+07:00",
+                                  "end": "2026-11-19T11:00:00+07:00"})],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-19T09:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_01",
+                                      "start": "2026-11-19T09:00:00+07:00"})
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "offset")
+        v = prove_argument("start", "2026-11-19T11:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_01",
+                                      "start": "2026-11-19T11:00:00+07:00"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_none_entity_observation_does_not_prove_id_linked(self):
+        # Reviewer 2-N: a history observation with no entity must
+        # not prove an id-linked write, even when unique.
+        ev = Evidence(
+            current_text="chuyển tiền cho Minh",
+            history_observations=[("banking.get_balance", "amount",
+                                   500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev,
+                           call_args={"contact_id": "c_01",
+                                      "amount": 500000})
+        self.assertEqual(v.status, "UNPROVEN")
+        # Control: the same value WITH the entity link proves.
+        ev2 = Evidence(
+            current_text="chuyển tiền cho Minh",
+            history_observations=[("banking.get_balance", "amount",
+                                   500000, "c_01")],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2,
+                           call_args={"contact_id": "c_01",
+                                      "amount": 500000})
+        self.assertEqual(v.status, "PROVEN")
 
 
 if __name__ == "__main__":

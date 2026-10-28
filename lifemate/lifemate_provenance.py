@@ -284,6 +284,12 @@ _DIGIT_FORM_RE = re.compile(
     r"(?:\s*(k|tr))?"
     r"(?![.,]?\d)",
 )
+# Phone-like digit sequences: 0-led, 9-11 digits total, groups
+# separated only by single spaces or dashes ("0914 061 230",
+# "0914-061-230", "0914061230"). Used to suppress amount spans
+# inside phone numbers (finding 2-P). The lookarounds keep the
+# match from starting/ending inside a longer digit run.
+_PHONE_SEQ_RE = re.compile(r"(?<!\d)0(?:[ -]?\d){8,10}(?!\d)")
 _INT_UNIT_RE = re.compile(
     r"(?<![A-Za-z0-9_])(\d+)\s*(trăm\s+)?(nghìn|ngàn|triệu|tỷ|tỉ)\b")
 _DECIMAL_UNIT_RE = re.compile(
@@ -312,11 +318,22 @@ def find_number_spans(text):
     and maximal runs of number-word tokens parsed by parse_number_words.
     ISO dates and times are NOT matched as numbers (the digit regex refuses
     digits adjacent to '-' or ':').
+    Phone numbers are NEVER amounts, including space/dash-grouped
+    forms ("0914 061 230"): digit groups whose concatenation is a
+    9-11 digit run starting with 0 are claimed up front as phone
+    ranges, so neither the digit loop nor the word-run loop can
+    resurrect their parts as amounts (reviewer finding 2-P).
     """
     if not text:
         return []
     found = []
     covered = []  # (start, end) character ranges already claimed
+    # Phone-like sequences first: a 0-led run of 9-11 digits whose
+    # groups are separated only by single spaces/dashes. Claiming
+    # these ranges up front blocks every sub-span.
+    phone_ranges = [(m.start(), m.end())
+                    for m in _PHONE_SEQ_RE.finditer(text)]
+    covered.extend(phone_ranges)
 
     def _claimed(start, end):
         return any(s <= start < e or s < end <= e for s, e in covered)
@@ -342,9 +359,13 @@ def find_number_spans(text):
         if _claimed(start, end):
             continue
         # Skip digits that are part of a date/time (adjacent - or :).
+        # NOTE: the boundary sentinel "" must NOT count as adjacent:
+        # "" in "-:" is True in Python, so the old check silently
+        # dropped every amount at the start/end of a text (found
+        # while fixing 2-P; verified against frozen 3838d99f).
         before = text[start - 1] if start > 0 else ""
         after = text[end] if end < len(text) else ""
-        if before in "-:" or after in "-:":
+        if (before and before in "-:") or (after and after in "-:"):
             continue
         # Skip phone-like digit runs: a 9-11 digit run starting with 0
         # is a Vietnamese phone number, never an amount. (Grouped forms
@@ -1096,10 +1117,15 @@ def _observation_candidates(value, turn_obs, history_obs, tool, slot,
       * same app family as the write tool;
       * field == slot exactly (a "balance" field never proves an
         "amount" -- Codex counterexample D);
-      * entity: when the write references entity ids, the observation's
-        entity must be None (unattributed, allowed only if unique) or
-        one of the write's ids (a different entity's value never proves
-        this write -- counterexample C/H10);
+      * entity: when the write references entity ids, the
+        observation's entity MUST be one of the write's ids. An
+        entity-less (None) observation does NOT prove an id-linked
+        write (reviewer finding 2-N): a prior turn's unattributed
+        value belongs to another task unless an entity link ties
+        it here; the old None allowance let a bare result dict
+        prove an id-linked write with no reference phrase at all.
+        (For creates, which reference no ids, the rule below
+        still allows same-turn unattributed observations only.)
       * source: a write with no entity id (a create) may use only
         same-turn observations; a prior turn's observation belongs to
         another task unless an entity link says otherwise.
@@ -1132,7 +1158,7 @@ def _observation_candidates(value, turn_obs, history_obs, tool, slot,
             if field != slot:
                 continue
             if call_ids:
-                if entity is not None and entity not in call_ids:
+                if entity not in call_ids:
                     continue
             else:
                 if source != "turn":
@@ -1235,15 +1261,20 @@ def _find_offset_cues(text):
     ("sau", "muộn", "thêm", "lùi"). A bare "X giờ" counts as a duration
     only when a direction word precedes it within 15 characters, so clock
     times ("8 giờ") are never mistaken for durations.
+    Direction words are bound to their duration span BY PROXIMITY
+    (reviewer finding 2-O): the old code searched the whole string
+    ("or word in s"), so a text stating one direction could prove
+    the opposite direction from a stray word elsewhere in the text.
     """
     s = nfc_lower(text or "")
     cues = []
     minus = ("trước", "sớm")
     plus = ("sau", "muộn", "thêm", "lùi")
-    if "nửa tiếng" in s:
+    for m in re.finditer(r"nửa tiếng", s):
+        window = s[max(0, m.start() - 20):m.end() + 20]
         for word, direction in (("trước", -1), ("sớm", -1), ("sau", 1),
                                 ("muộn", 1), ("thêm", 1), ("lùi", 1)):
-            if word in s:
+            if word in window:
                 cues.append((timedelta(minutes=30), direction))
     for m in re.finditer(
             r"(\d+|một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười)\s*(tiếng|phút)",
@@ -1255,10 +1286,10 @@ def _find_offset_cues(text):
             else timedelta(minutes=n)
         window = s[max(0, m.start() - 20):m.start()]
         for word in minus:
-            if word in window or word in s:
+            if word in window:
                 cues.append((delta, -1))
         for word in plus:
-            if word in window or word in s:
+            if word in window:
                 cues.append((delta, 1))
     for m in re.finditer(
             r"(\d+|một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười)\s*giờ\b", s):
@@ -1536,10 +1567,17 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
                 if len(candidates) == 1 and matches:
                     return Verdict("PROVEN", "history_reference",
                                    "unique history candidate for slot")
-                if len(candidates) >= 2:
+                # AMBIGUOUS only when >= 2 candidates actually MATCH
+                # the value (reviewer finding 6-HR): a value no
+                # candidate supports is UNPROVEN, not ambiguous,
+                # and a single match among several candidates falls
+                # through to the later rules (conservative: the
+                # trigger phrase alone does not disambiguate which
+                # history value the user meant).
+                if len(matches) >= 2:
                     return Verdict("AMBIGUOUS", "history_reference",
-                                   "%d history candidates"
-                                   % len(candidates))
+                                   "%d history candidates match"
+                                   % len(matches))
 
     # --- datetime_assembly: an incomplete date span + an incomplete
     # time span combine to the gold datetime. Two legitimate pairings

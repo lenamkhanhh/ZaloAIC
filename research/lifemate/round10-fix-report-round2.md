@@ -1,5 +1,15 @@
 # Round 10 fix — Round 2: structured G2 evidence, roster-intent fix, model-trace shadow
 
+> CORRECTION NOTE (Round 3, 2026-10-29): các con số Round 2 dưới đây
+> đúng dưới verb-list scope của nó, nhưng đã được SUPERSEDE bởi
+> catalog-kind scope của Round 3 — xem
+> `round10-fix-report-round3.md` mục 4 và mục 9 khi trích hiện trạng:
+> e7 556 args → 533, DAG 284 → 276, baseline 93 → 92, conversion
+> 191 → 184; gates denominator 971 → 957 (kind scope, old gate) /
+> 976 (kind scope, new gate có phone refs); G2 trích dưới dạng gold
+> false-block rate 0.41% (Round-2 scope) / 1.54% (Round-3 scope).
+> Verdict KEEP không đổi.
+
 Tiếp nối báo cáo Round 1 (`round10-fix-report.md`). Cùng nhánh
 `round10-provenance-gates-fixes`, KHÔNG merge main. Base Round 2 là
 commit Round 1 `e00c864c`; commit cuối Round 2 ghi trong thông điệp

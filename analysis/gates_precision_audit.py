@@ -60,16 +60,37 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
 from lifemate_gates import (  # noqa: E402
     gate_contact_ambiguity, gate_read_before_write, gate_confirmation,
-    gate_confirmation_scoped, PriorCall)
+    gate_confirmation_scoped, PriorCall, flatten_result_entries)
 from lifemate_provenance import find_number_spans, nfc_lower  # noqa: E402
 
 READ_VERBS = ("search", "list", "get", "status", "forecast", "balance",
               "history", "detail")
 
 
-def is_read(name):
+def is_read(name, kind_by_tool=None):
+    """Read classification: catalog kind wins when a kind map is
+    supplied (a verb-name list misclassifies 14 catalog reads --
+    reviewer finding 8-V); otherwise the verb list is the fallback."""
+    if kind_by_tool is not None and name in kind_by_tool:
+        return kind_by_tool[name] == "read"
     verb = (name or "").split(".", 1)[1] if "." in (name or "") else ""
     return any(verb == v or verb.startswith(v + "_") for v in READ_VERBS)
+
+
+def load_kind_map(train_dir):
+    """{tool name: kind} from train_tools_catalog.json, or {} when
+    the catalog is unavailable (caller falls back to verb list)."""
+    try:
+        cat = json.load(open(str(Path(train_dir)
+                               / "train_tools_catalog.json")))
+        kinds = {}
+        for app in cat.get("apps", []):
+            for tool in app.get("tools", []):
+                if isinstance(tool.get("name"), str):
+                    kinds[tool["name"]] = tool.get("kind", "")
+        return kinds
+    except Exception:
+        return {}
 
 
 def flatten_scalars(obj, out):
@@ -85,28 +106,6 @@ def flatten_scalars(obj, out):
         out.append(obj)
 
 
-def flatten_entries(obj, out):
-    """(field, value) pairs for scalar leaves of a result, phones
-    dropped. field is None for a bare scalar result. This is the
-    structured evidence the fix-round-2 gate consumes: the field is
-    what separates an id from a free-text mention of the same string.
-    """
-    if isinstance(obj, dict):
-        for key, value in obj.items():
-            if key == "phone":
-                continue
-            if isinstance(value, (dict, list)):
-                flatten_entries(value, out)
-            elif isinstance(value, (str, int, float)) \
-                    and not isinstance(value, bool):
-                out.append((key, value))
-    elif isinstance(obj, list):
-        for value in obj:
-            flatten_entries(value, out)
-    elif isinstance(obj, (str, int, float)) and not isinstance(obj, bool):
-        out.append((None, obj))
-
-
 def collect_rosters(results, out):
     if isinstance(results, dict):
         contacts = results.get("contacts")
@@ -114,7 +113,8 @@ def collect_rosters(results, out):
             for entry in contacts:
                 if isinstance(entry, dict) and entry.get("id"):
                     out.append({"id": entry["id"],
-                                "name": entry.get("name", "")})
+                                "name": entry.get("name", ""),
+                                "phone": entry.get("phone", "")})
         for key, value in results.items():
             if key != "phone":
                 collect_rosters(value, out)
@@ -187,6 +187,8 @@ def main():
     split = json.load(open(args.split))
     dev_ids = {k for k, v in split.items() if v == "dev"}
     train_dir = str(Path(args.train_jsonl).resolve().parent)
+    kinds = load_kind_map(train_dir)
+    kind_source = "catalog" if kinds else "verb_fallback"
     sys.path.insert(0, train_dir)
     from zaic_tools import ToolEnv  # noqa: E402
 
@@ -225,7 +227,7 @@ def main():
                     entries = []
                     flat = []
                     if res is not None:
-                        flatten_entries(res, entries)
+                        entries = flatten_result_entries(res)
                         flatten_scalars(res, flat)
                     hist_priors.append(PriorCall(
                         call.get("name"), call.get("arguments") or {},
@@ -253,7 +255,7 @@ def main():
             entries = []
             if res is not None:
                 flatten_scalars(res, flat)
-                flatten_entries(res, entries)
+                entries = flatten_result_entries(res)
             replay_priors.append((idx, PriorCall(
                 call.get("name"), call.get("arguments") or {},
                 result_entries=entries, succeeded=ok)))
@@ -267,11 +269,12 @@ def main():
                     if isinstance(entry, dict) and entry.get("id"):
                         replay_rosters.append(
                             (idx, {"id": entry["id"],
-                                   "name": entry.get("name", "")}))
+                                   "name": entry.get("name", ""),
+                                   "phone": entry.get("phone", "")}))
         # Evaluate every gold write.
         for pos, call in enumerate(gold):
             name = call.get("name", "")
-            if is_read(name) or name == "sys.ask_missing_info":
+            if is_read(name, kinds) or name == "sys.ask_missing_info":
                 continue
             call_args = call.get("arguments") or {}
             rosters = list(hist_rosters) + [e for p, e in replay_rosters
@@ -304,13 +307,13 @@ def main():
                     else:
                         stats["g1"]["synthetic_FN"] += 1
             # ---- Gate 2 (fix-round-2 structured PriorCall contract)
-            g2 = gate_read_before_write(call, priors, rosters)
+            g2 = gate_read_before_write(call, priors, rosters, kinds)
             if g2.applicable:
                 stats["g2"]["gold_applicable"] += 1
                 if g2.fired:
                     stats["g2"]["gold_fired_FP"] += 1
                 # Synthetic: same write, evidence removed.
-                g2s = gate_read_before_write(call, [], [])
+                g2s = gate_read_before_write(call, [], [], kinds)
                 if g2s.fired:
                     stats["g2"]["synthetic_TP"] += 1
                 else:
@@ -379,18 +382,32 @@ def main():
     g2["old_fired_new_passed"] = stats["g2"]["old_fired_new_passed"]
     g2["old_new_note"] = (
         "old = previous-round (e00c864c) flat-string gate; new = "
-        "structured-entry gate. old_passed_new_fired = gold writes the "
-        "old rule passed but the new gate fires (stricter evidence: "
-        "free-text scalars no longer count, and contacts come only "
-        "from rosters or contacts-app results -- message-history "
-        "contact references do not prove address-book membership). "
-        "If this pushes precision below 95%, the verdict is DROP; the "
-        "old counting is not restored.")
+        "registry-typed + catalog-kind gate (round 3). "
+        "old_passed_new_fired = gold writes the old rule passed but "
+        "the new gate fires (stricter evidence: registry-typed "
+        "entries with paths, contacts only from rosters or "
+        "contacts-app results, phone_number references checked "
+        "against roster phones, patch-verified writes counted, "
+        "all slots of a shared value checked). If this pushes "
+        "precision below 95%, the verdict is DROP; the old counting "
+        "is not restored.")
+    g2["kind_classification"] = kind_source
+    g2["gold_false_block_rate"] = (
+        g2["gold_fired_FP"] / g2["gold_applicable"]
+        if g2["gold_applicable"] else 0.0)
     g3s = precision_report("g3_scoped")
     lit_total = stats["g3_literal"]["gold_transfers"]
     lit_fired = stats["g3_literal"]["gold_fired"]
     lit_rate = lit_fired / lit_total if lit_total else 0.0
     summary = {
+        "kind_classification": kind_source,
+        # Metric honesty (reviewer finding 6-PR): G2/G3 "precision"
+        # = synthetic_TP/(synthetic_TP+gold_fired_FP) with
+        # synthetic_TP == applicable by construction; it equals
+        # 1 - gold false-block rate and is NOT detection precision.
+        # Detection is shown only on synthetic unit cases.
+        "metric_note": "Quote gold_false_block_rate, not 'precision', "
+                       "as the deployment-relevant number.",
         "gate1_contact_ambiguity": g1,
         "gate2_read_before_write": g2,
         "gate3_literal": {

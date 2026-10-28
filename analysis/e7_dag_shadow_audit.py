@@ -68,9 +68,31 @@ def nfc_lower(s):
     return unicodedata.normalize("NFC", s or "").lower().strip()
 
 
-def is_read(name):
+def is_read(name, kind_by_tool=None):
+    """Read classification: catalog kind wins when a kind map is
+    supplied (a verb-name list misclassifies 14 catalog reads,
+    e.g. email.read, sms.read_recent, chat_ott.read_chat -- reviewer
+    finding 8-V); otherwise the verb list is the fallback."""
+    if kind_by_tool is not None and name in kind_by_tool:
+        return kind_by_tool[name] == "read"
     verb = (name or "").split(".", 1)[1] if "." in (name or "") else ""
     return any(verb == v or verb.startswith(v + "_") for v in READ_VERBS)
+
+
+def load_kind_map(train_dir):
+    """{tool name: kind} from train_tools_catalog.json, or {} when
+    the catalog is unavailable (caller falls back to verb list)."""
+    try:
+        cat = json.load(open(str(Path(train_dir)
+                               / "train_tools_catalog.json")))
+        kinds = {}
+        for app in cat.get("apps", []):
+            for tool in app.get("tools", []):
+                if isinstance(tool.get("name"), str):
+                    kinds[tool["name"]] = tool.get("kind", "")
+        return kinds
+    except Exception:
+        return {}
 
 
 def succeeded(result):
@@ -149,7 +171,8 @@ def collect_rosters_from_results(results, out):
             for entry in contacts:
                 if isinstance(entry, dict) and entry.get("id"):
                     out.append({"id": entry["id"],
-                                "name": entry.get("name", "")})
+                                "name": entry.get("name", ""),
+                                "phone": entry.get("phone", "")})
         for value in results.values():
             collect_rosters_from_results(value, out)
     elif isinstance(results, list):
@@ -168,6 +191,8 @@ def main():
     split = json.load(open(args.split))
     dev_ids = {k for k, v in split.items() if v == "dev"}
     train_dir = str(Path(args.train_jsonl).resolve().parent)
+    kinds = load_kind_map(train_dir)
+    kind_source = "catalog" if kinds else "verb_fallback"
     sys.path.insert(0, train_dir)
     from zaic_tools import ToolEnv  # noqa: E402
 
@@ -225,7 +250,7 @@ def main():
         # Monitored writes, in gold order.
         for pos, call in enumerate(gold):
             name = call.get("name", "")
-            if is_read(name) or name == "sys.ask_missing_info":
+            if is_read(name, kinds) or name == "sys.ask_missing_info":
                 continue
             call_args = call.get("arguments") or {}
             slots = [k for k in MONITORED if k in call_args]
@@ -240,7 +265,7 @@ def main():
                 prior_call_args.append((pcall.get("name"),
                                         pcall.get("arguments") or {},
                                         psucc))
-                if not is_read(pcall.get("name", "")):
+                if not is_read(pcall.get("name", ""), kinds):
                     continue
                 if pcall.get("name") == "contacts.search" \
                         and isinstance(pres, dict) and pres.get("ok"):
@@ -248,7 +273,8 @@ def main():
                         if isinstance(entry, dict) and entry.get("id"):
                             sample_rosters.append(
                                 {"id": entry["id"],
-                                 "name": entry.get("name", "")})
+                                 "name": entry.get("name", ""),
+                                 "phone": entry.get("phone", "")})
                 flatten_observations_with_field(
                     pres, pcall.get("name"), prefix_obs)
                 collect_events(pres, pcall.get("name"), prefix_events)
@@ -339,19 +365,24 @@ def main():
         residual["no source found"] += 1
 
     summary = {
-        "scope_note": "Reproducible scope: dev gold writes (not read-verbs, "
-                      "not sys.ask_missing_info) with >= 1 monitored arg. "
-                      "E7 original scope (459 writes / 511 args, 31 ALLOW + "
-                      "428 UNKNOWN) came from Codex guard code not in this "
-                      "repo and cannot be reproduced exactly; conversion is "
-                      "therefore measured as DAG - baseline on THIS scope. "
-                      "Fix-round changes vs round 10: structured "
+        "scope_note": "Reproducible scope: dev gold calls whose catalog "
+                      "kind is write (round 3: kind classification; "
+                      "earlier rounds used a verb-name list that "
+                      "misclassified 14 catalog reads as writes) with "
+                      ">= 1 monitored arg, excluding "
+                      "sys.ask_missing_info. E7 original scope "
+                      "(459 writes / 511 args, 31 ALLOW + 428 UNKNOWN) "
+                      "came from Codex guard code not in this repo and "
+                      "cannot be reproduced exactly; conversion is "
+                      "therefore measured as DAG - baseline on THIS "
+                      "scope. Fix-round changes vs round 10: structured "
                       "(tool, field, value, entity) observations, split "
                       "turn/history evidence windows, trajectory-faithful "
                       "replay with real succeeded flags, per-write prefix "
                       "windows. Baseline is the narrow rule set under the "
                       "NEW strict semantics, so baseline_old vs baseline_new "
                       "is itself a finding.",
+        "kind_classification": kind_source,
         "dev_samples": n_samples,
         "monitored_writes": n_writes,
         "monitored_args": len(rows),
