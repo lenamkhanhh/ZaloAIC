@@ -61,6 +61,15 @@ import json
 import re
 import unicodedata
 
+# Delegation scope (round-7 fix S3): shared with the negation
+# module so history binding judges delegated turns by exactly
+# the current-text rule. No cycle: the negation module imports
+# only the standard library.
+from lifemate_callback_negation import (
+    phone_numbers_for_action,
+    turn_fully_delegated,
+)
+
 __all__ = [
     "norm_phone",
     "fold_vietnamese",
@@ -428,6 +437,154 @@ def _is_speaker_number_called(before, after):
                                            "giup"))
 
 
+def _is_owner_new_number_statement(before, after):
+    """True for "so moi cua <Name> la" before a number run.
+
+    before/after are folded word strings from the run's window.
+    Shape: "so moi cua" + 1-3 name tokens + "la" at the end of
+    before, with no request verb (goi / nhan / lien / luu) in
+    before or after. The name tokens must not be digits or
+    request verbs themselves. "ma so Y la so moi" (M2) does not
+    match: there the run precedes "la so moi", so before ends
+    with "so", not "la".
+    """
+    bw = before.split()
+    aw = after.split()
+    if len(bw) < 5 or bw[-1] != "la":
+        return False
+    if any(v in bw or v in aw for v in ("goi", "nhan", "lien",
+                                        "luu")):
+        return False
+    for k in range(0, len(bw) - 4):
+        if bw[k:k + 3] != ["so", "moi", "cua"]:
+            continue
+        middle = bw[k + 3:-1]
+        if not (1 <= len(middle) <= 3):
+            continue
+        if any(t.isdigit() or t in ("goi", "nhan", "lien", "luu")
+               for t in middle):
+            continue
+        return True
+    return False
+
+
+# Forward verb patterns (folded), mirroring the negation
+# module's _FORWARD_PATTERNS. Bare "chuyển" is deliberately
+# absent: transfer / unknown shapes stay under their own
+# rules.
+_FORWARD_WORD_PATTERNS = (("chuyen", "tiep"), ("forward",),
+                          ("share",))
+
+
+# Generic recipient tokens (folded), mirroring the negation
+# module's _GENERIC_RAW: a forward to one of these does NOT
+# count as forwarding away (round-5 F-B4-4 rule -- "cho em"
+# is ambiguous, possibly the speaker/assistant, not a third
+# person). The check mirrors _forwarded_target_to_other's
+# parts logic exactly: only the FIRST token after
+# cho/toi/den matters -- a recipient phrase STARTING with a
+# generic token counts as generic, whatever follows it.
+_GENERIC_TOKENS = {"em", "anh", "chi", "minh", "toi", "ban",
+                   "nguoi", "ai", "co", "chu", "bac", "di",
+                   "tao", "to"}
+
+
+def _has_generic_recipient(tokens):
+    """True when `tokens` name a generic recipient: a
+    cho/toi/den marker immediately followed by a generic
+    token. Only the first token after the marker matters
+    (mirrors _forwarded_target_to_other)."""
+    for i, t in enumerate(tokens):
+        if t in ("cho", "toi", "den") \
+                and i + 1 < len(tokens) \
+                and tokens[i + 1] in _GENERIC_TOKENS:
+            return True
+    return False
+
+
+def _starts_with_generic_recipient(tokens):
+    """True when `tokens` START with a generic recipient
+    phrase (cho/toi/den + generic token). Used for the
+    after window, where only the phrase immediately
+    following the mention can be this forward's recipient:
+    a later "cho em" belonging to another verb ("chuyển
+    tiếp Số X cho Bình, nhắn cho em đi") must not exempt
+    a forward to a named recipient."""
+    return len(tokens) >= 2 \
+        and tokens[0] in ("cho", "toi", "den") \
+        and tokens[1] in _GENERIC_TOKENS
+
+
+def _is_forwarded_object(before, after):
+    """True when the mention is the object of a forward verb.
+
+    before/after: folded word strings from the mention's
+    window (radius 8). Two shapes, mirroring the negation
+    module's _FORWARD_PATTERNS (bare "chuyển" is NOT a
+    forward pattern: transfer / unknown shapes stay under
+    their own rules; only "chuyển tiếp" / "forward" /
+    "share" count):
+      - verb-before: the LAST forward pattern in before
+        governs, provided nothing but recipient markers,
+        names, and the "số" marker intervenes (no digit, no
+        action verb: those belong to another verb -- e.g.
+        "gọi số X rồi chuyển tiếp số Y" leaves X with
+        "gọi", and "chuyển tiếp số X rồi gọi số Y" leaves
+        Y with "gọi");
+      - verb-after (topicalised object): only when NO verb
+        precedes the mention at all ("Số X, chuyển tiếp
+        cho Bình"); a mention already governed by an
+        earlier verb ("Gọi số X, chuyển tiếp số Y") keeps
+        its own reading, so the pattern must start the
+        after window.
+    """
+    bw = before.split()
+    aw = after.split()
+    last = None
+    for k in range(len(bw)):
+        for pat in _FORWARD_WORD_PATTERNS:
+            if bw[k:k + len(pat)] == list(pat):
+                last = (k, len(pat))
+    if last is not None:
+        k, width = last
+        between = bw[k + width:]
+        if not any(t.isdigit() for t in between) \
+                and not any(t in ("goi", "nhan", "lien", "luu")
+                            for t in between) \
+                and not any(t in ("khong", "mot", "hai", "ba",
+                                  "bon", "nam", "sau", "bay",
+                                  "tam", "chin") for t in between):
+            # Generic recipient (round-8 fix for the 2f/4b
+            # regression): forwarding to "em" / "mình" /
+            # "anh" / ... does NOT count as forwarding away
+            # (F-B4-4 rule, mirrored from
+            # _forwarded_target_to_other). The recipient may
+            # sit between the verb and the mention ("chuyển
+            # tiếp cho em Số X") or immediately after the
+            # mention ("chuyển tiếp Số X cho em"); only the
+            # immediately-following phrase counts for the
+            # after window, so a later "cho em" belonging
+            # to another verb never exempts a forward to a
+            # named recipient.
+            if _has_generic_recipient(between) \
+                    or _starts_with_generic_recipient(aw):
+                return False
+            return True
+        return False
+    if any(t in ("goi", "nhan", "lien", "luu") for t in bw):
+        return False
+    for pat in _FORWARD_WORD_PATTERNS:
+        if aw[:len(pat)] == list(pat):
+            # Same generic-recipient exemption, for the
+            # topicalised shape ("Số X, chuyển tiếp cho em"):
+            # only the phrase immediately after the pattern
+            # can be this forward's recipient.
+            if _starts_with_generic_recipient(aw[len(pat):]):
+                return False
+            return True
+    return False
+
+
 def _window_text(folded, tokens, first, last, radius=8):
     before = " ".join(t for t, _, _ in tokens[max(0, first - radius):first])
     after = " ".join(t for t, _, _ in tokens[last + 1:last + radius + 1])
@@ -479,7 +636,19 @@ def parse_phone_mentions(text):
         # số B" must leave B affirmed).
         before_tail = " ".join(
             t for t, _, _ in tokens[max(0, first - 5):first])
-        if re.search(
+        # Correction-marker guard (round-2 fix S13): a "không"
+        # that belongs to the correction marker "à không" (or
+        # the tail "à không, gọi/nhắn số ..." after it) is NOT
+        # a negation of the verb that follows it. Without this
+        # guard, "À không, gọi số B đi" reads B as negated, so
+        # the correction turn never becomes a valid phone turn
+        # and the OLD number keeps binding instead. The guard
+        # only suppresses the negation branch; the retired /
+        # speaker / background branches below still run.
+        _is_correction_khong = bool(re.search(
+            r"(^|\s)a\s+khong(\s+(so|goi|nhan))*\s*$",
+            before_tail))
+        if not _is_correction_khong and re.search(
                 r"(khong phai|dung goi|dung nhan|khong goi|"
                 r"khong nhan)(\s+(so|goi|nhan))*\s*$",
                 before_tail):
@@ -495,9 +664,65 @@ def parse_phone_mentions(text):
             role, reason = "corrected_away", "old_number_retired"
         elif _is_speaker_number_called(before, after):
             role, reason = "requested_target", "speaker_number_called"
+        elif _is_forwarded_object(before, after):
+            # Forward object (round-8 fix S2): a number being
+            # forwarded to someone else is CONTENT, not a
+            # call/message target -- parallel to the S4
+            # content rule. It must not become a requested
+            # target (which would let "chuyển tiếp số X cho
+            # Bình, đổi sang số 12, gọi đi" select X), nor a
+            # binding candidate (a forward turn is not a
+            # call/message instruction; layer C would
+            # mismatch-veto it anyway, so dropping it only
+            # removes a veto step, never an un-fire).
+            role, reason = "background", "forwarded_object"
         elif any(pat in before for pat in _BACKGROUND_PATTERNS) \
                 and not any(v in before for v in _ACTION_VERBS):
             role, reason = "background", "information_only"
+        elif _is_owner_new_number_statement(before, after):
+            # Owner new-number statement (round-5 fix F-B4-9):
+            # "so moi cua <Name> la Y" states a fact about
+            # someone else's new number, with no request verb
+            # and no continuation -- it must not bind Y as a
+            # direct request the way the bare "so moi la Y"
+            # pattern does not. Distinguished from M2 ("ma so
+            # Y la so moi": the number precedes "la so moi",
+            # a correction) by shape: here the number FOLLOWS
+            # "la". An action verb anywhere in the window
+            # keeps the requested_target reading.
+            role, reason = "background", \
+                "owner_new_number_statement"
+        elif after.split()[:1] == ["la"] \
+                and len(after.split()) >= 3 \
+                and after.split()[1] == "so" \
+                and after.split()[2] in ("moi", "khac"):
+            # New-number statement, NOT role information
+            # (round-4 fix M2): "Mà số X là số mới" replaces
+            # the previous number, so it must not be demoted
+            # to background the way "Số X là số tổng đài" (a
+            # role fact) is. With no action verb it keeps the
+            # default requested_target reading: the number is
+            # the newly selected one. Round-9 marker: this
+            # correction frame IS selection evidence (it
+            # explicitly selects the new number), so the
+            # mention reason is marked distinctly from a
+            # bare phone_cue mention; the round-9 joint
+            # veto in the adapter exempts mentions with
+            # this reason. Role stays requested_target, so
+            # question_b / binding behaviour is unchanged.
+            reason = "ma_new_number_selection"
+        elif after.split()[:1] == ["la"] \
+                and not any(v in (before.split() + after.split())
+                            for v in _ACTION_VERBS):
+            # Copula information (round-2 fix M-b): "Số X là số
+            # tổng đài" / "Số X là số của em" states a fact
+            # about X; with no action verb anywhere in the
+            # window it is not an instruction to use X, so it
+            # must not become a phone turn that hijacks a later
+            # prior-instruction binding. An action verb anywhere
+            # in the window keeps the requested_target reading
+            # ("Gọi số X là số chính" still requests X).
+            role, reason = "background", "copula_information_only"
         elif run.get("ambiguous_khong") \
                 and len(run["digits"]) < 7 \
                 and not any(w in (before.split() + after.split())
@@ -559,6 +784,8 @@ def parse_tail_correction(text):
     Returns {"old_tail": B, "new_tail": A, "reason": ...} or None.
     The correction itself proves nothing about any full number; it
     only says: take a number ending in B and replace its tail by A.
+    "span" is the folded-text char span of the match (folding is
+    1:1 per character, so it aligns with the raw text too).
     """
     if not text:
         return None
@@ -577,7 +804,54 @@ def parse_tail_correction(text):
     if len(old_tail) > 6 or len(new_tail) > 6:
         return None
     return {"old_tail": old_tail, "new_tail": new_tail,
-            "reason": "explicit_tail_correction"}
+            "reason": "explicit_tail_correction",
+            "span": (m.start(), m.end())}
+
+
+def parse_tail_change(text):
+    """Parse a bare tail-change statement, or return None.
+
+    Recognised (folded) patterns, with the new tail as typed
+    digits or a spoken digit run:
+      "duoi doi thanh <T>", "duoi thanh <T>", "duoi la <T>",
+      "doi duoi thanh <T>"
+    ("duoi la <A> chu khong phai <B>" is an explicit tail
+    correction, handled by parse_tail_correction, not here.)
+    Returns {"new_tail": T, "reason": ..., "span": ...} or None.
+    A trailing politeness particle ("đi", "nhé", "giúp tôi")
+    after the tail is ignored: only the leading digit run (or
+    spoken run) counts. A fragment with non-digit words after
+    the run is not a clean tail and returns None.
+    """
+    if not text:
+        return None
+    folded = fold_vietnamese(text)
+    if "chu khong phai" in folded:
+        return None
+    m = re.search(
+        r"(?:duoi\s+(?:doi\s+thanh|thanh|la)"
+        r"|doi\s+duoi\s+thanh)\s+",
+        folded)
+    if not m:
+        return None
+    rest = folded[m.end():]
+    dm = re.match(r"\d[\d\s]*", rest)
+    if dm:
+        tail = re.sub(r"\s+", "", dm.group(0))
+        span = (m.end(), m.end() + len(dm.group(0)))
+    else:
+        sm = re.match(
+            r"(?:khong|mot|hai|ba|bon|nam|sau|bay|tam|chin)"
+            r"(?:\s+(?:khong|mot|hai|ba|bon|nam|sau|bay|tam|chin))*",
+            rest)
+        if not sm:
+            return None
+        tail = _tail_digits(sm.group(0))
+        span = (m.end(), m.end() + len(sm.group(0)))
+    if not tail or len(tail) > 6:
+        return None
+    return {"new_tail": tail, "reason": "tail_change",
+            "span": span}
 
 
 def apply_tail_correction(number, correction):
@@ -1150,7 +1424,103 @@ def _topic_overlap(current_text, content):
     return len(cur & con)
 
 
-def bind_history_reference(current_text, history_records, roster=None):
+def _instruction_addressee(text):
+    """Addressee phrase of a plain instruction turn (cho-form).
+
+    Unlike _extract_addressee (which needs a callback verb
+    "gọi lại" / "nhắn lại"), this reads the first "cho" /
+    "tới" / "đến" + 1-2 name tokens in any instruction turn:
+    "Gọi cho Vy số X", "Nhắn cho Nguyễn Bình số X". Generic
+    first tokens (pronouns) and family single tokens are NOT
+    returned: pronouns name nobody, and family words go
+    through the relation path, never a name map. Folded
+    "minh" is ambiguous (pronoun "mình" vs the name Minh)
+    and is conservatively excluded. Returns the folded phrase
+    string, or None.
+    """
+    if not text:
+        return None
+    toks = re.findall(r"[^\W_]+", fold_vietnamese(text))
+    _generic = {"em", "anh", "chi", "minh", "toi", "ban", "nguoi",
+                "ai", "co", "chu", "bac", "di", "tao", "to"}
+    _family = {"me", "ma", "bo", "ba", "vo", "chong", "con"}
+    _stops = {"so", "nhu", "luc", "nay", "lam", "goi", "nhan",
+              "dien", "gui", "tra", "dan", "noi", "bao", "da",
+              "la", "thi", "ma", "nua", "di", "nhe", "nha",
+              "giup", "dum", "voi", "de"}
+    for k, tok in enumerate(toks):
+        if tok not in ("cho", "toi", "den"):
+            continue
+        parts = []
+        for cand in toks[k + 1:k + 3]:
+            if cand in _stops or cand.isdigit():
+                break
+            parts.append(cand)
+            if len(parts) == 1 \
+                    and (parts[0] in _generic
+                         or parts[0] in _family):
+                parts = []
+                break
+        if parts:
+            return " ".join(parts)
+    return None
+
+
+def _instruction_turn_action(text):
+    """call / message / None for an instruction turn.
+
+    Folded token scan: "gọi" / "điện" -> call; "nhắn" / "sms" /
+    "trả lời" / "gửi tin" -> message. Bare "gửi" is None:
+    without "tin nhắn" / "sms" it does not positively classify
+    as a message (same rule as instruction_action's inventory).
+    Both verbs present -> None (ambiguous action).
+    """
+    if not text:
+        return None
+    toks = re.findall(r"[^\W_]+", fold_vietnamese(text))
+    is_call = any(t in ("goi", "dien") for t in toks)
+    is_msg = any(t in ("nhan", "sms") for t in toks) \
+        or any(toks[i] == "tra" and toks[i + 1] == "loi"
+               for i in range(len(toks) - 1)) \
+        or any(toks[i] == "gui" and toks[i + 1] == "tin"
+               for i in range(len(toks) - 1))
+    if is_call and is_msg:
+        return None
+    if is_call:
+        return "call"
+    if is_msg:
+        return "message"
+    return None
+
+
+def _instruction_name_map(turns):
+    """name phrase -> [(phone, position, action)] from user
+    turns pairing an addressee with a requested-target phone
+    mention ("Gọi cho Vy số X"). Turns without an addressee,
+    without a requested-target mention, or with several
+    distinct numbers contribute nothing. Family / generic
+    addressees never enter the map."""
+    mapping = {}
+    for t in turns or []:
+        text = t.get("text") or ""
+        addr = _instruction_addressee(text)
+        if addr is None:
+            continue
+        mentions = [m for m in parse_phone_mentions(text)
+                    if m["role"] == "requested_target"]
+        nums = {m["normalized"] for m in mentions}
+        if len(nums) != 1:
+            continue
+        action = _instruction_turn_action(text)
+        if action is None:
+            continue
+        mapping.setdefault(addr, []).append(
+            (next(iter(nums)), t.get("position", -1), action))
+    return mapping
+
+
+def bind_history_reference(current_text, history_records, roster=None,
+                           action=None):
     """Bind a current reference to exactly one history record.
 
     history_records: list of record dicts (from
@@ -1187,6 +1557,25 @@ def bind_history_reference(current_text, history_records, roster=None):
     candidate after name/topic filtering; "a number exists
     somewhere in history" is never enough. No pattern in the
     current text -> (None, "no_reference_pattern").
+
+    NOTE (R4, layer C): binding resolves WHICH instruction or
+    record is referred to; it never proves the user wants to
+    CONTINUE performing it. A cancellation wrapper around the
+    reference ("đừng / khỏi / không cần làm như lúc nãy nữa"),
+    a question about it, a recount of it, a quote of it, a
+    later history turn revoking it, or a bound instruction
+    whose action differs from the proposal's action must all
+    refuse an un-fire. That judgement lives in the adapter
+    (layer C, lifemate_callback_negation), NOT here: this
+    function must stay a pure reference resolver, so its
+    reasons keep meaning "this record is the referent" and
+    nothing more.
+
+    action (round-7 fix S3, optional "call" / "message"): the
+    proposal's action, used ONLY by the prior-instruction
+    branch to exclude fully-delegated turns from binding
+    candidates. Without it no exclusion applies (old
+    behaviour, kept for the contact path and direct callers).
     """
     if not current_text:
         return None, "empty_current_text"
@@ -1351,6 +1740,21 @@ def bind_history_reference(current_text, history_records, roster=None):
                 turns.append((t, mentions))
         if not turns:
             return None, "prior_instruction_no_phone_turn"
+        # Delegation exclusion (round-7 fix S3): a turn whose
+        # queried-action verbs are ALL delegation-governed is
+        # another actor's instruction, never the user's own,
+        # so it must not bind as a prior instruction. Generic
+        # "nho em" is not delegation (same rule as the
+        # current-text gate) and still binds. Without an
+        # action the caller cannot judge delegation, so the
+        # old behaviour stands (no exclusion).
+        if action in ("call", "message"):
+            live = [(t, m) for (t, m) in turns
+                    if not turn_fully_delegated(
+                        t.get("text") or "", action)]
+            if not live:
+                return None, "prior_instruction_all_delegated"
+            turns = live
         turn, mentions = turns[-1]
         nums = {m["normalized"] for m in mentions}
         if len(nums) == 1:
@@ -1360,6 +1764,32 @@ def bind_history_reference(current_text, history_records, roster=None):
                     "contact_id": None, "name": None,
                     "text": turn.get("text")}, \
                 "prior_instruction_unique"
+        # Multi-number turn (round-8 fix M1): partition the
+        # turn's numbers by governing verb action and
+        # require uniqueness WITHIN the proposal action's
+        # partition. Only when the proposal action is known;
+        # without it the turn stays unbound (safe). NO
+        # fallback to earlier turns (latest-turn model,
+        # batch-7 NOTE N1): a later turn with a different
+        # action/value must not be silently replaced by an
+        # earlier one. Single-number turns never reach
+        # this branch, so the heuristic cannot affect them;
+        # same-verb two numbers ("Nhắn số X và số Y")
+        # stay unbound: the turn is genuinely ambiguous
+        # about which number the action takes.
+        if action in ("call", "message"):
+            governed = {norm_phone(d)
+                        for d in phone_numbers_for_action(
+                            turn.get("text") or "")
+                        .get(action, set())}
+            cands = nums & governed
+            if len(cands) == 1:
+                return {"kind": "user_turn", "tool": None,
+                        "position": turn.get("position"),
+                        "phone_number": next(iter(cands)),
+                        "contact_id": None, "name": None,
+                        "text": turn.get("text")}, \
+                    "prior_instruction_unique"
         return None, "prior_instruction_multiple_numbers"
 
     return None, "no_reference_pattern"
@@ -1458,6 +1888,40 @@ def _question_b_for_phone(value, current_text, roster, bound):
         if m["normalized"] == value \
                 and m["role"] == "corrected_away":
             return False, "value_corrected_away_in_current_text"
+    target_mentions = [m for m in mentions
+                       if m["normalized"] == value
+                       and m["role"] == "requested_target"]
+    if target_mentions:
+        # Explicit redirect supersedes (round-8 backstop for
+        # S2, extended round 9 to the switch family): a
+        # switch verb ("đổi sang" / "đổi thành" / "đổi
+        # lại" / "chuyển sang") + a DIFFERENT number after
+        # the last target mention re-selects away from this
+        # value (last-decisive-wins for selections). A
+        # redirect TO the same value confirms it and does
+        # not supersede; a target mention after the
+        # redirect re-selects it. The run may be any length
+        # ("12" counts as "a different number" even though
+        # it is not a phone mention). Folding is
+        # length-preserving, so folded verb positions
+        # compare directly with run spans in raw text.
+        folded = fold_vietnamese(current_text)
+        last_target_pos = max(m["span"][0]
+                              for m in target_mentions)
+        for mdoi in re.finditer(
+                r"doi\s+sang|doi\s+thanh|doi\s+lai|"
+                r"chuyen\s+sang", folded):
+            for run in find_digit_runs(current_text):
+                rstart = run["span"][0]
+                if rstart < mdoi.end():
+                    continue
+                if rstart - mdoi.end() > 40:
+                    break
+                rnorm = norm_phone(run["digits"])
+                if rnorm and rnorm != value \
+                        and rstart > last_target_pos:
+                    return False, "explicit_redirect_supersedes"
+                break
     for m in mentions:
         if m["normalized"] == value \
                 and m["role"] == "requested_target":
@@ -1482,7 +1946,8 @@ def _question_b_for_phone(value, current_text, roster, bound):
     return None, "no_phone_selection_signal"
 
 
-def phone_evidence_for(value, session_prefix, roster, current_text=None):
+def phone_evidence_for(value, session_prefix, roster, current_text=None,
+                       action=None):
     """Verdict for one phone_number proposal value.
 
     value: the proposed phone_number (any format; normalised by
@@ -1594,9 +2059,11 @@ def phone_evidence_for(value, session_prefix, roster, current_text=None):
 
     # Bound history reference (anaphoric / callback / prior turn).
     bound, bind_reason = (None, "no_current_text")
+    resolution = None
     if current_text:
         bound, bind_reason = bind_history_reference(
-            current_text, history_records, roster=roster)
+            current_text, history_records, roster=roster,
+            action=action)
         if bound is not None and bound.get("phone_number") == target:
             if bound.get("kind") == "user_turn":
                 src = "history_text"
@@ -1616,6 +2083,47 @@ def phone_evidence_for(value, session_prefix, roster, current_text=None):
                  "contact_id": bound.get("contact_id")},
                 bound.get("position", -1), "binding", "active",
                 "bound_reference:" + bind_reason))
+
+    # Instruction-turn name resolution (round-4 fix M3): the
+    # current text names a person ("Gọi cho Vy nhé") and the
+    # instruction turns map that name to exactly one number
+    # with a matching action. Guards: the name must map to a
+    # single number (== target) across ALL instruction turns,
+    # and the current action must match the instruction action.
+    # Competition is judged in the name -> phone direction
+    # only: another name mapping to the same number does not
+    # make a specific name request ambiguous. Family / generic
+    # addressees never resolve here. Revocation of the mapping
+    # instruction is checked by the adapter (layer C), not here.
+    if current_text:
+        curr_addr = _instruction_addressee(current_text)
+        curr_action = _instruction_turn_action(current_text)
+        if curr_addr is not None and curr_action is not None:
+            name_map = _instruction_name_map(turns)
+            cands = []
+            for key, entries in name_map.items():
+                if key == curr_addr or (
+                        len(curr_addr.split()) == 1
+                        and key.split()[-1] == curr_addr) or (
+                        len(key.split()) == 1
+                        and curr_addr.split()[-1] == key):
+                    cands.extend(entries)
+            phones = {p for (p, _pos, _act) in cands}
+            if len(phones) == 1 and target in phones:
+                matched = [e for e in cands
+                           if e[0] == target
+                           and e[2] == curr_action]
+                if matched:
+                    resolution = max(matched,
+                                     key=lambda e: e[1])
+        if resolution is not None:
+            _rphone, _rpos, _raction = resolution
+            sources.append(_evidence(
+                "phone", target, "history_text", "user",
+                "instruction_name_resolution", "succeeded",
+                {"position": _rpos, "name": curr_addr},
+                _rpos, "binding", "active",
+                "instruction_name_resolution"))
 
     # Read-result content numbers (chat messages etc.), selected
     # only when the current text anaphorically selects them or the
@@ -1654,6 +2162,9 @@ def phone_evidence_for(value, session_prefix, roster, current_text=None):
         target, current_text, roster, bound)
     if corrected_from is not None and b_selected is None:
         b_selected, b_reason = True, "tail_correction_selects_value"
+    if resolution is not None and b_selected is None:
+        b_selected, b_reason = True, \
+            "instruction_name_resolution_selects_value"
     if valid and b_selected is True:
         # "source" when establishment does not depend on binding:
         # roster, log, read-result, or a direct user-text target.

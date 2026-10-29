@@ -123,12 +123,29 @@ class TestRolesAndCorrections(unittest.TestCase):
             ev.apply_tail_correction("0912345612", corr))
         self.assertIsNone(ev.parse_tail_correction("Gọi số này đi."))
 
-    def test_background_mention(self):
-        ms = _mentions("Số mới là 0912345678, anh lưu giúp tôi nhé.")
-        # "lưu giúp tôi" acts on the number, so this is a target;
-        # pure information without an action verb is background:
-        ms2 = _mentions("À, số mới là 0912345678.")
-        self.assertEqual(ms2["0912345678"]["role"], "background")
+    def test_correction_marker_khong_is_not_negation(self):
+        # S13: the "không" in "à không" must not negate the verb
+        # after it: the correction turn's number is a fresh
+        # requested target, not a negated one.
+        ms = _mentions("À không, gọi số 0912345678 đi")
+        self.assertEqual(ms["0912345678"]["role"], "requested_target")
+        ms = _mentions("Ý là, gọi số 0912345678 đi")
+        self.assertEqual(ms["0912345678"]["role"], "requested_target")
+        # A real negation still negates.
+        ms = _mentions("Không phải số 0912345678")
+        self.assertEqual(ms["0912345678"]["role"], "negated")
+
+    def test_copula_information_is_background(self):
+        # M-b: "Số X là ..." with no action verb anywhere in the
+        # window states a fact; it must not become a phone turn
+        # that hijacks a prior-instruction binding.
+        ms = _mentions("Số 0912345678 là số tổng đài")
+        self.assertEqual(ms["0912345678"]["role"], "background")
+        ms = _mentions("Số 0912345678 là số của em")
+        self.assertEqual(ms["0912345678"]["role"], "background")
+        # An action verb in the window keeps the request reading.
+        ms = _mentions("Gọi số 0912345678 là số chính giúp tôi")
+        self.assertEqual(ms["0912345678"]["role"], "requested_target")
 
 
 class TestContextClassification(unittest.TestCase):
@@ -654,6 +671,350 @@ class TestReviewerRound2Fixes(unittest.TestCase):
             current_text="Gọi cho An giúp tôi",
             consumer_tool="contacts.update")
         self.assertNotEqual(v["decision"], "PROVEN")
+
+
+class TestRound4Batch3Phone(unittest.TestCase):
+    """Round-4 batch-3 phone-module rules (S2 tail-change,
+    M2 copula exemption, M3 name map)."""
+
+    def test_parse_tail_change_forms(self):
+        # S2: typed + spoken + all surface forms parse to the
+        # same new tail; the explicit-correction form is NOT a
+        # bare change (it goes through parse_tail_correction).
+        for text, tail in [
+                ("Đuôi đổi thành 1234", "1234"),
+                ("Đuôi đổi thành một hai ba bốn", "1234"),
+                ("Đuôi là năm sáu", "56"),
+                ("Đuôi thành 1234", "1234"),
+                ("Đuôi là 1234", "1234"),
+                ("Đổi đuôi thành 1234", "1234"),
+                ("Đuôi đổi thành 1234 đi", "1234")]:
+            got = ev.parse_tail_change(text)
+            self.assertIsNotNone(got, text)
+            self.assertEqual(got["new_tail"], tail, text)
+        self.assertIsNone(ev.parse_tail_change(
+            "Đuôi là 1234 chứ không phải 5678"))
+        corr = ev.parse_tail_correction(
+            "Đuôi là 1234 chứ không phải 5678")
+        self.assertEqual(corr["new_tail"], "1234")
+        self.assertEqual(corr["old_tail"], "5678")
+        self.assertIn("span", corr)
+
+    def test_m2_new_number_copula_not_background(self):
+        # M2: "số X là số mới / khác" selects X; the M-b
+        # copula rule still demotes role statements.
+        ms = _mentions("Mà số 0911111111 là số mới")
+        self.assertEqual(ms["0911111111"]["role"], "requested_target")
+        ms = _mentions("Số 0911111111 là số khác")
+        self.assertEqual(ms["0911111111"]["role"], "requested_target")
+        ms = _mentions("Số 0911111111 là số tổng đài")
+        self.assertEqual(ms["0911111111"]["role"], "background")
+        ms = _mentions("Số 0911111111 là số của em")
+        self.assertEqual(ms["0911111111"]["role"], "background")
+
+    def test_m3_name_map_guards(self):
+        # Unique mapping, multi-number exclusion, family
+        # exclusion, action classification.
+        turns = [
+            {"kind": "user_turn",
+             "text": "Gọi cho Vy số 0902345678 giúp tôi",
+             "position": 0},
+            {"kind": "user_turn",
+             "text": "Nhắn cho Bình số 0911111111 giúp tôi",
+             "position": 1},
+            {"kind": "user_turn",
+             "text": "Gọi cho mẹ số 0922222222 giúp tôi",
+             "position": 2},
+        ]
+        m = ev._instruction_name_map(turns)
+        self.assertEqual(m["vy"], [("0902345678", 0, "call")])
+        # Map keys are FOLDED phrases: "Bình" -> "binh".
+        self.assertEqual(m["binh"], [("0911111111", 1, "message")])
+        self.assertNotIn("me", m)
+        # Same name, second number: the map keeps both, so the
+        # resolution (single-number guard) refuses.
+        turns.append({"kind": "user_turn",
+                      "text": "Gọi cho Vy số 0933333333 giúp tôi",
+                      "position": 3})
+        m = ev._instruction_name_map(turns)
+        self.assertEqual(len(m["vy"]), 2)
+        self.assertEqual(ev._instruction_addressee(
+            "Gọi cho Vy nhé"), "vy")
+        self.assertIsNone(ev._instruction_addressee(
+            "Gọi cho mẹ nhé"))
+        self.assertEqual(ev._instruction_turn_action(
+            "Gọi cho Vy nhé"), "call")
+        self.assertEqual(ev._instruction_turn_action(
+            "Nhắn cho Vy nhé"), "message")
+        self.assertIsNone(ev._instruction_turn_action(
+            "Gửi cho Vy nhé"))
+
+    def test_m3_resolution_verdict(self):
+        # End to end at the module level: name-only current
+        # text resolves to the instruction's number.
+        prefix = [{"kind": "user_turn",
+                   "text": "Gọi cho Vy số 0902345678 giúp tôi",
+                   "position": 0}]
+        v = ev.phone_evidence_for("0902345678", prefix, [],
+                                  "Gọi cho Vy nhé")
+        self.assertTrue(v["established"])
+        self.assertEqual(v["question_b_reason"],
+                         "instruction_name_resolution_selects_value")
+        # Action mismatch: no resolution, no establishment.
+        v = ev.phone_evidence_for("0902345678", prefix, [],
+                                  "Nhắn cho Vy nhé")
+        self.assertFalse(v["established"])
+
+class TestRound5OwnerNewNumberStatement(unittest.TestCase):
+    """Round-5 fix F-B4-9: "số mới của <Name> là Y" is a
+    statement about someone else's new number, not a direct
+    request for Y -- unless a request verb is present."""
+
+    def test_owner_new_number_is_background(self):
+        ms = _mentions("Số mới của Vy là 0911111111")
+        self.assertEqual(ms["0911111111"]["role"], "background")
+        self.assertEqual(ms["0911111111"]["reason"],
+                         "owner_new_number_statement")
+        ms = _mentions("Số mới của Bình là 0911111111")
+        self.assertEqual(ms["0911111111"]["role"], "background")
+        ms = _mentions("Số điện thoại mới của Vy là 0911111111")
+        # Long form: currently no mention at all; the contract
+        # is only that it must never be a direct request.
+        if "0911111111" in ms:
+            self.assertNotEqual(ms["0911111111"]["role"],
+                                "requested_target")
+
+    def test_owner_new_number_with_action_still_requests(self):
+        # An action verb in the window keeps the request
+        # reading: the statement plus an instruction is an
+        # instruction.
+        ms = _mentions("Số mới của Vy là 0911111111, gọi cho Vy đi")
+        self.assertEqual(ms["0911111111"]["role"], "requested_target")
+
+    def test_m2_correction_still_binds(self):
+        # M2 untouched: "mà số Y là số mới" corrects to Y, so Y
+        # keeps the requested_target reading (the number
+        # precedes "là số mới", a different shape).
+        ms = _mentions("Mà số 0911111111 là số mới")
+        self.assertEqual(ms["0911111111"]["role"], "requested_target")
+
+
+class TestRound7DelegatedBinding(unittest.TestCase):
+    """Round-7 fix S3 at the binding level: prior-instruction
+    candidates exclude fully-delegated turns when the caller
+    passes the proposal action. Synthetic only."""
+
+    X = "0902345678"
+
+    def _ut(self, text, pos):
+        return {"kind": "user_turn", "text": text, "position": pos}
+
+    def test_delegated_turn_excluded(self):
+        # The most recent phone turn is delegated, so binding
+        # falls back to the earlier own instruction.
+        turns = [self._ut("Gọi cho Vy số %s giúp tôi" % self.X, 0),
+                 self._ut("Nhờ Vy gọi số %s giúp" % self.X, 1)]
+        rec, reason = ev.bind_history_reference(
+            "Làm như lúc nãy đi", turns, action="call")
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec["position"], 0)
+        self.assertEqual(reason, "prior_instruction_unique")
+        # Delegated-only history binds nothing, with a
+        # distinct reason (not the generic no-phone-turn).
+        rec, reason = ev.bind_history_reference(
+            "Làm như lúc nãy đi",
+            [self._ut("Nhờ Vy gọi số %s giúp" % self.X, 0)],
+            action="call")
+        self.assertIsNone(rec)
+        self.assertEqual(reason, "prior_instruction_all_delegated")
+
+    def test_generic_and_other_action_not_excluded(self):
+        # Generic "nho em" is not delegation: the turn binds.
+        rec, _ = ev.bind_history_reference(
+            "Làm như lúc nãy đi",
+            [self._ut("Nhờ em gọi số %s giúp" % self.X, 0)],
+            action="call")
+        self.assertIsNotNone(rec)
+        # Per-action precision: a delegated CALL turn still
+        # binds for a MESSAGE proposal only if its message
+        # verb is the user's own -- here the turn has no
+        # message verb at all, so for message proposals the
+        # turn is simply not a message instruction; binding
+        # still returns it as the prior phone turn (the
+        # adapter's action-match check, not binding, refuses
+        # the cross-action un-fire). What binding must NOT
+        # do is drop the turn for the action it actually
+        # delegates: for call it is excluded (above).
+        rec, _ = ev.bind_history_reference(
+            "Làm như lúc nãy đi",
+            [self._ut("Nhờ Vy gọi số %s giúp" % self.X, 0)],
+            action="message")
+        self.assertIsNotNone(rec)
+
+    def test_no_action_keeps_old_behaviour(self):
+        # Without an action the caller cannot judge
+        # delegation, so the old behaviour stands (the
+        # delegated turn binds) -- this preserves the contact
+        # path and direct callers.
+        rec, _ = ev.bind_history_reference(
+            "Làm như lúc nãy đi",
+            [self._ut("Nhờ Vy gọi số %s giúp" % self.X, 0)])
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec["position"], 0)
+
+
+class TestRound8Batch7Phone(unittest.TestCase):
+    """Round-8 fix S2 (forward-object demotion, redirect
+    supersede) and M1 (per-action partition) at the evidence
+    level. Synthetic only."""
+
+    X = "0902345678"
+    Y = "0911111111"
+
+    def _ut(self, text, pos):
+        return {"kind": "user_turn", "text": text, "position": pos}
+
+    def test_forward_object_is_background(self):
+        # S2: a number being forwarded to someone else is
+        # CONTENT, not a call/message target -- parallel to
+        # the S4 content rule.
+        ms = ev.parse_phone_mentions(
+            "Chuyển tiếp số %s cho Bình. Tôi đổi sang số 12, "
+            "gọi đi" % self.X)
+        self.assertEqual(len(ms), 1)
+        self.assertEqual(ms[0]["role"], "background")
+        self.assertEqual(ms[0]["reason"], "forwarded_object")
+        # Topicalised object: the forward verb follows the
+        # mention ("Số X, chuyển tiếp cho Bình").
+        ms = ev.parse_phone_mentions(
+            "Số %s, chuyển tiếp cho Bình" % self.X)
+        self.assertEqual(ms[0]["role"], "background")
+        self.assertEqual(ms[0]["reason"], "forwarded_object")
+        # A mention already governed by an earlier verb keeps
+        # its own reading; only the forward object demotes.
+        ms = ev.parse_phone_mentions(
+            "Gọi số %s, chuyển tiếp số %s cho Bình"
+            % (self.X, self.Y))
+        self.assertEqual(ms[0]["role"], "requested_target")
+        self.assertEqual(ms[1]["role"], "background")
+        self.assertEqual(ms[1]["reason"], "forwarded_object")
+        # Bare "chuyển" is NOT a forward pattern: transfer /
+        # unknown shapes keep their own rules.
+        ms = ev.parse_phone_mentions(
+            "Chuyển số %s cho Vy" % self.X)
+        self.assertEqual(ms[0]["role"], "requested_target")
+        # Generic recipient exemption (2f/4b regression pin):
+        # forwarding to "em" / "mình" / ... does NOT count
+        # as forwarding away (F-B4-4 rule), so the mention
+        # stays a target -- wherever the generic phrase
+        # sits (after the mention, between verb and mention,
+        # or after a topicalised forward).
+        for text in (
+                "Chuyển tiếp số %s cho em, gọi đi" % self.X,
+                "Chuyển tiếp số %s cho em rồi gọi đi" % self.X,
+                "Chuyển tiếp cho em Số %s" % self.X,
+                "Số %s, chuyển tiếp cho em" % self.X):
+            ms = ev.parse_phone_mentions(text)
+            self.assertEqual(ms[0]["role"], "requested_target")
+        # A later "cho em" belonging to another verb never
+        # exempts a forward to a named recipient.
+        ms = ev.parse_phone_mentions(
+            "Chuyển tiếp số %s cho Bình, nhắn cho em đi"
+            % self.X)
+        self.assertEqual(ms[0]["role"], "background")
+        self.assertEqual(ms[0]["reason"], "forwarded_object")
+
+    def test_explicit_redirect_supersedes(self):
+        # S2 backstop: "đổi sang" + a different number after
+        # the last target mention re-selects away from this
+        # value (last-decisive-wins for selections).
+        val, reason = ev._question_b_for_phone(
+            self.X,
+            "Gọi số %s đi, tôi đổi sang số %s, gọi đi"
+            % (self.X, self.Y), [], None)
+        self.assertFalse(val)
+        self.assertEqual(reason, "explicit_redirect_supersedes")
+        # A target mention after the redirect re-selects it.
+        val, _ = ev._question_b_for_phone(
+            self.X,
+            "Tôi đổi sang số %s, rồi gọi số %s đi"
+            % (self.Y, self.X), [], None)
+        self.assertTrue(val)
+        # A redirect TO the same value confirms it.
+        val, _ = ev._question_b_for_phone(
+            self.X,
+            "Tôi đổi sang số %s, gọi số %s đi"
+            % (self.X, self.X), [], None)
+        self.assertTrue(val)
+
+    def test_prior_instruction_per_action_partition(self):
+        # M1: a multi-number history turn binds per action.
+        turns = [self._ut(
+            "Nhờ Vy gọi số %s giúp, nhắn cho Bình số %s đi"
+            % (self.X, self.Y), 0)]
+        rec, reason = ev.bind_history_reference(
+            "Làm như lúc nãy đi", turns, action="message")
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec["phone_number"], self.Y)
+        self.assertEqual(reason, "prior_instruction_unique")
+        # The delegated call number never binds for call
+        # (excluded before number selection).
+        rec, reason = ev.bind_history_reference(
+            "Làm như lúc nãy đi", turns, action="call")
+        self.assertIsNone(rec)
+        self.assertEqual(reason, "prior_instruction_all_delegated")
+        # Same verb, two numbers: genuinely ambiguous, stays
+        # unbound -- for message and for the action-less
+        # caller (old behaviour preserved).
+        turns = [self._ut(
+            "Nhắn số %s và số %s" % (self.X, self.Y), 0)]
+        rec, reason = ev.bind_history_reference(
+            "Làm như lúc nãy đi", turns, action="message")
+        self.assertIsNone(rec)
+        self.assertEqual(reason, "prior_instruction_multiple_numbers")
+        rec, reason = ev.bind_history_reference(
+            "Làm như lúc nãy đi", turns)
+        self.assertIsNone(rec)
+        self.assertEqual(reason, "prior_instruction_multiple_numbers")
+
+
+
+class TestRound9Batch9Phone(unittest.TestCase):
+    """Round-9 batch-9 fix M1: switch-family backstop verbs
+    at the evidence level. Synthetic only."""
+
+    X = "0902345678"
+    Y = "0911111111"
+
+    def test_switch_family_redirect_supersedes(self):
+        # M1: "đổi thành" / "đổi lại" / "chuyển sang" join
+        # "đổi sang" in the backstop verb set, with the same
+        # constraints (different number after the last
+        # target mention, bare call after it).
+        for verb in ("đổi thành", "đổi lại thành",
+                     "chuyển sang"):
+            val, reason = ev._question_b_for_phone(
+                self.X,
+                "Gọi số %s đi, tôi %s số 12, gọi đi"
+                % (self.X, verb), [], None)
+            self.assertFalse(val, verb)
+            self.assertEqual(reason, "explicit_redirect_supersedes")
+        # Explicit redirect still works via direct mention
+        # regardless of verb (no backstop needed).
+        val, _ = ev._question_b_for_phone(
+            self.Y,
+            "Tôi đổi thành số %s rồi gọi Số %s đi"
+            % (self.Y, self.Y), [], None)
+        self.assertTrue(val)
+        # A redirect TO the same value confirms it.
+        val, _ = ev._question_b_for_phone(
+            self.X,
+            "Tôi đổi lại thành số %s, gọi đi" % self.X,
+            [], None)
+        self.assertTrue(val)
+
+
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
