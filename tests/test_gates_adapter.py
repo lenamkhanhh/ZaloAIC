@@ -14,7 +14,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_gates_adapter import decide, filtered_prefix_for_phone  # noqa: E402
+from lifemate_gates_adapter import (  # noqa: E402
+    _vetoed_by_selection,
+    decide,
+    filtered_prefix_for_phone,
+)
 
 KINDS = {
     "contacts.search": "read", "contacts.get": "read",
@@ -516,6 +520,312 @@ class TestIntegrationReviewFails(unittest.TestCase):
                                     "phone": "0999999999"}},
                      prefix, roster, "Cập nhật số cho An",
                      kinds, proposal_position=1)
+        self.assertFalse(dec.fired)
+
+
+class TestCallbackFixR1R2R3(unittest.TestCase):
+    """Coordinator integration tests: R1/R2/R3 via decide().
+
+    Fixture mirrors the user's repro: one history missed call
+    with a nested contact record, empty roster, phone.call
+    proposal for the logged contact id.
+    """
+
+    def _fixture(self, name, relation=None):
+        contact = {"id": "c_x", "name": name, "phone": "0902345678"}
+        if relation is not None:
+            contact["relation"] = relation
+        prefix = [call_entry(
+            "phone.recent_calls", {},
+            recent_calls_result([{
+                "id": "call_x", "contact": contact,
+                "direction": "incoming", "status": "missed"}]),
+            0, origin="history")]
+        proposal = {"name": "phone.call",
+                    "arguments": {"contact_id": "c_x"}}
+        return prefix, proposal
+
+    def _decide(self, prefix, proposal, text):
+        return decide(proposal, prefix, [], text, KINDS,
+                      proposal_position=1)
+
+    def _mechanisms(self, dec):
+        return [a["mechanism"] for a in dec.adjustments]
+
+    def test_r1_full_name_conflict_no_unfire(self):
+        prefix, proposal = self._fixture("Nguyễn An")
+        dec = self._decide(prefix, proposal,
+                           "gọi lại cho Nguyễn Bình giúp tôi")
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(
+            "callback_name_mismatch" in (a.get("question_b_reason") or "")
+            for a in dec.adjustments))
+
+    def test_r1_full_name_correct_still_unfires(self):
+        # Control: the R1 fix must not block a correct binding.
+        prefix, proposal = self._fixture("Nguyễn An")
+        dec = self._decide(prefix, proposal,
+                           "gọi lại cho Nguyễn An giúp tôi")
+        self.assertTrue(dec.baseline_fired)
+        self.assertFalse(dec.fired)
+
+    def test_r2_family_no_evidence_no_unfire(self):
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal,
+                           "gọi lại cho mẹ giúp tôi")
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(
+            "callback_relation_unproven" in
+            (a.get("question_b_reason") or "")
+            for a in dec.adjustments))
+
+    def test_r2_family_with_log_relation_unfires(self):
+        # Relation evidence from the log record's relation field
+        # (structured source), not from prose: binds.
+        prefix, proposal = self._fixture("Vy", relation="mẹ")
+        dec = self._decide(prefix, proposal,
+                           "gọi lại cho mẹ giúp tôi")
+        self.assertTrue(dec.baseline_fired)
+        self.assertFalse(dec.fired)
+
+    def test_r2_family_conflict_no_unfire(self):
+        prefix, proposal = self._fixture("Vy", relation="bố")
+        dec = self._decide(prefix, proposal,
+                           "gọi lại cho mẹ giúp tôi")
+        self.assertTrue(dec.fired)
+
+    def test_r2_contact_named_me_binds_by_name(self):
+        # A contact literally named "Mẹ" binds by NAME rules
+        # (single-token exact), not by the relation path.
+        prefix, proposal = self._fixture("Mẹ")
+        dec = self._decide(prefix, proposal,
+                           "gọi lại cho mẹ giúp tôi")
+        self.assertFalse(dec.fired)
+
+    def test_r3_negated_no_unfire_veto_recorded(self):
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal, "đừng gọi lại cho Vy")
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        vetoes = [a for a in dec.adjustments
+                  if a["mechanism"] == "callback_selection_veto"]
+        self.assertEqual(len(vetoes), 1)
+        self.assertEqual(vetoes[0]["selection"], "negated")
+        self.assertTrue(vetoes[0]["mention_present"])
+
+    def test_r3_correction_replaced_no_unfire(self):
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal,
+                           "gọi lại cho Vy, à không, gọi cho An")
+        self.assertTrue(dec.fired)
+        vetoes = [a for a in dec.adjustments
+                  if a["mechanism"] == "callback_selection_veto"]
+        self.assertEqual(vetoes[0]["selection"], "replaced")
+
+    def test_r3_negated_other_clause_positive_still_unfires(self):
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal,
+                           "đừng gọi An, gọi lại cho Vy")
+        self.assertFalse(dec.fired)
+
+    def test_r3_action_scoping_positive_still_unfires(self):
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal,
+                           "không cần nhắn, chỉ gọi lại cho Vy")
+        self.assertFalse(dec.fired)
+
+    def test_r3_question_khong_positive_still_unfires(self):
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(
+            prefix, proposal,
+            "gọi lại cho Vy để hỏi xem có rảnh không")
+        self.assertFalse(dec.fired)
+
+    def test_r3_phone_correction_vetoed(self):
+        # A establishes the first number (value directly
+        # requested) but B sees the correction to another number:
+        # the veto layer refuses the un-fire.
+        prefix, _proposal = self._fixture("Vy")
+        dec = decide({"name": "phone.call",
+                      "arguments": {"phone_number": "0902345678"}},
+                     prefix, [],
+                     "gọi số 0902345678, à không, gọi số 0911111111",
+                     KINDS, proposal_position=1)
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        vetoes = [a for a in dec.adjustments
+                  if a["mechanism"] == "callback_selection_veto"]
+        self.assertEqual(len(vetoes), 1)
+        self.assertEqual(vetoes[0]["selection"], "replaced")
+
+    def test_phone_direct_negation_refused_by_module_a(self):
+        # Pre-existing A layer (not this round's veto): a directly
+        # negated number never reaches PROVEN, so the outcome is
+        # a refusal at A, not a B veto. Both layers refuse; the
+        # test pins which one, so a future change is visible.
+        dec = decide({"name": "phone.call",
+                      "arguments": {"phone_number": "0902345678"}},
+                     [], [], "đừng gọi số 0902345678",
+                     KINDS, proposal_position=0)
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(
+            a["mechanism"] == "phone_callback_evidence_insufficient"
+            and "value_negated_in_current_text" in
+            (a.get("question_b_reason") or "")
+            for a in dec.adjustments))
+        self.assertFalse(any(
+            a["mechanism"] == "callback_selection_veto"
+            for a in dec.adjustments))
+
+    def test_r3_generic_negated_blocks(self):
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal,
+                           "đừng gọi lại người vừa gọi")
+        self.assertTrue(dec.fired)
+
+    def test_r3_quoted_name_is_not_selection(self):
+        # Name only inside quoted message content: not an
+        # addressee, so no binding and no un-fire.
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal,
+                           "nhắn là \"gọi lại cho Vy nhé\"")
+        self.assertTrue(dec.fired)
+
+    def test_noncallback_target_veto_blocks(self):
+        # Hole found by coordinator probe (P4b): a negated
+        # callback sentence used to un-fire a NON-callback
+        # proposal (ewallet.transfer) via callback binding. The
+        # refined veto gate closes it: a decisive,
+        # target-attached veto blocks regardless of proposal tool.
+        prefix, _proposal = self._fixture("Vy")
+        dec = decide({"name": "ewallet.transfer",
+                      "arguments": {"contact_id": "c_x",
+                                    "amount": 200000}},
+                     prefix, [], "đừng gọi lại cho Vy",
+                     KINDS, proposal_position=1)
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        vetoes = [a for a in dec.adjustments
+                  if a["mechanism"] == "callback_selection_veto"]
+        self.assertEqual(len(vetoes), 1)
+        self.assertEqual(vetoes[0]["selection"], "negated")
+
+    def test_veto_rule_helper(self):
+        # Callback proposals: decisive vetoes always veto; unknown
+        # vetoes except no_callback_verb (B abstains when the
+        # current text has no verb head of any action, so a
+        # history-grounded binding stands). Delta-2: the old
+        # no_action_evidence conflated "no verb at all" with
+        # "other-action verb" and "blocked verb"; all three new
+        # reasons veto for callback proposals.
+        self.assertTrue(_vetoed_by_selection("negated", "x", True))
+        self.assertTrue(_vetoed_by_selection(
+            "unknown", "quoted_mention_only", True))
+        self.assertTrue(_vetoed_by_selection(
+            "unknown", "no_current_text", True))
+        self.assertTrue(_vetoed_by_selection(
+            "unknown", "blocked_verb_only", True))
+        self.assertTrue(_vetoed_by_selection(
+            "unknown", "other_action_verb_only", True))
+        self.assertTrue(_vetoed_by_selection(
+            "unknown", "negated_other_object", True))
+        self.assertFalse(_vetoed_by_selection(
+            "unknown", "no_callback_verb", True))
+        self.assertFalse(_vetoed_by_selection("positive", "x", True))
+        # Non-callback proposals: decisive target-attached vetoes
+        # count; unknown and standalone generic vetoes do not.
+        self.assertTrue(_vetoed_by_selection(
+            "negated", "negated_selection", False))
+        self.assertTrue(_vetoed_by_selection(
+            "replaced", "replaced_by_new_target", False))
+        self.assertTrue(_vetoed_by_selection(
+            "cancelled", "cancelled_no_new_target", False))
+        self.assertFalse(_vetoed_by_selection(
+            "unknown", "no_callback_verb", False))
+        self.assertFalse(_vetoed_by_selection(
+            "negated", "generic_callback_negated", False))
+        self.assertFalse(_vetoed_by_selection(
+            "positive", "positive_selection", False))
+
+    def test_history_grounded_binding_survives_verb_less_text(self):
+        # 0764 class (synthetic): the number comes from a prior
+        # instruction in history; the current text invokes it
+        # without any callback verb. B returns unknown /
+        # no_callback_verb and must abstain, not veto.
+        prefix = [user_turn("gọi cho số 0902345678 nhé", 0)]
+        dec = decide({"name": "phone.call",
+                      "arguments": {"phone_number": "0902345678"}},
+                     prefix, [], "làm như em dặn lúc nãy",
+                     KINDS, proposal_position=1)
+        self.assertTrue(dec.baseline_fired)
+        self.assertFalse(dec.fired)
+        self.assertFalse(any(
+            a["mechanism"] == "callback_selection_veto"
+            for a in dec.adjustments))
+
+    def test_cross_action_verb_does_not_unfire_call(self):
+        # Reviewer delta-2 X1: a positive MESSAGE verb must not
+        # un-fire a CALL proposal. A binds via the message verb;
+        # B (action=call) sees only another action's verb and
+        # vetoes with other_action_verb_only.
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal, "nhắn lại cho Vy")
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        vetoes = [a for a in dec.adjustments
+                  if a["mechanism"] == "callback_selection_veto"]
+        self.assertEqual(len(vetoes), 1)
+        self.assertEqual(vetoes[0]["selection"], "unknown")
+        self.assertEqual(vetoes[0]["selection_reason"],
+                         "other_action_verb_only")
+
+    def test_cross_action_verb_does_not_unfire_message(self):
+        # Reviewer delta-2 X2, reverse direction: a positive CALL
+        # verb must not un-fire an SMS proposal.
+        prefix, _proposal = self._fixture("Vy")
+        dec = decide({"name": "sms.send",
+                      "arguments": {"contact_id": "c_x",
+                                    "content": "hello"}},
+                     prefix, [], "gọi lại cho Vy",
+                     KINDS, proposal_position=1)
+        self.assertTrue(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        vetoes = [a for a in dec.adjustments
+                  if a["mechanism"] == "callback_selection_veto"]
+        self.assertEqual(len(vetoes), 1)
+        self.assertEqual(vetoes[0]["selection_reason"],
+                         "other_action_verb_only")
+
+    def test_blocked_verbs_do_not_unfire(self):
+        # Reviewer delta-2 G9/G10/G11: question mood, past, and
+        # "chưa" status are blocked verbs, not requests. Each
+        # must veto (blocked_verb_only), not abstain.
+        prefix, proposal = self._fixture("Vy")
+        for text in ["có nên gọi lại cho Vy không",
+                     "đã gọi lại cho Vy rồi",
+                     "chưa gọi lại cho Vy"]:
+            dec = self._decide(prefix, proposal, text)
+            self.assertTrue(dec.fired, text)
+            vetoes = [a for a in dec.adjustments
+                      if a["mechanism"] == "callback_selection_veto"]
+            self.assertEqual(len(vetoes), 1, text)
+            self.assertEqual(vetoes[0]["selection_reason"],
+                             "blocked_verb_only", text)
+
+    def test_reply_verb_is_message_action(self):
+        # "trả lời" is a message verb: it selects for sms.send
+        # but must not un-fire a phone.call proposal.
+        prefix, proposal = self._fixture("Vy")
+        dec = self._decide(prefix, proposal, "trả lời Vy giúp tôi")
+        self.assertTrue(dec.fired)
+        dec = decide({"name": "sms.send",
+                      "arguments": {"contact_id": "c_x",
+                                    "content": "hello"}},
+                     prefix, [], "trả lời Vy giúp tôi",
+                     KINDS, proposal_position=1)
         self.assertFalse(dec.fired)
 
 

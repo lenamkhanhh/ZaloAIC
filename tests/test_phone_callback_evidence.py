@@ -608,13 +608,20 @@ class TestReviewerRound2Fixes(unittest.TestCase):
         self.assertEqual(reason, "callback_name_mismatch")
 
     def test_callback_family_reference_no_veto(self):
-        # "gọi lại cho mẹ" is a family reference, not a name:
-        # no veto; the single-pool fallback still binds.
+        # CONTRACT CHANGE (callback fix round, thread A, R2):
+        # "gọi lại cho mẹ" is a family reference, not a name,
+        # and it must NOT fall back to the single pool record
+        # without relation evidence. The old expectation (bind
+        # via single-pool fallback) contradicted the new
+        # contract and is replaced: no bind, relation_unproven.
+        # The record here is NAMED "Mạ" but carries no relation
+        # field, and "mẹ" != "Mạ" as a name, so neither the name
+        # path nor the relation path binds.
         rec, reason = ev.bind_history_reference(
             "gọi lại cho mẹ",
             [self._missed("c_9", "Mạ", "0922222222")])
-        self.assertIsNotNone(rec)
-        self.assertEqual(rec["contact_id"], "c_9")
+        self.assertIsNone(rec)
+        self.assertEqual(reason, "callback_relation_unproven")
 
     def test_callback_no_name_single_pool_preserved(self):
         rec, _ = ev.bind_history_reference(

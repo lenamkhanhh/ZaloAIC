@@ -8,6 +8,29 @@ a valid source AND the current request selecting it as the action
 target), the call passes. Entity-id fires are never un-fired by this
 module: phone/callback evidence does not establish arbitrary *_ids.
 
+Negation veto gate (R3): an Adjustment-1 un-fire additionally
+requires POSITIVE action selection from the negation module
+(lifemate_callback_negation). For callback proposals (phone.call
+-> call, sms.send / chat_ott.send_message -> message) a decisive
+veto (negated / replaced / cancelled) always vetoes, and unknown
+vetoes except no_callback_verb: when the current text has no
+verb head of any action, B abstains and a history-grounded
+binding stands, because B judges current-text selection only.
+All other unknown reasons veto for callback proposals -- a
+blocked verb is not a request, and a verb of another action
+never selects this action (delta-2 fix: the old
+no_action_evidence conflated "no verb at all" with
+"other-action verb" and "blocked verb"). For non-callback
+proposals the negation module does not cover the proposal's
+action, so only a decisive, target-attached veto counts;
+unknown passes through, and a standalone generic veto does not
+veto an unrelated action. A veto is recorded as a
+callback_selection_veto adjustment, with the raw mention recorded
+separately (mention_present) and never equated with selection.
+The negation module is veto-only: its "positive" means "no veto
+found", never proof of binding, so it runs only after module A
+established.
+
 Adjustment 2 (SUPPRESSION, id references only): when the baseline
 gate passes an id reference (contact_id or other *_id) but the
 evidence ledger says that entity's existence claim is INVALIDATED
@@ -15,22 +38,24 @@ at the proposal position (a succeeded delete after the establishing
 evidence, with no successful re-read since), the call fires.
 Suppression never applies to bare phone numbers: dialability of a
 number is not entity existence (gold routinely dials numbers with
-no book entry), and it never applies to name references (names
-have no ledger identity) or to bare mutate-verb passes (no
-reference to attribute). Suppression wins over un-fire for the
-same contact_id: an observed counterpart from before a delete does
-not resurrect a deleted contact.
+no book entry), and it never applies to bare mutate-verb passes
+(no reference to attribute). Passed name references are resolved
+to a roster id on a unique match and suppressed like id refs.
+Suppression wins over un-fire for the same contact_id: an observed
+counterpart from before a delete does not resurrect a deleted
+contact.
 
 P3g guard (session-created log laundering): a session prior READ
 (phone.recent_calls / sms.read_recent) result is pre-filtered
-before it reaches the phone/callback module: records that are
-attributable to the session's own prior writes (same normalized
-number AND direction == "outgoing") are removed. A number the
-session itself dialed must not become "log-grounded" by being
-re-read. History (pre-session) records are never filtered: the
-current session starts at the current request. Direction-missing
-records are kept (attribution requires "outgoing"); this choice
-is deliberate and recorded in the paired audit notes.
+before it reaches the phone/callback module: records attributable
+to the session's own prior writes (same normalized number, or
+contact_id in a session write's contact_id args) AND shaped like
+a session write (direction "outgoing", or no direction key AND
+status "dialing") are removed. A number the session itself dialed
+must not become "log-grounded" by being re-read. History
+(pre-session) records are never filtered. Residual: a dial from an
+earlier session (also status dialing, no direction) re-read now is
+filtered too, firing conservatively.
 
 Applicability is unchanged from the baseline gate. The adapter
 never changes a proposal, submitted calls, state, retry, or
@@ -72,6 +97,7 @@ from lifemate_phone_callback_evidence import (
     norm_phone,
     phone_evidence_for,
 )
+from lifemate_callback_negation import analyze_action_selection
 from lifemate_evidence_lifecycle import (
     EvidenceLedger,
     classify_tool,
@@ -472,6 +498,131 @@ def build_ledger(prefix, roster, kinds):
     return ledger, notes
 
 
+def _selection_targets(kind, value, phone_prefix, roster):
+    """Target descriptors for the negation veto gate.
+
+    Returns (names, phones) describing the bound counterpart, so
+    the negation module can judge whether the current request
+    positively selects it. Names include each full name plus its
+    last token (the short form A resolves: "gọi An" must veto a
+    bound "Nguyễn An"; a bare surname never vetoes, so only the
+    last token is added). Phones come from roster entries and
+    log records carrying the counterpart, so a number-based veto
+    ("đừng gọi số X") also blocks an id proposal for X's owner.
+    """
+    names = set()
+    phones = set()
+
+    def _add_name(name):
+        if not name:
+            return
+        names.add(name)
+        parts = str(name).split()
+        if len(parts) > 1:
+            names.add(parts[-1])
+
+    def _add_phone(phone):
+        norm = norm_phone(phone) if phone else ""
+        if norm:
+            phones.add(norm)
+
+    roster = roster or []
+    if kind == "id":
+        for entry in roster:
+            if isinstance(entry, dict) and entry.get("id") == value:
+                _add_name(entry.get("name"))
+                _add_phone(entry.get("phone"))
+    elif kind == "name":
+        for entry in roster:
+            if isinstance(entry, dict) \
+                    and nfc_lower(entry.get("name")) == nfc_lower(value):
+                _add_name(entry.get("name"))
+                _add_phone(entry.get("phone"))
+    elif kind == "phone":
+        _add_phone(value)
+    # Log records: nested contact {id, name, phone} or flat
+    # {contact_id, phone_number} shapes.
+    for entry in phone_prefix or []:
+        if not isinstance(entry, dict):
+            continue
+        result = entry.get("result")
+        if not isinstance(result, dict):
+            continue
+        records = []
+        for key in ("calls", "messages"):
+            items = result.get(key)
+            if isinstance(items, list):
+                records.extend(items)
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            contact = rec.get("contact")
+            if isinstance(contact, dict):
+                cid = contact.get("id")
+                if kind == "id" and cid == value:
+                    _add_name(contact.get("name"))
+                    _add_phone(contact.get("phone"))
+                elif kind == "name" and nfc_lower(
+                        contact.get("name")) == nfc_lower(value):
+                    _add_phone(contact.get("phone"))
+                elif kind == "phone" and norm_phone(
+                        contact.get("phone")) == norm_phone(value):
+                    _add_name(contact.get("name"))
+            if kind == "id" and rec.get("contact_id") == value:
+                _add_phone(rec.get("phone_number"))
+            elif kind == "phone" and norm_phone(
+                    rec.get("phone_number")) == norm_phone(value):
+                if isinstance(contact, dict):
+                    _add_name(contact.get("name"))
+    if kind == "name":
+        _add_name(value)
+    return sorted(names), sorted(phones)
+
+
+# Proposal tools whose action IS a callback: only these go through
+# the negation veto gate. For other tools (e.g. ewallet.transfer)
+# the binding evidence stands as module A judged it; the user's
+# callback-selection analysis does not cover those actions.
+_CALLBACK_ACTIONS = {
+    "phone.call": "call",
+    "sms.send": "message",
+    "chat_ott.send_message": "message",
+}
+
+
+def _vetoed_by_selection(selection, reason, is_callback):
+    """Veto rule for the R3 gate, unit-testable in isolation.
+
+    Callback proposals: a decisive veto (negated / replaced /
+    cancelled) always vetoes, and unknown vetoes EXCEPT
+    no_callback_verb -- when the current text contains no verb
+    head of any action, B has no textual evidence to judge, so
+    it abstains and a history-grounded binding (prior
+    instruction, anaphoric chat reference) stands. B judges
+    current-text selection only; it must not veto what it
+    cannot see. All other unknown reasons (blocked_verb_only,
+    other_action_verb_only, negated_other_object,
+    quoted_mention_only, no_current_text, invalid_action)
+    veto for callback proposals: a blocked verb is not a
+    request, and a verb of another action never selects this
+    action (coordinator delta-2 fix for the reviewer's
+    abstention hole: the old no_action_evidence conflated
+    "no verb at all" with "other-action verb" and "blocked
+    verb").
+    Non-callback proposals: only a decisive, target-attached
+    veto counts; unknown passes through and a standalone
+    generic veto does not veto an unrelated action.
+    """
+    if selection == "positive":
+        return False
+    if not is_callback:
+        return selection in ("negated", "replaced", "cancelled") \
+            and reason != "generic_callback_negated"
+    if selection == "unknown":
+        return reason != "no_callback_verb"
+    return True
+
+
 def decide(call, prefix, roster, current_text, kinds,
            proposal_position=None):
     """Candidate Gate 2 decision for one proposal call.
@@ -555,14 +706,99 @@ def decide(call, prefix, roster, current_text, kinds,
                     ref_args, phone_prefix, roster, current_text,
                     consumer_tool=call.get("name"))
             if verdict["established"]:
-                adjustments.append({
-                    "reference": "%s %s" % (kind, value),
-                    "old": "fired", "new": "passed",
-                    "mechanism": "phone_callback_evidence",
-                    "basis": verdict["basis"],
-                    "question_b": verdict["question_b_target_selected"],
-                    "question_b_reason": verdict["question_b_reason"],
-                    "sources": verdict["question_a_sources"]})
+                # --- negation veto gate (R3): A proves the binding,
+                # but the un-fire also requires POSITIVE action
+                # selection toward this target. B is a veto-only
+                # gate: it never proves a binding on its own (its
+                # "positive" means "no veto found"), so it runs
+                # only after A established, and only for proposals
+                # whose action IS a callback. Anything but
+                # positive refuses the un-fire (safe direction);
+                # the mention itself is recorded separately, never
+                # equated with selection.
+                selection = None
+                selection_reason = None
+                mention_present = None
+                vetoed = False
+                action = _CALLBACK_ACTIONS.get(call.get("name"))
+                # Veto gate (R3), refined (delta-2): for callback
+                # proposals the request IS a callback, so a
+                # decisive veto (negated / replaced / cancelled)
+                # always vetoes, and unknown vetoes EXCEPT
+                # no_callback_verb: when the current text has no
+                # verb head of any action, B has no textual
+                # evidence to judge, so it abstains and a
+                # history-grounded binding (prior instruction,
+                # anaphoric chat reference) stands. B judges
+                # current-text selection only; it must not veto
+                # what it cannot see (gold 0764: prior
+                # instruction binding + verb-less current text).
+                # All other unknown reasons veto for callback
+                # proposals (blocked verb, other-action verb).
+                # For non-callback proposals B does not cover the
+                # proposal's action, so only a decisive,
+                # target-attached veto counts; unknown passes
+                # through, and a standalone generic veto
+                # ("đừng gọi nữa" with no target selection) does
+                # not veto an unrelated action. This closes the
+                # hole where a negated callback sentence un-fired
+                # a non-callback proposal, without breaking
+                # topic/amount bindings like gold 1319 (no
+                # callback verb -> B unknown -> pass-through).
+                names, phones = _selection_targets(
+                    kind, value, phone_prefix, roster)
+                if isinstance(current_text, str) \
+                        and current_text.strip():
+                    sel = analyze_action_selection(
+                        current_text, target_names=names,
+                        target_phones=phones,
+                        action=action if action is not None
+                        else "any")
+                else:
+                    sel = {"selection": "unknown",
+                           "reason": "no_current_text",
+                           "mention_present": False}
+                selection = sel["selection"]
+                selection_reason = sel["reason"]
+                mention_present = sel["mention_present"]
+                if action is not None:
+                    vetoed = _vetoed_by_selection(
+                        selection, selection_reason, True)
+                else:
+                    vetoed = _vetoed_by_selection(
+                        selection, selection_reason, False)
+                if vetoed:
+                    covered_all = False
+                    adjustments.append({
+                        "reference": "%s %s" % (kind, value),
+                        "old": "fired", "new": "fired",
+                        "mechanism": "callback_selection_veto",
+                        "basis": verdict["basis"],
+                        "question_b": False
+                        if selection in ("negated", "replaced",
+                                         "cancelled") else None,
+                        "question_b_a":
+                            verdict["question_b_target_selected"],
+                        "question_b_reason":
+                            verdict["question_b_reason"],
+                        "selection": selection,
+                        "selection_reason": selection_reason,
+                        "mention_present": mention_present,
+                        "sources": verdict["question_a_sources"]})
+                else:
+                    adjustments.append({
+                        "reference": "%s %s" % (kind, value),
+                        "old": "fired", "new": "passed",
+                        "mechanism": "phone_callback_evidence",
+                        "basis": verdict["basis"],
+                        "question_b":
+                            verdict["question_b_target_selected"],
+                        "question_b_reason":
+                            verdict["question_b_reason"],
+                        "selection": selection,
+                        "selection_reason": selection_reason,
+                        "mention_present": mention_present,
+                        "sources": verdict["question_a_sources"]})
             else:
                 covered_all = False
                 adjustments.append({

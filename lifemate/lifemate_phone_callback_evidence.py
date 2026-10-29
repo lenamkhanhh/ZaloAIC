@@ -654,9 +654,12 @@ def extract_log_records(result, tool, position):
         by the read_result content path, NOT as a contact record)
       contacts.search/get: {"contacts": [{id, name, phone, ...}]}
     A record is a dict with tool / position / record_id /
-    contact_id / phone_number / name / direction / status / content
-    / time. Nested contact dicts are unpacked; free-text content is NEVER
-    mined for contact_ids (only phone digits via the content path).
+    contact_id / phone_number / name / relation / direction /
+    status / content / time. Nested contact dicts are unpacked;
+    free-text content is NEVER mined for contact_ids (only phone
+    digits via the content path). "relation" is preserved from
+    nested contact dicts and contacts records: it is the ONLY
+    structured relation evidence the family path may use.
     Malformed results yield no records and a malformed flag via
     parse_history_result (callers check that separately).
     """
@@ -680,6 +683,8 @@ def extract_log_records(result, tool, position):
                 if isinstance(contact, dict) and contact.get("phone")
                 else norm_phone(rec.get("phone_number")),
                 "name": contact.get("name")
+                if isinstance(contact, dict) else None,
+                "relation": contact.get("relation")
                 if isinstance(contact, dict) else None,
                 "direction": rec.get("direction"),
                 "status": rec.get("status"),
@@ -726,6 +731,7 @@ def extract_log_records(result, tool, position):
                 "contact_id": rec.get("id"),
                 "phone_number": norm_phone(rec.get("phone")),
                 "name": rec.get("name"),
+                "relation": rec.get("relation"),
                 "direction": None,
                 "status": None,
                 "content": None,
@@ -756,28 +762,55 @@ def _raw_tokens(text):
                           flags=re.UNICODE))
 
 
-def _name_matches(name, text):
-    """True iff `name` is named in `text` (reviewer fix R2-A4).
+def _raw_token_list(text):
+    """Ordered diacritic-sensitive lowercased word tokens."""
+    return re.findall(r"[^\W_]+", (text or "").lower(),
+                      flags=re.UNICODE)
 
-    A name is an identifier: it matches on diacritic-SENSITIVE
-    original tokens (case-insensitive), never on folded tokens
-    alone -- folded matching would confuse "An" (a name) with
-    "ăn" (to eat). A multi-token name may additionally match on
-    folded tokens: the full phrase is distinctive enough that a
-    folded hit is not a common-word collision. Matching is
-    token-based, never substring: "an" inside "anh" is not a hit.
-    Trade-off (documented): if ASR drops diacritics on a name
-    ("Bình" -> "binh"), a single-token name match fails and the
-    verdict falls back to AMBIGUOUS -- the safe direction.
+
+def _folded_token_list(text):
+    """Ordered folded word tokens."""
+    return _TOKEN_RE.findall(fold_vietnamese(text or ""))
+
+
+def _phrase_in(phrase_tokens, text_tokens):
+    """True iff phrase_tokens occur consecutively, in order."""
+    n = len(phrase_tokens)
+    if n == 0 or n > len(text_tokens):
+        return False
+    return any(text_tokens[i:i + n] == phrase_tokens
+               for i in range(len(text_tokens) - n + 1))
+
+
+def _name_matches(name, text):
+    """True iff `name` is named in `text` (fix round: full phrase).
+
+    CONTRACT CHANGE (callback fix round, thread A): token-set
+    intersection is BANNED. The old rule matched on ANY shared
+    token, so "Nguyễn An" matched a text naming "Nguyễn Bình"
+    (shared surname "Nguyễn") and defeated the addressee veto.
+      - single-token name: diacritic-SENSITIVE exact token
+        (case-insensitive), never folded -- "An" != "ăn",
+        "Bình" != "binh" (ASR diacritic loss falls back to
+        AMBIGUOUS, the safe direction, as before);
+      - multi-token name: the FULL PHRASE, consecutive tokens in
+        order, either diacritic-sensitive or folded (a full
+        phrase is distinctive enough that a folded hit is not a
+        common-word collision).
+    A shared surname or a shared common token NEVER matches.
     """
     if not name or not text:
         return False
-    if _raw_tokens(name) & _raw_tokens(text):
+    raw_name = _raw_token_list(name)
+    if not raw_name:
+        return False
+    raw_text = _raw_token_list(text)
+    if len(raw_name) == 1:
+        return raw_name[0] in raw_text
+    if _phrase_in(raw_name, raw_text):
         return True
-    if len(_name_tokens(name)) >= 2 \
-            and _name_tokens(name) & _name_tokens(text):
-        return True
-    return False
+    return _phrase_in(_folded_token_list(name),
+                      _folded_token_list(text))
 
 
 # Tokens that may sit in the addressee slot after a callback verb
@@ -805,20 +838,232 @@ _ADDRESSEE_STOPLIST = {
 }
 
 
-def _explicit_addressee(text):
-    """Token in the addressee slot after a callback verb, or None.
+_QUOTE_RE = re.compile(r'"[^"]*"|\'[^\']*\'|“[^”]*”|«[^»]*»')
 
-    "gọi lại cho An" -> "an"; "trả lời tin nhắn" -> None ("tin"
-    is generic); "gọi lại" alone -> None. Only a non-generic,
-    non-family token counts: a name in this slot vetoes binding
-    to anyone else (reviewer fix R2-A3).
+
+def _strip_quoted_spans(text):
+    """Remove quoted spans: a name inside quotes is message
+    content, never the request's addressee."""
+    return _QUOTE_RE.sub(" ", text or "")
+
+
+# Family / relation tokens (folded). "mạ" folds to "ma" and is a
+# family word in central dialect. A contact literally NAMED
+# "Mạ"/"Mẹ" is still matched by the name-first exact rule in the
+# callback branch before this set is consulted.
+_FAMILY_TOKENS = {"me", "ma", "bo", "ba", "vo", "chong", "con"}
+
+# Tokens that end an addressee span (clause boundary, politeness
+# particle, a new verb, a generic object like "tin nhắn"/"số").
+# Checked only for tokens AFTER the first addressee token.
+_ADDRESSEE_BOUNDARY = {
+    "giup", "gium", "dum", "de", "roi", "va", "nhe", "nha", "di",
+    "nua", "luon", "ngay", "oi", "a", "cho", "voi", "ve", "o",
+    "tai", "tren", "trong", "tu", "den", "neu", "khi", "ma",
+    "thi", "la", "goi", "nhan", "tra", "khong", "so", "tin",
+    "cuoc", "lai", "vua", "do", "nay", "day", "kia", "ay",
+}
+
+# First-token values that mean "no person addressee" (a generic
+# object or a politeness verb, not a name): "trả lời tin nhắn",
+# "gọi lại số đó", "gọi lại giúp tôi".
+_ADDRESSEE_SKIP_FIRST = {
+    "giup", "gium", "dum", "di", "nhe", "nha", "luon", "ngay",
+    "oi", "a", "tin", "so", "cuoc", "nhan",
+}
+
+# Generic person references in the addressee slot: pronouns and
+# "người (đó)". They impose NO name/family constraint, so the
+# generic single-pool flow still applies. A bare "minh" (no
+# diacritic) is NOT generic: it is the name Minh; only "mình"
+# (with diacritic) is the pronoun.
+_ADDRESSEE_GENERIC = {
+    "em", "anh", "chi", "toi", "ban", "nguoi", "to",
+}
+
+# Title tokens dropped when they precede a name ("anh Bình" ->
+# "Bình", "chị Lan" -> "Lan"). Only when more tokens follow.
+_ADDRESSEE_TITLES = {"anh", "chi", "em", "co", "chu", "bac", "ong",
+                     "ban"}
+
+
+def _extract_addressee(text):
+    """Addressee phrase of the FIRST callback clause, or None.
+
+    The addressee is the span right after a callback verb
+    ("gọi lại" / "nhắn lại" / "trả lời") plus an optional
+    "cho"/"tới"/"đến", in the quote-stripped text. Returns
+    (raw_tokens, folded_tokens) or None. At most 3 tokens, cut
+    at clause boundaries and punctuation. A name in another
+    clause, in a quote, or in message content is never returned
+    here -- only the callback clause's addressee counts.
+    NOTE: the FIRST callback clause is used. A later correction
+    to a different person ("gọi lại cho Vy, à không, gọi cho
+    An") is thread B's (negation/correction) scope, not this
+    extractor's.
     """
-    m = re.search(r"(goi lai|nhan lai|tra loi)\s+(cho\s+)?([a-z]+)",
-                  fold_vietnamese(text or ""))
-    if not m:
+    clean = _strip_quoted_spans(text)
+    toks = [(m.group(0).lower(), m.start(), m.end())
+            for m in re.finditer(r"[^\W_]+", clean, flags=re.UNICODE)]
+    if not toks:
         return None
-    tok = m.group(3)
-    return None if tok in _ADDRESSEE_STOPLIST else tok
+    folded = [fold_vietnamese(t) for t, _, _ in toks]
+    verb_at = None
+    for i in range(len(toks) - 1):
+        if (folded[i], folded[i + 1]) in (
+                ("goi", "lai"), ("nhan", "lai"), ("tra", "loi")):
+            verb_at = i + 2
+            break
+    if verb_at is None:
+        return None
+    j = verb_at
+    if j < len(toks) and folded[j] in ("cho", "toi", "den"):
+        j += 1
+    if j >= len(toks) or folded[j] in _ADDRESSEE_SKIP_FIRST:
+        return None
+    raw, fold = [], []
+    for k in range(j, min(j + 3, len(toks))):
+        if k > j:
+            between = clean[toks[k - 1][2]:toks[k][1]]
+            if any(ch in between for ch in ",.!?;:"):
+                break
+            if folded[k] in _ADDRESSEE_BOUNDARY:
+                break
+        raw.append(toks[k][0])
+        fold.append(folded[k])
+    if not raw:
+        return None
+    if len(raw) > 1 and fold[0] in _ADDRESSEE_TITLES:
+        raw, fold = raw[1:], fold[1:]
+    return (raw, fold) if raw else None
+
+
+def _classify_addressee(phrase_raw, phrase_folded):
+    """Kind of an addressee phrase: "family", "generic", or "name".
+
+    "family": a single family/relation token ("mẹ", "mạ", "bố",
+      "ba", "vợ", "chồng", "con") -- NOT a name, and it must go
+      through the relation-evidence path, never the single-pool
+      fallback.
+    "generic": a pronoun / generic person reference ("em", "anh",
+      "chị", "tôi", "bạn", "người", "mình" with diacritic).
+      A bare "minh" (no diacritic) is the name Minh, not the
+      pronoun, so it classifies as "name".
+    "name": anything else -- a candidate name phrase, to be
+      matched against the pool by _addressee_name_matches.
+    """
+    if not phrase_raw:
+        return None
+    folded_phrase = " ".join(phrase_folded)
+    if len(phrase_raw) == 1 and phrase_folded[0] == "minh":
+        return "generic" if phrase_raw[0] != "minh" else "name"
+    if folded_phrase in _ADDRESSEE_GENERIC:
+        return "generic"
+    if len(phrase_raw) == 1 and phrase_folded[0] in _FAMILY_TOKENS:
+        return "family"
+    return "name"
+
+
+def _addressee_name_matches(phrase_raw, phrase_folded, name):
+    """True iff an addressee phrase identifies `name`.
+
+    - exact full name (diacritic-sensitive, or folded for a
+      multi-token phrase);
+    - single-token phrase equal to the name's FINAL token (the
+      given name). Uniqueness across the pool is the caller's
+      job: bind only when exactly one pool record matches.
+    A surname-only phrase (a non-final token) NEVER matches.
+    """
+    raw_name = _raw_token_list(name)
+    if not raw_name:
+        return False
+    if phrase_raw == raw_name:
+        return True
+    if len(phrase_raw) >= 2 \
+            and phrase_folded == _folded_token_list(name):
+        return True
+    if len(phrase_raw) == 1 and len(raw_name) > 1 \
+            and phrase_raw[0] == raw_name[-1]:
+        return True
+    return False
+
+
+def _relation_claims(contact_id, pool, roster):
+    """Folded relation values claimed for one counterpart.
+
+    Sources (runtime-observable only): the pool record's own
+    "relation" field and roster entries with the same id
+    carrying a "relation" field. Free-text names, message
+    content, and assistant prose are NOT relation evidence.
+    """
+    vals = set()
+    if contact_id is None:
+        return vals
+    for r in pool or []:
+        if r.get("contact_id") == contact_id and r.get("relation"):
+            vals.add(fold_vietnamese(r["relation"]))
+    for c in roster or []:
+        if str(c.get("id")) == str(contact_id) and c.get("relation"):
+            vals.add(fold_vietnamese(c["relation"]))
+    return vals
+
+
+def _bind_by_relation(relation, pool, roster):
+    """Bind a family addressee via relation evidence.
+
+    Binds only when exactly one pool record's counterpart claims
+    this relation AND no roster entry claims it for a different
+    counterpart. Otherwise (None, reason):
+      - callback_relation_ambiguous: several counterparts claim it;
+      - callback_relation_selects_other: a non-pool counterpart
+        claims it (the request selects them, not any pool record);
+      - callback_relation_conflict: the single pool record's
+        counterpart explicitly claims a DIFFERENT relation;
+      - callback_relation_unproven: nobody claims it -- question
+        (a) may hold (the caller exists) but question (b) is
+        UNKNOWN/AMBIGUOUS, never True.
+    """
+    claimants = set()
+    for r in pool or []:
+        cid = r.get("contact_id")
+        if cid and relation in _relation_claims(cid, pool, roster):
+            claimants.add(cid)
+    for c in roster or []:
+        if c.get("relation") \
+                and fold_vietnamese(c["relation"]) == relation \
+                and c.get("id"):
+            claimants.add(c["id"])
+    pool_matches = [r for r in pool
+                    if r.get("contact_id") in claimants]
+    if len(claimants) == 1 and len(pool_matches) == 1:
+        return pool_matches[0], "callback_relation_match"
+    if len(claimants) > 1:
+        return None, "callback_relation_ambiguous"
+    if claimants:
+        return None, "callback_relation_selects_other"
+    if len(pool) == 1:
+        vals = _relation_claims(pool[0].get("contact_id"),
+                                pool, roster)
+        if vals:
+            return None, "callback_relation_conflict"
+    return None, "callback_relation_unproven"
+
+
+def _explicit_addressee(text):
+    """First folded token of a name addressee, or None.
+
+    Compatibility wrapper around _extract_addressee: only a
+    name-kind phrase yields a token; family, generic, and
+    absent addressees yield None (family references are handled
+    by the relation path, not by this veto token).
+    """
+    addr = _extract_addressee(text)
+    if addr is None:
+        return None
+    raw, folded = addr
+    if _classify_addressee(raw, folded) != "name":
+        return None
+    return folded[0]
 
 
 def _select_by_topic_amount(current_text, cands):
@@ -905,12 +1150,15 @@ def _topic_overlap(current_text, content):
     return len(cur & con)
 
 
-def bind_history_reference(current_text, history_records):
+def bind_history_reference(current_text, history_records, roster=None):
     """Bind a current reference to exactly one history record.
 
     history_records: list of record dicts (from
     extract_log_records) and/or user-turn dicts
     {"kind": "user_turn", "text": ..., "position": ...}.
+    roster: optional [{id, name, phone, relation}] -- only used
+    for relation evidence (family addressees) and never as a
+    fallback source for names.
 
     Reference patterns recognised in the current text (folded):
       - callback / reply: "goi lai", "nhan lai", "tra loi" (+ name)
@@ -919,6 +1167,19 @@ def bind_history_reference(current_text, history_records):
       - anaphoric number: "so do", "so nay", "so moi nhat"
       - prior instruction: "luc nay", "nhu ... dan", "nhu da noi",
         "lam nhu" + a past marker
+
+    Callback-branch contract (fix round, thread A):
+    selection reads ONLY the callback clause's addressee span
+    (quote-stripped, see _extract_addressee). A name addressee
+    binds only on an exact full-name or unique given-name match;
+    a non-matching name addressee VETOES (callback_name_mismatch)
+    -- the old whole-text token-intersection rule let a shared
+    surname ("Nguyễn") bind the wrong person. A family addressee
+    binds only on relation evidence (callback_relation_match);
+    without it the branch returns a relation_* reason and NEVER
+    falls back to the single pool record. A generic addressee
+    ("em", "người", "mình") or no addressee keeps the old
+    generic flow (topic -> single pool -> single missed).
 
     Returns (record, reason). record is the bound record dict (for
     user turns, a synthetic {"kind": "user_turn", "phone_number",
@@ -964,26 +1225,37 @@ def bind_history_reference(current_text, history_records):
         pool = missed or incoming
         if not pool:
             return None, "callback_no_incoming_record"
-        # A name in the current text selects among candidates.
-        named = name_filter(pool, current_text)
-        if not named and _explicit_addressee(current_text) is not None:
-            # The text names an addressee who is NOT in the pool
-            # ("gọi lại cho An" with only Bình missed): the name
-            # has veto power -- binding the single pool record
-            # would call the wrong person (reviewer fix R2-A3).
-            return None, "callback_name_mismatch"
-        if len(named) == 1:
-            return named[0], "callback_unique_match"
-        # Topic / amount disambiguation among the candidates.
+        # Addressee-first selection (fix round, thread A): only
+        # the callback clause's addressee span selects. Names in
+        # other clauses, quotes, or message content do not count.
+        addr = _extract_addressee(current_text)
+        if addr is not None:
+            phrase_raw, phrase_folded = addr
+            named = [r for r in pool
+                     if r.get("name") and _addressee_name_matches(
+                         phrase_raw, phrase_folded, r["name"])]
+            if len(named) == 1:
+                return named[0], "callback_unique_match"
+            if len(named) > 1:
+                return None, "callback_name_ambiguous"
+            kind = _classify_addressee(phrase_raw, phrase_folded)
+            if kind == "family":
+                return _bind_by_relation(phrase_folded[0],
+                                         pool, roster)
+            if kind == "name":
+                # A name addressee matching NOBODY in the pool:
+                # the request selects someone else -- veto, never
+                # fall through to the single-pool fallback.
+                return None, "callback_name_mismatch"
+            # Generic addressee: fall through to the generic flow.
+        # Generic flow (no addressee, or a generic addressee):
+        # topic / amount disambiguation among the candidates.
         # NOTE: no recency shortcut here: "người vừa gọi" with two
         # missed calls does not identify one of them -- recency
         # alone is not a binding (only the explicit "số mới nhất"
         # + time field in the chat-content path binds by recency).
-        # Topic selection runs over the name-narrowed pool, or
-        # over the full pool when no name matched (name filtering
-        # narrows; it must not starve the topic fallback).
         selected, sel_reason = _select_by_topic_amount(
-            current_text, named if named else pool)
+            current_text, pool)
         if selected is not None:
             return selected, "callback_" + sel_reason
         if len(pool) == 1:
@@ -1324,7 +1596,7 @@ def phone_evidence_for(value, session_prefix, roster, current_text=None):
     bound, bind_reason = (None, "no_current_text")
     if current_text:
         bound, bind_reason = bind_history_reference(
-            current_text, history_records)
+            current_text, history_records, roster=roster)
         if bound is not None and bound.get("phone_number") == target:
             if bound.get("kind") == "user_turn":
                 src = "history_text"
@@ -1540,11 +1812,24 @@ def callback_reference_for(call_args, session_prefix, roster=None,
         elif ref_id:
             history_records = list(logs)
             bound, bind_reason = bind_history_reference(
-                current_text, history_records)
+                current_text, history_records, roster=roster)
             if bound is not None \
                     and bound.get("contact_id") == ref_id:
                 b_selected, b_reason = True, \
                     "bound_reference_selects_counterpart"
+            elif bind_reason in (
+                    "callback_name_mismatch",
+                    "callback_name_ambiguous",
+                    "callback_relation_unproven",
+                    "callback_relation_conflict",
+                    "callback_relation_ambiguous",
+                    "callback_relation_selects_other"):
+                # Explicit addressee/relation mismatch: the
+                # request selects someone else (or an unproven
+                # relation). Topic/roster fallbacks must NOT
+                # override it -- a topic word does not rescue a
+                # contradicted addressee (fix round, thread A).
+                b_selected, b_reason = None, bind_reason
             else:
                 # The text may name the roster contact directly
                 # ("Cập nhật số cho An" where An's id is ref_id).

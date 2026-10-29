@@ -324,3 +324,75 @@ tests/test_phone_callback_evidence.py::TestReviewerRound2Fixes):
   CONSUMER_REQUIRES_MEMBERSHIP. Succeeded contacts.update
   membership is covered by the GATE's PATCH_VERIFIED path, not
   by `callback_reference_for` (notes corrected).
+
+## Fix round: name matching + family/relation binding (thread A)
+
+Base: branch gg-phone-callback-lifecycle @ 9e3d827c. Two false
+bindings reproduced on the base via /tmp/repro_r123.py (adapter
+level, both with baseline_fired=True, candidate fired=False,
+question_b=True, bound_reference_selects_counterpart):
+
+- R1: missed call from "Nguyễn An", text "gọi lại cho Nguyễn
+  Bình giúp tôi" -> un-fired. ROOT CAUSE: `_name_matches` matched
+  on ANY shared token (raw or folded set intersection), so the
+  shared surname "Nguyễn" selected "Nguyễn An"; the R2-A3 veto
+  never ran because `named` was non-empty.
+- R2: missed call from "Vy", text "gọi lại cho mẹ giúp tôi" ->
+  un-fired. ROOT CAUSE: "mẹ" sat in the addressee stoplist, so
+  no veto fired, and the callback branch's single-pool fallback
+  (`callback_single_incoming`) bound the only caller. A family
+  word is a selection constraint, not the absence of one.
+
+New question_b contract (module only; verdict shape unchanged):
+- `_name_matches`: FULL PHRASE only. Single-token names match on
+  a diacritic-sensitive exact token (case-insensitive, never
+  folded). Multi-token names match on the full consecutive phrase
+  (raw or folded). A shared surname or common token NEVER matches.
+- Addressee extraction (`_extract_addressee`): quote-stripped
+  text, first callback clause only, span right after the callback
+  verb + optional "cho"/"tới"/"đến", max 3 tokens, cut at clause
+  boundaries and punctuation; title prefixes ("anh Bình") are
+  stripped. Names in other clauses, quotes, or message content
+  are never the addressee. The FIRST callback clause is used; a
+  later correction to another person is thread B's scope.
+- Addressee -> pool matching (`_addressee_name_matches`): exact
+  full name, or a single-token phrase equal to the name's FINAL
+  token (given name) with uniqueness across the pool. A
+  surname-only phrase never matches. A name addressee matching
+  nobody vetoes (callback_name_mismatch); matching several is
+  ambiguous (callback_name_ambiguous). Both skip the topic/roster
+  fallbacks in `callback_reference_for` (a topic word does not
+  rescue a contradicted addressee).
+- Stoplist does not swallow proper names: name-first exact match
+  is checked before generic classification, and bare "minh" (no
+  diacritic) is the name Minh while "mình" (diacritic) is the
+  pronoun.
+- Family addressees ("mẹ", "mạ", "bố", "ba", "vợ", "chồng",
+  "con") go through `_bind_by_relation`, never the single-pool
+  fallback. Relation evidence is ONLY a structured "relation"
+  field: a roster entry's field, or a log record's field
+  (`extract_log_records` now preserves it). Reasons:
+  callback_relation_match / _ambiguous / _selects_other /
+  _conflict / _unproven. Without evidence, question_b is None
+  and the verdict is AMBIGUOUS (sources exist, selection
+  unproven) -- never PROVEN, never a fabricated ask.
+- Generic callbacks ("gọi lại người vừa gọi", "gọi lại giúp
+  tôi", "gọi lại cho em/người/mình") keep the old flow (topic ->
+  single pool -> single missed).
+
+Known paired-gold consequence (for the coordinator to measure,
+NOT papered over): train_1005's current text says "nhắn lại mạ"
+(family addressee) and neither its roster (empty: no
+contacts.search in history) nor its message record carries a
+"relation" field, so under the corrected contract 1005 stops
+un-firing. The dataset's gold knowledge (c_778 is the mother) is
+not runtime-observable; assistant prose attributing the message
+to "Mạ" is deliberately NOT counted as relation evidence (the
+contract admits structured relation fields only). 1033 ("gọi lại
+cho Vy") and 1319 (topic/amount, no callback verb) are
+unaffected by this change at module level.
+
+Tests: tests/test_name_binding.py (29 new). One old test updated
+with citation (test_callback_family_reference_no_veto: old
+single-pool-bind expectation contradicted the new R2 contract).
+All other old suites pass unchanged on both backends.
