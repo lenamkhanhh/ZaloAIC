@@ -25,6 +25,19 @@ Contract pinned (see sft_prototype_report.md for the evidence table):
     NOT implemented: it needs a GPU production-ASR pass that does not
     exist locally (see report §6). Building on ASR text without that
     pass would be fabrication, not a prototype.
+  * Tokenization (FIXED 2026-10-29, see tokenization_fix_notes.md):
+    prompt ids are the RUNTIME chat-template ids, not raw encodes.
+    Runtime llm._render builds messages=[{"role": "user", "content":
+    prompt}] and applies the tokenizer's chat template with
+    add_generation_prompt=True; the builder does exactly that
+    (tokenize=True) and asserts equality with the runtime path
+    encode(rendered_text, add_special_tokens=False). BREAKING CHANGE:
+    step["prompt_token_ids"] now means RENDERED prompt ids; the old
+    raw-encode meaning is deleted, not kept as a fallback. Training
+    input per step = rendered_prompt_ids + target_ids + [EOS];
+    labels = [-100]*len(rendered_prompt_ids) + target_ids + [EOS].
+    Budget uses rendered prompt + 512 reserved output, never the
+    raw prompt length.
 
 Determinism: no randomness anywhere. Selection scans manifest-part
 samples in sorted-id order and takes the first matches per class.
@@ -78,6 +91,9 @@ CONTRACT = {
     "parser": "llm.parse_model_output (one JSON object, optional fence; "
               '{"stop": true} or {"name": "stop"} without arguments -> stop)',
     "stop_target": '{"stop":true}',
+    "tokenization": "chat template rendered prompt ids (llm._render: single user "
+                    "message, add_generation_prompt=True); prompt_token_ids are "
+                    "RENDERED ids, not raw encodes (breaking change 2026-10-29)",
     "eos_token": "<|im_end|>",
     "eos_token_id": 151645,
     "max_steps": 12,
@@ -433,23 +449,79 @@ def build_gold_example(sample: dict, tools: dict, results: list,
 
 # ---------------------------------------------------------------------------
 # Tokenizer subprocess helper (venv python has transformers, no torch).
+#
+# FIXED 2026-10-29 (Codex repro: raw encode != runtime template ids):
+# the OLD helper called tok.encode(text, add_special_tokens=False) on
+# the raw prompt. That helper is DELETED, not kept as a fallback. The
+# new helper tokenizes exactly like runtime llm._render: one user
+# message, chat template, add_generation_prompt=True. It returns, per
+# (prompt, target) pair, the rendered prompt text, the template ids,
+# the runtime-path ids (encode of the rendered text, no special
+# tokens) for an equality assertion, the target ids, and the
+# full-conversation ids as a diagnostic only (see notes: concat is
+# the correct teacher-forcing construction, full-text tokenize adds a
+# trailing newline token after EOS that generation never produces).
+# transformers 5.x apply_chat_template(tokenize=True) returns a
+# BatchEncoding; _ids() accepts both that and a plain list.
 # ---------------------------------------------------------------------------
 TOKENIZER_HELPER = r'''
 import json, sys
 data = json.load(sys.stdin)
 from transformers import AutoTokenizer
 tok = AutoTokenizer.from_pretrained(data["model"], revision=data["revision"], local_files_only=True)
-out = {"eos_token_id": tok.eos_token_id, "eos_token": tok.eos_token, "ids": []}
-for text in data["texts"]:
-    out["ids"].append(tok.encode(text, add_special_tokens=False))
+def _ids(out):
+    return out["input_ids"] if hasattr(out, "keys") else out
+results = []
+for pair in data["pairs"]:
+    prompt, target = pair["prompt"], pair["target"]
+    rendered = tok.apply_chat_template(
+        [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
+    rendered_ids = _ids(tok.apply_chat_template(
+        [{"role": "user", "content": prompt}], tokenize=True, add_generation_prompt=True))
+    runtime_ids = tok.encode(rendered, add_special_tokens=False)
+    full_ids = _ids(tok.apply_chat_template(
+        [{"role": "user", "content": prompt}, {"role": "assistant", "content": target}],
+        tokenize=True, add_generation_prompt=False))
+    results.append({
+        "rendered_prompt": rendered,
+        "rendered_prompt_token_ids": rendered_ids,
+        "runtime_input_ids": runtime_ids,
+        "target_token_ids": tok.encode(target, add_special_tokens=False),
+        "full_conversation_token_ids": full_ids,
+    })
+out = {"eos_token_id": tok.eos_token_id, "eos_token": tok.eos_token, "results": results}
+# Flat "ids" kept ONLY so the pre-existing unit test that passes
+# (prompt, target) pairs positionally keeps unpacking
+# [rendered_prompt_ids, target_ids, ...] with the NEW semantics.
+# It is never raw encode: every entry here is template-based.
+out["ids"] = []
+for r in results:
+    out["ids"].append(r["rendered_prompt_token_ids"])
+    out["ids"].append(r["target_token_ids"])
 print(json.dumps(out))
 '''
 
 
-def batch_tokenize(tokenizer_python: str, model: str, revision: str, texts: list):
+def _as_pairs(texts_or_pairs):
+    """Accept pairs [(prompt, target), ...] or a flat [prompt, target,
+    prompt, target, ...] list (the old test call shape). Returns a list
+    of {"prompt":..., "target":...} dicts. A flat list of odd length
+    is a caller bug, not something to guess at."""
+    if texts_or_pairs and isinstance(texts_or_pairs[0], (list, tuple)):
+        return [{"prompt": p, "target": t} for p, t in texts_or_pairs]
+    if texts_or_pairs and isinstance(texts_or_pairs[0], dict):
+        return texts_or_pairs
+    if len(texts_or_pairs) % 2 != 0:
+        raise BuilderError("batch_tokenize needs (prompt, target) pairs; odd flat list given")
+    return [{"prompt": texts_or_pairs[i], "target": texts_or_pairs[i + 1]}
+            for i in range(0, len(texts_or_pairs), 2)]
+
+
+def batch_tokenize(tokenizer_python: str, model: str, revision: str, texts_or_pairs):
+    pairs = _as_pairs(texts_or_pairs)
     proc = subprocess.run(
         [tokenizer_python, "-c", TOKENIZER_HELPER],
-        input=json.dumps({"model": model, "revision": revision, "texts": texts}),
+        input=json.dumps({"model": model, "revision": revision, "pairs": pairs}),
         capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
         raise BuilderError(f"tokenizer subprocess failed: {proc.stderr[-500:]}")
@@ -458,21 +530,63 @@ def batch_tokenize(tokenizer_python: str, model: str, revision: str, texts: list
 
 def attach_token_data(example: dict, token_data: dict, text_index: dict,
                       max_context_tokens: int = 16384):
-    """Attach per-step token ids/counts and budget verdict. text_index
-    maps id(text) -> position in the batch; texts were submitted as
-    prompt, target pairs per step in order. max_context_tokens is a
-    test hook (default = the runtime budget); an over-budget example
-    is DROPPED by the caller, never truncated."""
+    """Attach per-step token ids/counts, input_ids, labels and budget
+    verdict. Production input (main) always passes token_data with a
+    "results" list (one entry per (prompt, target) pair) and a
+    text_index mapping ("p"/"t", sample_id, step) -> pair position.
+    A legacy flat "ids" shape is still accepted ONLY for the
+    pre-existing synthetic budget unit test, which feeds fake ids and
+    checks budget logic, not tokenization; main() never builds that
+    shape, so it is not a raw-encode fallback in production.
+    Budget: rendered prompt + 512 reserved <= max_context AND full
+    training sequence <= max_context; over-budget examples are
+    DROPPED by the caller, never truncated. An EOS inside target ids
+    is a token error (would duplicate EOS); the caller drops the
+    example with reason token_error."""
     eos = token_data["eos_token_id"]
+    errors = []
     for step in example["steps"]:
-        p_ids = token_data["ids"][text_index[("p", example["sample_id"], step["step"])]]
-        t_ids = token_data["ids"][text_index[("t", example["sample_id"], step["step"])]]
-        step["prompt_tokens"] = len(p_ids)
-        step["target_tokens"] = len(t_ids)
-        step["prompt_token_ids"] = p_ids
+        pos = text_index[("p", example["sample_id"], step["step"])]
+        if "results" in token_data:
+            item = token_data["results"][pos]
+            if text_index[("t", example["sample_id"], step["step"])] != pos:
+                raise BuilderError("token index mismatch: prompt/target pair positions differ")
+            r_ids = item["rendered_prompt_token_ids"]
+            if r_ids != item["runtime_input_ids"]:
+                raise BuilderError(
+                    f"template ids != runtime ids for {example['sample_id']} step {step['step']}: "
+                    "refusing to build training ids that do not match runtime")
+            step["rendered_prompt"] = item["rendered_prompt"]
+            t_ids = item["target_token_ids"]
+            concat = r_ids + t_ids + [eos]
+            step["full_conversation_match"] = (concat == item["full_conversation_token_ids"])
+            step["full_conversation_extra"] = (
+                item["full_conversation_token_ids"][len(concat):]
+                if item["full_conversation_token_ids"][:len(concat)] == concat else None)
+        else:  # legacy fake-id shape (synthetic budget test only)
+            ids = token_data["ids"]
+            r_ids = ids[text_index[("p", example["sample_id"], step["step"])]]
+            t_ids = ids[text_index[("t", example["sample_id"], step["step"])]]
+            step["rendered_prompt"] = None
+            step["full_conversation_match"] = None
+            step["full_conversation_extra"] = None
+        if eos in t_ids:
+            errors.append({"step": step["step"], "reason": "eos_in_target"})
+        step["prompt_token_ids"] = r_ids  # BREAKING: rendered ids, not raw (see notes)
+        step["rendered_prompt_token_ids"] = r_ids
+        step["prompt_tokens"] = len(r_ids)
         step["target_token_ids"] = t_ids
-        step["sequence_tokens"] = len(p_ids) + len(t_ids) + 1
+        step["target_tokens"] = len(t_ids)
+        step["input_ids"] = r_ids + t_ids + [eos]
+        step["labels"] = [-100] * len(r_ids) + t_ids + [eos]
+        step["sequence_tokens"] = len(step["input_ids"])
         step["eos_token_id"] = eos
+        # Construction invariants (fail loudly, never ship bad labels):
+        assert step["labels"][:len(r_ids)] == [-100] * len(r_ids), "prompt tokens must be masked"
+        assert step["labels"][len(r_ids):-1] == t_ids, "target tokens must not be masked"
+        assert step["labels"][-1] == eos and step["input_ids"][-1] == eos, "exactly one EOS at end"
+        assert len(step["labels"]) == len(step["input_ids"]), "labels/input length mismatch"
+    example["token_errors"] = errors
     over = [s["step"] for s in example["steps"]
             if s["prompt_tokens"] + CONTRACT["max_new_tokens"] > max_context_tokens
             or s["sequence_tokens"] > max_context_tokens]
@@ -606,14 +720,14 @@ def main(argv=None) -> int:
 
     token_status = "unchecked (no --tokenizer-python)"
     if args.tokenizer_python:
-        texts, index = [], {}
+        pairs, index = [], {}
         for ex in examples:
             for st in ex["steps"]:
-                index[("p", ex["sample_id"], st["step"])] = len(texts)
-                texts.append(st["prompt"])
-                index[("t", ex["sample_id"], st["step"])] = len(texts)
-                texts.append(st["target"])
-        token_data = batch_tokenize(args.tokenizer_python, args.model, args.revision, texts)
+                pos = len(pairs)
+                pairs.append({"prompt": st["prompt"], "target": st["target"]})
+                index[("p", ex["sample_id"], st["step"])] = pos
+                index[("t", ex["sample_id"], st["step"])] = pos
+        token_data = batch_tokenize(args.tokenizer_python, args.model, args.revision, pairs)
         kept = []
         for ex in examples:
             attach_token_data(ex, token_data, index,
@@ -622,6 +736,9 @@ def main(argv=None) -> int:
                 dropped.append({"sample_id": ex["sample_id"],
                                 "reason": "token_budget_exceeded",
                                 "steps": ex["token_budget_over_steps"]})
+            elif ex.get("token_errors"):
+                dropped.append({"sample_id": ex["sample_id"],
+                                "reason": f"token_error: {ex['token_errors']}"})
             else:
                 kept.append(ex)
         examples = kept
