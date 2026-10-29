@@ -11,11 +11,13 @@ KHÔNG sửa MEMORY.md trong task này.
 
 | File (repo-relative) | Nội dung | SHA256 (local, trước push) |
 |---|---|---|
-| research/lifemate/context_handoff_2026-10-30_287e68d5.md | Tài liệu bàn giao đầy đủ (9 mục + TOC + bảng trạng thái + checklist + unknown + tóm tắt + Phụ lục A cross-check) | 206bda395175683ccc97c63cc4c2f42bc2c011613892b4df2046f71f62031b54 |
-| research/lifemate/context_handoff_2026-10-30_287e68d5.manifest.md | Manifest này (đã cập nhật cho bản sửa đổi 1) | (xem blob SHA sau push — manifest không thể chứa SHA của chính commit chứa nó, cùng self-reference note như các báo cáo trước) |
+| research/lifemate/context_handoff_2026-10-30_287e68d5.md | Tài liệu bàn giao đầy đủ (9 mục + TOC + bảng trạng thái + checklist + unknown + tóm tắt + Phụ lục A cross-check + Phụ lục B measurements) | 95d9ad10ca5ee61da2f62253da27ef4ed304e352b4a1d9511e79662bc1eb5dff |
+| research/lifemate/context_handoff_2026-10-30_287e68d5.manifest.md | Manifest này (đã cập nhật cho bản sửa đổi 2) | (xem blob SHA sau push — manifest không thể chứa SHA của chính commit chứa nó, cùng self-reference note như các báo cáo trước) |
 
-Kích thước tài liệu: 1441 dòng (bản sửa đổi 1; bản gốc push 47424307 là 1365 dòng,
-SHA256 cũ 123c6f87689d3f042f902cd33be419b7f106d3a607834408319f63ad3ad10b8e).
+Kích thước tài liệu: 1590 dòng (bản sửa đổi 2; bản sửa đổi 1 là 1441 dòng, SHA256
+206bda395175683ccc97c63cc4c2f42bc2c011613892b4df2046f71f62031b54; bản gốc push
+47424307 là 1365 dòng, SHA256 cũ
+123c6f87689d3f042f902cd33be419b7f106d3a607834408319f63ad3ad10b8e).
 
 ## Bản sửa đổi 1 (2026-10-30, sau push 47424307)
 
@@ -25,6 +27,19 @@ Phụ lục A trong tài liệu (V10 agent lineage, grounding A2E chi tiết, co
 True, ASR/LLM full SHA từ trace metadata, trace usage field, decision breakdowns
 V10/V11, quan hệ gg_shadow/model_trace_shadow, ASR backends trích từ luồng pipeline).
 Không thay đổi kết luận chính, số paired/shadow, adoption bar hay điều kiện dừng.
+
+## Bản sửa đổi 2 (2026-10-30, sau amend 1)
+
+Luồng bằng chứng measurements bàn giao; điều phối viên spot-check trực tiếp các số
+shadow từ output C10 và verify trực tiếp qua API 5 SHA trước khi đưa vào tài liệu.
+Nội dung sửa đổi: xem Phụ lục B trong tài liệu (paired by-group, E7 delta scope +
+scope hiệu chính, SFT v2 chi tiết, shadow chi tiết, government review 18/18,
+cập nhật branch-tip). **Hiệu chính quan trọng nhất: adoption bar leg 2 KHÔNG KẾT
+LUẬN ĐƯỢC cho tới khi pin định nghĩa "correct-block situations"** — train_0004 là
+correct_pass control, không phải block; đọc any-block → V13 một mình đã 9 (ĐẠT),
+đọc adapter-contributed → 2 (CHƯA ĐẠT), đọc adapter-only → 0 (CHƯA ĐẠT). Bản đầu
+ghi "FAILS" là sai nếu hiểu theo nghĩa any-block. Không thay đổi kết luận về G&G
+audit-only, số paired/shadow, hay điều kiện dừng R4.
 
 ## Source pins (đã đối chiếu trực tiếp trong task bàn giao)
 

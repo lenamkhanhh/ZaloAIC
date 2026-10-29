@@ -5,7 +5,9 @@ Tài liệu tự chứa cho Codex. Ngày bàn giao: 2026-10-30. Commit được 
 Trạng thái: **bản final — đã đối chiếu trực tiếp code/API/test trong task bàn giao
 ngày 2026-10-30; mọi điểm chưa xác minh được đều ghi rõ UNKNOWN hoặc "trích kết quả
 cũ" kèm nguồn, không đoán. Bản sửa đổi 1 (2026-10-30, sau push 47424307): bổ sung
-cross-check từ luồng pipeline — xem Phụ lục A.**
+cross-check từ luồng pipeline — xem Phụ lục A. Bản sửa đổi 2 (2026-10-30, sau amend
+1): bổ sung cross-check từ luồng measurements + HIỆU CHÍNH adoption bar leg 2
+(không kết luận được cho tới khi pin định nghĩa) — xem Phụ lục B.**
 
 Quy ước đọc:
 - `fired=True` = gate chặn (hướng an toàn), `fired=False` = un-fire (cho qua).
@@ -33,6 +35,7 @@ Quy ước đọc:
 - [Thông tin chưa biết / cần Codex cung cấp](#thông-tin-chưa-biết--cần-codex-cung-cấp)
 - [Tóm tắt (≤15 dòng)](#tóm-tắt)
 - [Phụ lục A — Cross-check từ luồng pipeline (2026-10-30)](#phụ-lục-a--cross-check-từ-luồng-pipeline-2026-10-30)
+- [Phụ lục B — Cross-check từ luồng measurements (2026-10-30)](#phụ-lục-b--cross-check-từ-luồng-measurements-2026-10-30)
 
 ## Bảng trạng thái tổng hợp (đọc nhanh)
 
@@ -53,7 +56,7 @@ Quy ước đọc:
 | SFT prototype | CPU prototype + validator + fix report; CHƯA train; base PROVISIONAL; chờ câu hỏi BTC |
 | Tăng điểm end-to-end (proxy hay thật) | CHƯA chứng minh ở bất kỳ mức nào (xem §6.7) |
 | Điều kiện dừng R4 (2 batch sạch liên tiếp) | CHƯA đạt (clean count = 0; batch 11 có 1 SERIOUS mở) |
-| Hard-enforce | KHÔNG sẵn sàng (adoption bar fail chân thứ hai: independent positives = 1) |
+| Hard-enforce | KHÔNG sẵn sàng (adoption bar leg 2 chưa kết luận được — định nghĩa "correct-block situations" chưa pin, xem §6.7) |
 
 ## 1. Chốt danh tính nguồn
 
@@ -668,7 +671,8 @@ quyết trong runtime".
 
 **A1. Bật chặn trong runtime (hard-enforce).**
 Bằng chứng: R4 brief cấm ("do NOT wire prover lifecycle or enable hard-enforce");
-adoption bar §4.5 chưa đạt (xem §6.7). Ảnh hưởng: gate không bảo vệ model thật.
+adoption bar leg 2 chưa kết luận được vì định nghĩa "correct-block situations" chưa
+được pin (xem §6.7). Ảnh hưởng: gate không bảo vệ model thật.
 CPU được không: hook là CPU, nhưng chứng minh non-interference cần chạy model
 (GPU) on/off. Ai: user quyết định sau khi bar đạt; Codex implement hook + flag OFF
 trước. Dependency: B1 + adoption bar. Hoàn thành khi: bar đạt + on/off diff sạch +
@@ -751,7 +755,11 @@ red-team không tìm ra leak mới.
 
 **D1. E7 guard readiness (CPU_NOT_READY — KHÔNG phải E7 REFUTED).**
 Bằng chứng: E7 Phase 0 shadow audit (trích kết quả cũ): dev gold 31 ALLOW, 428
-UNKNOWN, 0 BLOCK → positive coverage 6.75%; parser unchanged trong E7. Ảnh hưởng:
+UNKNOWN, 0 BLOCK → positive coverage 6.75% (31/459). HIỆU CHÍNH SCOPE (luồng
+measurements, đã đối chiếu scope_note): 31/428 này thuộc về E7 ORIGINAL scope
+(459 writes / 511 args), "came from Codex guard code not in this repo and cannot be
+reproduced exactly" — KHÔNG phải scope round 3 (456 writes / 533 args) và KHÔNG
+được dùng scope gốc đó làm baseline tái lập. Parser unchanged trong E7. Ảnh hưởng:
 guard như đặc tả không đủ coverage để đánh giá bằng GPU. CPU: CÓ (redesign/thu hẹp
 hoặc mở rộng evidence). Ai: Muse redesign → user duyệt GPU run sau. Dependency:
 không chạy GPU khi chưa CPU-ready. Hoàn thành khi: CPU audit cho coverage đủ cao +
@@ -843,7 +851,7 @@ riêng: re-measure trên dev + proxy của mình).
   kết quả cũ), zaic_tools/. DataMate: `~/workspace/zaic-data/datamate/` (extracted/,
   public_test.zip, train.zip). Không push raw data lên nhánh (đúng quy tắc).
 
-### 6.2 SFT inner split (trích kết quả cũ — manifest v2)
+### 6.2 SFT inner split (manifest v2 — đã verify)
 
 - Inner split v1 giữ nguyên làm control (không đụng). Manifest v2: inner_train 866 /
   val 185 / test 186; effective train 865 eligible; chỉ train_1696 ineligible
@@ -854,8 +862,9 @@ riêng: re-measure trên dev + proxy của mình).
 - Contract pinned PROVISIONAL `a2e832b-text`. H1 ("pure SFT only learns ask form")
   là hypothesis chưa chứng minh; D1-lite là falsifiable pilot; DPO conditional only.
 - Manifest v2 (đã verify trong task này qua GitHub API directory listing + đọc đầu
-  file): `analysis/overnight_capability_audit/inner_split_seed1337_v2.json` trên nhánh
-  sft-prototype-v2 (280,662 bytes; generator
+  file + verify SHA trực tiếp): `analysis/overnight_capability_audit/inner_split_seed1337_v2.json`
+  trên nhánh sft-prototype-v2 (280,662 bytes; SHA remote
+  `b337afe02719ba7b3bb40af31ae36a9853e58bf5`; generator
   `analysis/overnight_capability_audit/generate_inner_split_v2.py`; version "v2";
   seed 1337; base = v1 `inner_split_seed1337.json` FROZEN, "v1 population was
   dev-minus-quarantine = 1233"; population = "full dev 1237 (quarantine returned to
@@ -867,8 +876,24 @@ riêng: re-measure trên dev + proxy của mình).
   (866 − 1, vì train_1696 nằm trong inner_train). Cả hai đều đúng, khác universe.
   File cũng ghi `near_duplicate_group_whole_to_train` (vd train_0061/0066/0168 —
   near-duplicate groups đi nguyên nhóm vào train).
+- Chi tiết membership (luồng measurements, đã đối chiếu `split_v2_diff.md` +
+  `overnight_capability_decision_v2.md:67-81`): `assignment` dict 1237 sample-id →
+  part; stratified random split seed 1337 trên full dev; tỉ lệ kind/history/rbw mỗi
+  part trong ±2pp của population; partition disjoint = True, held-out ids = 0;
+  audio content-disjoint giữa các part (4033 referenced dev audio paths, 0 collision,
+  0 cross-part collision — chỉ dev audio, held-out không đụng tới). V1 khác v2:
+  v1 = 863/185/185 trên population 1233 (quarantine 4 sample bị loại trước split);
+  v2 trả 4 sample về pool → moved part 124 (10.1%), added 4, removed 0.
+- Lý do loại train_1696 (cơ chế, không kèm ID dataset cụ thể): gold trajectory của
+  nó chứa một failing call (gửi message tới một chat không có trong kết quả list_chats
+  trước đó → ok True, done False) nên không qua được D1 all-succeed construction
+  filter; 1696 vẫn giữ assignment inner_train và giữ trong evaluation với anomaly
+  flag, nhưng bị loại khỏi training → effective train 865 = 866 assigned − 1696.
+  Val/test 100% eligible.
 - sft_prototype_local.json: local-only, KHÔNG BAO GIỜ push, KHÔNG đưa vào bàn giao
-  này (đã xác nhận sự tồn tại theo quy tắc, không đọc nội dung).
+  này (đã xác nhận sự tồn tại ở local; luồng measurements xác nhận KHÔNG có trên
+  nhánh sft-prototype-v2 qua API get_file_contents trả lỗi "path does not exist";
+  không đọc nội dung).
 
 ### 6.3 Các con số 976 / 533 / 276 — scope + commit (đã verify nguồn trong task này)
 
@@ -884,12 +909,21 @@ lifemate/splits/train_dev_heldout.json --lifemate-dir <dir containing lifemate/*
 Kết quả (C10, trích kết quả cũ): applicable 976/976; baseline fired 15/976 (1.54%);
 candidate fired 2/976 (0.20%); 13 decision changes (un-fires); synthetic control
 976/0 (candidate-with-empty-evidence phải fire khi applicable, else pass vacuously);
-0 errors. Backend: CPU (ToolEnv replay). Giới hạn diễn giải: gold trajectories +
+0 errors. Theo nhóm reference (trích output C10, luồng measurements đã đối chiếu):
+phone 19 (baseline fired 11 → candidate 0), contact 107 (3 → 1), other_ids 850
+(1 → 1). Backend: CPU (ToolEnv replay). Script pin (đã verify trực tiếp qua API
+trong task này): `analysis/gg_paired_audit.py` tại commit 287e68d5, SHA remote
+`4a94fa942cf9b28ac87d99134d0c10c462c21467`. Giới hạn diễn giải: gold trajectories +
 dataset transcripts (KHÔNG phải model ASR transcripts — shadow mới dùng ASR);
 gold-match ≠ valid positive (prerequisites phải thỏa tại model prefix, else
 "gold_match_but_prerequisite_skipped"); script KHÔNG adjudicate (coordinator adjudicate
-từng change từ adjustment trail). Nhóm reference: phone / contact / other-ids;
+từng change từ adjustment trail) — vì vậy 13 un-fires là *decision changes*, KHÔNG
+PHẢI chứng minh un-fire đúng (cảnh báo trực tiếp từ docstring của script).
+Nhóm reference: phone / contact / other-ids;
 anomaly train_1696 báo cáo riêng AND trong with/without sensitivity line.
+UNKNOWN nhỏ: câu lệnh CLI đầy đủ mà C10 đã chạy (đường dẫn --data-root/--lifemate-dir
+cụ thể) KHÔNG được ghi trong output JSON paired — chỉ biết script usage + lifemate-dir
+là frozen v10 theo brief C10.
 Fired rows cuối (candidate): train_1005 pos 1 (contact) + train_1696 pos 2 (other_ids
 anomaly). 13 un-fires: 0451, 0502, 0579, 0657, 0664, 0676, 0746, 0764, 0776, 0872,
 1033, 1319, 1677 (IDs, không kèm nội dung).
@@ -897,7 +931,15 @@ anomaly). 13 un-fires: 0451, 0502, 0579, 0657, 0664, 0676, 0746, 0764, 0776, 087
 **E7 prover audit: 456 writes / 533 args / 276 PROVEN.**
 Nguồn: `research/lifemate/round10-fix-report-round3.md` §4.1, commit thuộc nhánh
 round10-provenance-gates-fixes @ 61d84390 (report tự ghi không thể chứa SHA của chính
-commit chứa nó — cùng self-reference note như báo cáo R4).
+commit chứa nó — cùng self-reference note như báo cáo R4). Pins đã verify trực tiếp
+qua API trong task này: report round 3 tại commit 287e68d5 có SHA
+`328a74a49d0d24a8eba6196a24b49ed34458a2d3`; script `analysis/e7_dag_shadow_audit.py`
+tại cùng commit có SHA `c50ecafc11a70ed80479789456c170babe0e30ae`. Delta scope
+(Round 2 → Round 3, theo report dòng 235): loại 23 rows (lottery.check_ticket 9,
+exchange_rate.convert 8, sms.read_recent 1, tv.guide 1 theo unique-key) + 4 relabel
+history_reference AMBIGUOUS → UNPROVEN; "các fix prover thay đổi ZERO gold proof."
+Output JSON của E7 audit (default /tmp) KHÔNG tìm thấy trong task này — nên 533/276
+là **trích từ report round 3, không chạy lại**, đừng trình bày như tái lập.
 Scope: dev gold calls có catalog kind = write, ≥1 monitored arg, trừ
 `sys.ask_missing_info`: **456 writes / 533 args** (value 426, contact 107).
 Kind classification: catalog. Kết quả Round 3 (kind scope) vs Round 2 (verb scope):
@@ -968,9 +1010,17 @@ sánh trực tiếp hai con số như cùng một phép đo.
 ### 6.6 V10 / V11 / V13 — input / transcript / history
 
 - V10: trace `analysis/runtime/e1_v10_diagnostic_trace.json` (committed, tồn tại trong
-  frozen v10). V11: `analysis/runtime/e6_c_v11_diagnostic_trace.json`. V13:
-  `analysis/runtime/e5_v13_diagnostic_trace.json`. (Các file này KHÔNG phải T2 raw
-  traces đã mất — xem D5.)
+  frozen v10; 56,287 bytes). V11: `analysis/runtime/e6_c_v11_diagnostic_trace.json`
+  (60,485 bytes). V13: `analysis/runtime/e5_v13_diagnostic_trace.json` (138,202 bytes).
+  (Các file này KHÔNG phải T2 raw traces đã mất — xem D5.) Script pin (đã verify trực
+  tiếp qua API trong task này): `analysis/gg_shadow.py` (909 dòng) tại commit 287e68d5,
+  SHA `a97a0c281cf67c981bdb97f5b168853f8c45b181`. Evidence labels trong traces:
+  NOT_BENCHMARK (V10: E1_NATIVE_VS_TEXT_DIAGNOSTIC; V11: E6_C_PARSER_ONLY_DIAGNOSTIC;
+  V13: E5_REMINDER_RULE_DIAGNOSTIC); dataset identity 876,430,231 bytes.
+  Generations (đếm từ trace summaries, luồng measurements): V10 38 (ask 5, read 8,
+  write 14, no_call 11); V11 37 (ask 2, read 10, write 10, no_call 13, invalid 2);
+  V13 78 (write 29, invalid 4, no_call 33, read 7, ask 5). Row = write proposal nên
+  rows = write counts (14/10/29).
 - Input theo docstring gg_shadow.py (đã verify trong task này bằng cách đọc script):
   current text = trace's model_current_transcript (model nhận được, KHÔNG phải gold
   audio_text); history user texts = trace's history_asr (theo u-number order);
@@ -984,6 +1034,24 @@ sánh trực tiếp hai con số như cùng một phép đo.
   decision từ output C v10 (trích output cũ, chưa chạy lại): V10 passed 8 / blocked 6;
   V11 passed 4 / blocked 6; V13 blocked 16 / passed 6 / out-of-scope-guard 7 (khớp
   regression control trong docstring gg_shadow.py).
+  Adjudications (điều phối viên đã spot-check trực tiếp từ output C10
+  `c_verify_shadow_v10_{v10,v11,v13}.json` — summary + rows, không đọc nội dung):
+  V10 correct_block 6 / false_block 0 / correct_pass 3 / miss 5 / out_of_scope 0
+  (adjudicated n=14, precision 1.0, recall 0.545); V11 correct_block 6 / false_block 0 /
+  correct_pass 2 / miss 2 / out_of_scope 0; V13 correct_block 16 / false_block 0 /
+  correct_pass 0 / miss 6 / out_of_scope 7 (adjudicated n=22, precision 1.0, recall
+  0.727). Monitored calls/args/proven: V10 10/10/4; V11 8/8/2; V13 16/19/0.
+  g2_applicable/g2_fired/g2_candidate_fired: V10 13/1/1; V11 8/2/2; V13 8/2/2.
+  independent_positive_count: V10 1 (train_0004), V11 1 (train_0004, cùng sample),
+  V13 0. safety_conclusion cả 3 version: "insufficient evidence".
+  Precision/recall chỉ tính trên adjudicated subset (loại out_of_scope +
+  insufficient_evidence). "Blocked" ở đây = G2 fired HOẶC bất kỳ monitored arg nào
+  UNPROVEN/AMBIGUOUS — tức bao gồm cả prover, không chỉ adapter (g2_candidate_fired
+  tách riêng như trên). Shadow inputs hiện tại CHẠY ĐƯỢC về mặt input (traces nằm
+  trong repo, script có trong repo, chỉ cần thêm train.jsonl + split từ local data
+  dir) — cái đã mất ở /tmp là raw trace t2_v10/t2_v11 (chi tiết native-level), KHÔNG
+  phải shadow inputs; tuy nhiên các con số shadow trong mục này là trích output C10,
+  không chạy lại trong task này.
 - Trace metadata (chỉ đọc metadata, không đọc nội dung trace): cả 3 traces đều có
   field `usage = 'DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT'` — trace là diagnostic-only,
   không bao giờ là agent input. Đừng viết "trace chạy trên agent a2e832b": trace sinh
@@ -1039,17 +1107,44 @@ sánh trực tiếp hai con số như cùng một phép đo.
 
 ### 6.7 Independent positives + adoption bar + tăng điểm
 
-- Independent positive (định nghĩa từ lifecycle report §4.5 + capability audit):
-  một "correct block" trên model proposal sai, mà guard chặn đúng với đủ evidence,
-  trên một sample độc lập với các sample khác (variants của một fixture KHÔNG tính
-  là nhiều positive độc lập). Đếm hiện tại: **1 (train_0004)** — trích kết quả cũ.
-- Adoption bar (trích nguyên văn lifecycle report §4.5): "guard false-block <= 2%
-  Wilson upper <= 5% AND correct blocks on >= 3 independent situations".
-  Trạng thái: **FAILS on the second leg** (chỉ 1 < 3). Chân thứ nhất: candidate
-  false-block 2/976 = 0.20% (point estimate); tính nhẩm Wilson 95% upper ≈ 0.7%
-  (dưới 5%) — con số này là tính nhẩm của người viết bàn giao, CHƯA phải số audit;
-  Codex tự tính lại nếu cần dùng làm bằng chứng. Các báo cáo ghi failure ở chân thứ
-  hai, không ghi failure ở chân thứ nhất.
+**HIỆU CHÍNH QUAN TRỌNG (bản sửa đổi 2): kết luận "FAILS on the second leg" trong
+bản đầu là DEFINITION-DEPENDENT và phải đình chỉ cho tới khi định nghĩa được pin.
+Bằng chứng trực tiếp từ output C10 (`c_verify_shadow_v10_{v10,v11,v13}.json`,
+điều phối viên đã đọc summary + rows, không đọc nội dung):**
+
+- Script metric `independent_positive_count` (DISTINCT sample có ≥1 correct write
+  proposal; arms/versions của cùng sample không tính gộp): V10 = 1 (train_0004),
+  V11 = 1 (train_0004, cùng sample), V13 = 0. **Kiểm tra trực tiếp rows của
+  train_0004: TẤT CẢ đều là `correct_pass` (passed), KHÔNG PHẢI `correct_block`.**
+  Tức metric này đếm positive-control samples (proposal đúng và được cho qua đúng),
+  không phải blocks. Lifecycle report §4.5 dùng chính con số 1 (train_0004) này làm
+  bằng chứng "FAILS on the second leg" — nhưng train_0004 không phải là một block,
+  nên cách dùng đó không đứng được như một đếm correct-block.
+- Correct_block samples (bất kỳ blocker nào — prover, G2, hay adapter): V10 = 3
+  (0016, 0049, 0116), V11 = 3 (cùng 3 sample), V13 = 9 (0116, 0219, 0220, 0287, 0353,
+  0360, 0683, 0780, 0823).
+- Adapter-contributed correct blocks (correct_block AND g2_candidate_fired): V10 = 1
+  row / 1 sample (0116), V11 = 2 rows / 1 sample (0116, hai arms — không độc lập),
+  V13 = 2 rows / 2 samples (0116, 0287). Union = {0116, 0287} = **2 distinct samples**.
+  Adapter-only correct blocks (chỉ adapter chặn, không có g2/prover cùng chặn):
+  **0 trong cả 3 versions** (trích từ luồng measurements: mọi adapter-contributed row
+  đều có blocked_by gồm g2 và prover).
+- Hệ quả cho bar "correct blocks on >= 3 independent situations":
+  - Đọc any-block (guard = toàn hệ thống prover + G2 + adapter): V13 một mình đã có
+    9 distinct samples → leg 2 ĐẠT.
+  - Đọc adapter-contributed: 2 < 3 → leg 2 CHƯA ĐẠT.
+  - Đọc adapter-only: 0 → leg 2 CHƯA ĐẠT.
+  - Đọc independent_positive_count (như lifecycle report đã dùng): 1 < 3 → leg 2
+    CHƯA ĐẠT, nhưng metric này đếm positive controls chứ không phải blocks nên
+    không phải là đọc đúng cho "correct-block situations".
+- **Kết luận sửa đổi: leg 2 KHÔNG KẾT LUẬN ĐƯỢC cho tới khi user/Codex pin định
+  nghĩa "correct-block situations" là lượng nào trong ba lượng trên.** Bản đầu ghi
+  "FAILS" là sai nếu hiểu theo nghĩa any-block, và thiếu cơ sở nếu hiểu theo nghĩa
+  independent_positive_count. Đừng trích "bar chưa đạt" hay "bar đã đạt" cho leg 2
+  nếu chưa pin định nghĩa (xem §Thông tin chưa biết). Chân thứ nhất không bị ảnh
+  hưởng bởi hiệu chính này: candidate false-block 2/976 = 0.20% (point estimate);
+  tính nhẩm Wilson 95% upper ≈ 0.7% (dưới 5%) — con số này là tính nhẩm của người
+  viết bàn giao, CHƯA phải số audit; Codex tự tính lại nếu cần dùng làm bằng chứng.
 - **Tăng điểm end-to-end: CHƯA chứng minh ở bất kỳ mức nào.** Không có e2e run với
   gate on/off; không có proxy delta nào thuộc về gate. Các số sau KHÔNG phải gate gains
   (đừng trích sai): E1 V10 proxy 0.125 → 0.1875 là thí nghiệm prompt/format (không phải
@@ -1126,6 +1221,10 @@ rõ ràng trong B reports).
    muốn test baseline-gate behaviour trên log records thì dùng history-origin records.
 6. Joint veto preempt: khi B veto, joint veto không được quan sát (veto của B đã
    đủ) — muốn test joint veto thì cần B không veto + selection unknown.
+7. Government review (C10): các case government (và-chain, rồi-no-chain,
+   fragment/rejected không phá government) đi qua đúng nhánh đã kiểm chứng trong C10
+   (government review 18/18) — trích từ luồng measurements; đừng dùng các case
+   preempt ở mục 1–2 làm bằng chứng cho government rule hay substring rule.
 
 ### 7.5 Final review + stop condition
 
@@ -1137,9 +1236,13 @@ rõ ràng trong B reports).
   phủ định "This report is NOT a GO"). Reviewer KHÔNG chạy lại suites (dựa vào SHA
   chain: remote SHA == local SHA của file C v10 đã chạy). PASS này là checkpoint
   verification, KHÔNG phải phê duyệt hard-enforce.
-- Không có commit nào sau 287e68d5 trên nhánh (đã verify qua list_commits) → không
-  có post-review change nào cần re-review. Quy tắc: bất kỳ push nào sau commit này
-  cũng cần review mới trước khi được coi là checkpoint.
+- Không có commit nào sau 287e68d5 trên nhánh TẠI THỜI ĐIỂM final review (đã verify
+  qua list_commits lúc đó) → không có post-review change nào cần re-review cho
+  checkpoint 287e68d5. Quy tắc: bất kỳ push nào sau commit này cũng cần review mới
+  trước khi được coi là checkpoint. **Cập nhật sau review:** các push handoff
+  (47424307: tài liệu + manifest gốc; 4c914bc8: amend 1 pipeline cross-check) là
+  doc-only, không đổi code; branch tip hiện tại sẽ là commit amend mới nhất (xem
+  manifest), không phải 287e68d5 — đừng trích "tip = 287e68d5" sau các push handoff.
 - **Stop condition R4: CHƯA đạt.** Cần HAI batch sạch liên tiếp trên frozen candidates.
   Lịch sử: batch 4 sạch (#1 chuỗi cũ) → batch 5 reset (4 SERIOUS) → batch 6 (3) →
   batch 7 (2) → batch 8 sạch (#1 chuỗi mới) → batch 9 reset (1) → batch 10 (1) →
@@ -1333,7 +1436,8 @@ bàn giao này (user cấm) — đây chỉ là kế hoạch cho Codex / phiên 
     construction mới chứng minh chúng sai.
 11. **Điều kiện thử shadow runtime:** hook + flag OFF + logging đầy đủ + on/off diff
     sạch trên dev mẫu (không held-out). **Điều kiện cân nhắc bật chặn (hard-enforce):**
-    adoption bar đạt (false-block Wilson upper ≤ 5% + ≥ 3 independent correct-blocks)
+    adoption bar đạt SAU KHI định nghĩa leg 2 được pin (false-block Wilson upper ≤ 5%
+    + ≥ 3 independent correct-blocks THEO ĐỊNH NGHĨA ĐÃ PIN — xem §6.7)
     + non-interference diff sạch + user approval riêng. Hiện tại: KHÔNG đạt — đừng bật.
 
 ## Checklist cho Codex
@@ -1388,6 +1492,14 @@ bàn giao này (user cấm) — đây chỉ là kế hoạch cho Codex / phiên 
    do Muse hay Codex làm (C1/C2).
 10. **Ngân sách GPU cho các bước cần model runs** (shadow on/off diff, E7 40-trial sau
     khi CPU-ready, benchmark D6) — cần user xác nhận trước khi chạy.
+11. **Pin định nghĩa adoption-bar leg 2 (QUAN TRỌNG — xem §6.7):** "correct-block
+    situations" nghĩa là (a) any-block (guard toàn hệ thống: V13 một mình đã 9 → ĐẠT),
+    (b) adapter-contributed (union 2 → CHƯA ĐẠT), hay (c) adapter-only (0 → CHƯA
+    ĐẠT)? Và vai trò của train_0004 (correct_pass control) trong bar gốc là gì?
+    Không được tuyên bố leg 2 ĐẠT hay CHƯA ĐẠT nếu chưa pin định nghĩa này (user
+    hoặc Codex cùng user chốt).
+12. **Câu lệnh CLI đầy đủ mà C10 đã chạy cho paired audit** (đường dẫn --data-root /
+    --lifemate-dir cụ thể) — không được ghi trong output JSON paired (xem §6.3).
 
 ## Phụ lục A — Cross-check từ luồng pipeline (2026-10-30)
 
@@ -1423,6 +1535,42 @@ UNKNOWN (prompt template từ initial_prompt_sha256; paired 976 không chạy l�
 luồng đó) đã được tài liệu chính xử lý: 976 ghi "trích kết quả cũ" từ C10 (§6.3),
 prompt hash không được dùng làm bằng chứng nội dung.
 
+## Phụ lục B — Cross-check từ luồng measurements (2026-10-30)
+
+Sau amend 1, luồng bằng chứng measurements đã bàn giao; điều phối viên đã spot-check
+trực tiếp các số shadow từ output C10 và verify trực tiếp qua API 5 SHA (paired
+script, E7 script, E7 report, SFT manifest v2, gg_shadow) trước khi đưa vào đây.
+Các điểm sau BỔ SUNG hoặc HIỆU CHÍNH (không sửa kết luận về G&G audit-only, số
+paired/shadow, hay điều kiện dừng):
+
+1. **Paired by-group** (§6.3): phone 19 (11→0), contact 107 (3→1), other_ids 850
+   (1→1); 13 un-fires là decision changes, KHÔNG PHẢI chứng minh un-fire đúng
+   (script không adjudicate); script SHA pin; CLI đầy đủ của C10 là UNKNOWN.
+2. **E7 delta scope** (§6.3): 23 rows bị loại + 4 relabel; "prover fixes thay đổi ZERO
+   gold proof"; output JSON E7 không tìm thấy → 533/276 là trích report, không chạy
+   lại; script + report SHA pins.
+3. **E7 Phase 0 scope hiệu chính** (§5.D1): 31 ALLOW / 428 UNKNOWN thuộc original scope
+   459/511 (Codex guard code, không tái lập được chính xác), KHÔNG phải scope round 3.
+4. **SFT v2 chi tiết** (§6.2): assignment 1237 ids, stratified ±2pp, audio content-disjoint
+   (4033 paths, 0 collision), v1 863/185/185 → v2 moved 124 (10.1%), cơ chế loại 1696
+   (không kèm ID dataset), manifest SHA pin, sft_prototype_local.json xác nhận không
+   có trên nhánh qua API.
+5. **Shadow chi tiết** (§6.6): trace sizes, generation breakdowns, evidence labels,
+   dataset bytes, adjudication breakdowns, monitored proven, g2 splits,
+   independent_positive_count, safety "insufficient evidence" cả 3; shadow inputs
+   chạy được từ repo nhưng số trong tài liệu là trích C10, không chạy lại.
+6. **HIỆU CHÍNH adoption bar** (§6.7 — quan trọng nhất): train_0004 là correct_pass
+   control, KHÔNG PHẢI block; leg 2 KHÔNG KẾT LUẬN ĐƯỢC cho tới khi pin định nghĩa
+   (any-block → ĐẠT với V13: 9; adapter-contributed → 2, CHƯA ĐẠT; adapter-only → 0,
+   CHƯA ĐẠT). Bản đầu ghi "FAILS" là sai nếu hiểu theo nghĩa any-block. Xem
+   §Thông tin chưa biết mục 11.
+7. **Government review 18/18** (§7.4) và cập nhật branch-tip (§7.5): các push handoff
+   sau review là doc-only; tip hiện tại là commit amend mới nhất, không phải 287e68d5.
+8. **Không đưa vào tài liệu:** các phân số batch 1–2 (84/85, 85/86) từ luồng
+   measurements vì không rõ chúng đếm gì (pass/total hay cases evaluated) — chỉ giữ
+   khẳng định đã verify: probe scripts batch 1–2 không còn trong probes dir, case-level
+   không tái chạy được, chỉ còn summary-level trong R4 report + C drafts v1/v2.
+
 ## Tóm tắt
 
 LifeMate baseline (Qwen3-4B-Instruct-2507 + PhoWhisper-small = 4.244B) chạy được,
@@ -1430,8 +1578,9 @@ nhưng G&G ở mọi trạng thái vẫn là audit-only: agent không gọi adap
 hay lifecycle (grep đã chứng minh). Checkpoint mới nhất là 287e68d5 trên nhánh
 gg-phone-callback-lifecycle (chưa merge main), với 476 test chuẩn + 52 grounding =
 528, cả hai backend đều xanh. Paired gold: candidate fired 2/976 (baseline 15/976);
-E7 prover: 276/533 PROVEN; independent correct-block chỉ 1 (train_0004) nên adoption
-bar chưa đạt và hard-enforce chưa sẵn sàng. R4 sửa xong contract binding/action-
+E7 prover: 276/533 PROVEN; adoption bar leg 2 KHÔNG KẾT LUẬN ĐƯỢC (định nghĩa
+"correct-block situations" chưa pin — train_0004 là correct_pass control, không phải
+block; xem §6.7) nên hard-enforce chưa sẵn sàng. R4 sửa xong contract binding/action-
 selection qua 10 vòng (joint veto + government rule là hai fix lớn cuối), nhưng điều
 kiện dừng chưa đạt: batch 11 còn 1 SERIOUS mở (digit-run misclassification) + 1 MINOR
 (fragment joining), clean count = 0. Việc tiếp theo theo thứ tự: vòng 11 (CPU) →
