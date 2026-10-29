@@ -535,7 +535,7 @@ def _extract_object(verb, raws, folds, clause_ids, bounds):
 
 
 def _classify_object(span, folds, target_spans,
-                     all_phone_spans=()):
+                     all_phone_spans=(), all_digit_spans=()):
     """general | specific | target for an object span.
 
     A span containing a phone mention of ANY number is
@@ -544,9 +544,17 @@ def _classify_object(span, folds, target_spans,
     count as a general callback -- the old generic-head
     rule ("số" starts the span) leaked every verb + other
     number into a positive selection for this number.
-    all_phone_spans defaults to () for callers that do not
-    need the distinction (their object_kind is unused
-    downstream).
+    A span containing ANY digit run (typed or spoken,
+    phone-like or not) is likewise specific, never general
+    (R5 fix for R4 batch-11 S1): "gọi số 2345" governs the
+    short run specifically, so the verb is NOT bare -- the
+    old rule classified it general via the "số" head and
+    the bare verb then selected an unrelated phone mention
+    elsewhere in the text. Only a verb whose object span
+    contains NO digit run at all can be general/bare.
+    all_phone_spans / all_digit_spans default to () for
+    callers that do not need the distinction (their
+    object_kind is unused downstream).
     """
     start, end = span
     if start >= end:
@@ -556,6 +564,9 @@ def _classify_object(span, folds, target_spans,
             return "target"
     for (ms, me) in all_phone_spans:
         if ms < end and start < me:
+            return "specific"
+    for (ds, de) in all_digit_spans:
+        if ds < end and start < de:
             return "specific"
     if folds[start] in _GENERIC_OBJECT_HEADS:
         return "general"
@@ -2264,6 +2275,39 @@ def _content_phone_spans(raws, folds, clause_ids, bounds,
     return content
 
 
+def _has_other_number(all_phone_runs, targets_norm, rejected_runs):
+    """Competitor check + proper-substring exclusions (0676 fallback).
+
+    Returns (has_other, substring_excluded). has_other is the
+    exact inline predicate formerly computed inside
+    analyze_action_selection: True when a phone-like run is
+    neither rejected nor a substring (exact or proper) of a
+    target phone. substring_excluded lists the phone-like runs
+    excluded ONLY because they are PROPER substrings of a
+    target (fragment groups such as a spoken prefix / middle /
+    suffix group of the target) -- the 0676 mechanism. Exact
+    target matches are excluded from has_other but are NOT
+    listed: they are the target itself, not fallback evidence.
+    With no target phones there is nothing to compete with
+    (the pinned no-target generic test keeps its positive).
+    Unit-testable in isolation: the end-to-end marker for
+    this path is the reason
+    "generic_callback_positive_substring_excluded" (see the
+    general-events return in analyze_action_selection).
+    """
+    if not targets_norm:
+        return False, []
+    has_other = any(
+        (s, e) not in rejected_runs
+        and not any(d and d in t for t in targets_norm)
+        for (s, e, d) in all_phone_runs)
+    substring_excluded = [
+        (s, e, d) for (s, e, d) in all_phone_runs
+        if (s, e) not in rejected_runs and d
+        and any(d in t and d != t for t in targets_norm)]
+    return has_other, substring_excluded
+
+
 def analyze_action_selection(text, target_names=(), target_phones=(),
                              action="call"):
     """Judge the action selection toward the target in `text`.
@@ -2309,9 +2353,15 @@ def analyze_action_selection(text, target_names=(), target_phones=(),
     # runs >= 9 digits, or spoken runs >= 7 digits / with
     # phone context in their clause. Short runs ("12",
     # "56") are tails / fragments, never competing numbers.
+    # All digit runs (phone-like or not) are kept separately
+    # for object classification (R5 fix S1): a verb whose
+    # object span contains ANY digit run is specific, never
+    # general -- the span, not the whole sentence, is the
+    # object (government machinery, _extract_object).
+    all_digit_runs = _digit_runs(raws, folds, clause_ids)
+    all_digit_spans = [(s, e) for (s, e, _d, _k) in all_digit_runs]
     all_phone_runs = []
-    for (rs, re_, rdigits, rkind) in _digit_runs(
-            raws, folds, clause_ids):
+    for (rs, re_, rdigits, rkind) in all_digit_runs:
         if rkind == "digits":
             phone_like = len(rdigits) >= 9
         else:
@@ -2349,10 +2399,11 @@ def analyze_action_selection(text, target_names=(), target_phones=(),
     # rejected correction value. With no target phones
     # there is nothing to compete with (the pinned
     # no-target generic test keeps its positive).
-    has_other_number = bool(targets_norm) and any(
-        (s, e) not in rejected_runs
-        and not any(d and d in t for t in targets_norm)
-        for (s, e, d) in all_phone_runs)
+    # Extracted as _has_other_number (R5) so the fallback
+    # is unit-testable in isolation; substring_excluded is
+    # the proper-substring fragment groups only.
+    has_other_number, substring_excluded = _has_other_number(
+        all_phone_runs, targets_norm, rejected_runs)
 
     name_mentions = _find_name_mentions(raws, folds,
                                         target_names or ())
@@ -2388,7 +2439,7 @@ def analyze_action_selection(text, target_names=(), target_phones=(),
                                 bounds)
         span = _extract_object(verb, raws, folds, clause_ids, bounds)
         kind = _classify_object(span, folds, mention_spans,
-                                all_phone_spans)
+                                all_phone_spans, all_digit_spans)
         verb_info.append({**verb, "polarity": polarity,
                           "object_span": span, "object_kind": kind})
 
@@ -2748,10 +2799,26 @@ def analyze_action_selection(text, target_names=(), target_phones=(),
                 "mention_present": mention_present}
     if general_events:
         gpos, gkind = general_events[-1]
-        return {"selection": gkind,
-                "reason": ("generic_callback_negated"
-                           if gkind == "negated"
-                           else "generic_callback_positive"),
+        # Fallback-path marker (R5, 0676 mechanism): this
+        # bare-verb positive stands ONLY because proper-
+        # substring fragment groups were excluded from the
+        # competitor set -- without the exclusion,
+        # bare_verb_ambiguous would have been True (target
+        # mentioned + a competitor) and the general positive
+        # would have been skipped. The marker fires only on
+        # that decisive shape: substring fragments present,
+        # no true competitor left, target mentioned. It is
+        # a distinct reason (not a new selection value), so
+        # adapter branching on selection / on
+        # "generic_callback_negated" is untouched.
+        if gkind == "negated":
+            greason = "generic_callback_negated"
+        elif substring_excluded and not has_other_number \
+                and phone_mentions:
+            greason = "generic_callback_positive_substring_excluded"
+        else:
+            greason = "generic_callback_positive"
+        return {"selection": gkind, "reason": greason,
                 "mention_present": mention_present}
     # Number-as-content (round-4 fix S4): every target mention
     # in the text is content for another recipient, and no

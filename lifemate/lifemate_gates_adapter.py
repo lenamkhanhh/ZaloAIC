@@ -146,8 +146,11 @@ from lifemate_callback_negation import (
     turn_fully_delegated,
 )
 from lifemate_evidence_lifecycle import (
+    CONSUMER_CONTRACTS,
     EvidenceLedger,
+    check_eligibility,
     classify_tool,
+    field_value_record,
     result_succeeded,
 )
 
@@ -324,6 +327,51 @@ def _resolve_roster_name(roster, name):
     return matches[0] if len(matches) == 1 else None
 
 
+def _field_value_events(obj, path, tool, is_read, ref_values, pos,
+                        events):
+    """Append counterpart field_value records for item dicts in a
+    succeeded result (R5 coordinator wiring for B's eligibility and
+    prover-validity APIs).
+
+    An item dict is any dict with a string "id"; its registry comes
+    from registry_for_entry(tool, "id", path) with path = the key the
+    item sits under (None for a top-level item). Items whose tool has
+    no "id" registry mapping emit nothing (documented gap: e.g.
+    tasks/calendar/notes search results have no PRODUCER_REGISTRY
+    entries). Scalar fields only (str/int/float/bool, not None, not
+    nested); the "id" field itself is existence, not field_value.
+    Same echo rule as the existence loop: a non-read string value
+    restating the call's own reference args establishes nothing.
+    These records are a NEW claim type: existing adapter consumption
+    queries claim == "existence" only, so emitting them cannot change
+    fired by itself.
+    """
+    if isinstance(obj, dict):
+        ent = obj.get("id")
+        if isinstance(ent, str):
+            reg = registry_for_entry(tool, "id", path)
+            if reg is not None:
+                for fk, fv in obj.items():
+                    if fk == "id":
+                        continue
+                    if not isinstance(fv, (str, int, float, bool)):
+                        continue
+                    if not is_read and isinstance(fv, str) \
+                            and nfc_lower(fv) in ref_values:
+                        continue
+                    events.append(field_value_record(
+                        reg, ent, fk, fv, pos, tool,
+                        source="read_result" if is_read
+                        else "write_result"))
+        for k, v in obj.items():
+            _field_value_events(v, k, tool, is_read, ref_values, pos,
+                                 events)
+    elif isinstance(obj, list):
+        for v in obj:
+            _field_value_events(v, path, tool, is_read, ref_values,
+                                 pos, events)
+
+
 def build_ledger(prefix, roster, kinds):
     """EvidenceLedger fed from the prefix (evidence + mutations).
 
@@ -396,6 +444,10 @@ def build_ledger(prefix, roster, kinds):
                         "source": "write_result", "status": "active",
                         "counterpart": None,
                         "reason": "patch_verified"})
+            # R5: counterpart field_value records for entity-linked
+            # field checks and observation expiry (see helper).
+            _field_value_events(result, None, tool, is_read,
+                                 ref_values, pos, events)
         # --- mutation events from writes (any outcome; the ledger
         # ignores non-succeeded ones itself) ---
         if _entry_is_read(entry, kinds):
@@ -1768,13 +1820,22 @@ def _vetoed_by_selection(selection, reason, is_callback):
 
 
 def decide(call, prefix, roster, current_text, kinds,
-           proposal_position=None):
+           proposal_position=None, eligibility=False):
     """Candidate Gate 2 decision for one proposal call.
 
     prefix: raw prefix entries (history + session, proposal
     excluded). roster: [{id, name, phone}]. current_text: the
     current request text (dataset text in gold audit, ASR model
     transcript in shadow). kinds: catalog kind map or None.
+    eligibility (R5, default False): when True, ALSO report the
+    object-state eligibility of the proposal's consumer (B's
+    check_eligibility over the prefix ledger) in notes["eligibility"]
+    as {consumer, entity_id, status, reason}. Report-only: it NEVER
+    changes fired/applicable. Unknown (unsupported consumer, missing
+    entity, missing context) is reported as unknown, never guessed.
+    Snapshot-based staleness is NOT used here (ledger-only query).
+    Eligibility is reported only when the gate is applicable (the
+    main path); early-return decisions carry no eligibility field.
     """
     roster = roster or []
     if proposal_position is None:
@@ -2208,5 +2269,21 @@ def decide(call, prefix, roster, current_text, kinds,
                     "mechanism": "lifecycle_suppression",
                     "basis": None, "question_b": None,
                     "question_b_reason": reason, "sources": []})
+    # --- R5 eligibility report (shadow only; NEVER changes fired) ---
+    if eligibility:
+        tool_name = (call or {}).get("name")
+        call_args = (call or {}).get("arguments") or {}
+        contract = CONSUMER_CONTRACTS.get(tool_name or "")
+        entity_id = call_args.get(contract["id_arg"]) \
+            if contract else None
+        try:
+            status, reason = check_eligibility(
+                ledger, tool_name, entity_id,
+                position=proposal_position, args=call_args)
+        except Exception as exc:  # never let reporting break deciding
+            status, reason = "unknown", "eligibility_error:%r" % (exc,)
+        notes["eligibility"] = {
+            "consumer": tool_name, "entity_id": entity_id,
+            "status": status, "reason": reason}
     return CandidateDecision(
         fired, True, baseline.fired, baseline.reason, adjustments, notes)

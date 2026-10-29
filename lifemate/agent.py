@@ -36,6 +36,7 @@ from typing import Callable
 
 from .adapter import ZaicEnv
 from .lifemate_grounding import ground_tool_call
+from .lifemate_observer import ShadowObserver
 from .loader import Sample, catalog_tools_for_sample
 
 
@@ -150,6 +151,17 @@ class AgentLoop:
         self.guard = LoopGuard(max_repeats=config.max_repeats)
         self.grounding_log: list[dict] = []
         self._roster: list | None = None
+        # Shadow-only G&G observer (R5, worker C): flag OFF by default.
+        # The observer is constructed but never consulted unless the
+        # flag is on; see lifemate_observer.py for the never-raise,
+        # never-mutate contract. The kind map is the loop's own tool
+        # catalog (sample-filtered), passed to the adapter as-is.
+        self.observer = ShadowObserver(
+            getattr(config, "shadow_observer", False))
+        self._kind_map = {
+            name: spec.get("kind")
+            for name, spec in (tools or {}).items()
+            if isinstance(spec, dict) and spec.get("kind")}
 
     def run(
         self,
@@ -169,9 +181,12 @@ class AgentLoop:
         # every run() so no sample's contacts leak into the next one.
         self._roster = None
         self.grounding_log = []
+        # Shadow observer state is per-sample too (same reset point).
+        self.observer.reset()
         while steps < self.config.max_steps:
             steps += 1
             call = None
+            raw_call = None
             for _attempt in range(3):  # 1 generation + up to 2 validation retries
                 gen = generator(prompt, self.tools)
                 if gen is None:
@@ -179,9 +194,16 @@ class AgentLoop:
                 if isinstance(gen, dict) and gen.get("stop"):
                     return env.submission_line()
                 if not isinstance(gen, dict) or "name" not in gen:
+                    # Shadow-only: record the invalid generation; the
+                    # baseline re-prompt below is unchanged.
+                    if self.observer.enabled:
+                        self.observer.observe_invalid(
+                            gen, history=sample.history,
+                            executed=executed, results=results)
                     prompt = base + "\n\nYour last output was not a valid tool call JSON. Output one tool call or {\"stop\": true}."
                     continue
                 call = {"name": gen["name"], "arguments": gen.get("arguments", {}) or {}}
+                raw_call = call
                 if getattr(self.config, "grounding", False):
                     # Grounding hook (round 8): normalise the proposal
                     # BEFORE validation. The adapter never guesses: a
@@ -205,6 +227,13 @@ class AgentLoop:
                 check = env.validate(call["name"], call["arguments"])
                 if check.get("ok"):
                     break
+                # Shadow-only: record the rejected proposal as
+                # NOT executed / NOT submitted; baseline path unchanged.
+                if self.observer.enabled:
+                    self.observer.observe_validation_failure(
+                        raw_call, call, check.get("error"),
+                        history=sample.history, executed=executed,
+                        results=results)
                 prompt = render_observation_prompt(
                     base, executed + [call],
                     results + [{"ok": False, "error": f"validation failed (NOT executed, NOT submitted): {check.get('error')}"}],
@@ -218,6 +247,14 @@ class AgentLoop:
                 self.guard._replanned = True
                 prompt = render_observation_prompt(base, executed, results, replan=True)
                 continue
+            # Shadow-only hook (R5): after grounding + validate, before
+            # env.call, in the real loop order. Computes and logs the
+            # adapter decision; never alters call, execution, or flow.
+            if self.observer.enabled:
+                self.observer.observe_proposal(
+                    raw_call, call, history=sample.history,
+                    executed=executed, results=results,
+                    current_text=transcript, kinds=self._kind_map)
             result = env.call(call["name"], call["arguments"])
             executed.append(call)
             results.append(result)

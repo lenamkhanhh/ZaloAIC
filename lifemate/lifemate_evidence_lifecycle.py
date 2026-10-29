@@ -128,6 +128,30 @@ What this module does NOT do (explicit non-goals):
 
 Pure Python, stdlib only. No imports from lifemate_gates or
 lifemate_provenance (the coordinator owns integration).
+
+R5 (worker B) additions, appended at the end of this module:
+
+* ``field_value_record`` -- the canonical record shape for entity
+  field evidence: counterpart {"id": entity}, value = observed
+  field value, field = field path. The adapter's current
+  build_ledger records flattened result values as ``existence``
+  records (value = observed value, field = leaf name, counterpart
+  None) -- those carry NO entity link and therefore can NEVER
+  satisfy an entity field check or expire by entity mutation.
+  Field checks (eligibility + prover validity) require the
+  counterpart convention; the coordinator must extend build_ledger
+  to emit field_value records, or pass snapshots. Until then,
+  field checks correctly return unknown, never a guessed value.
+* ``EvidenceLedger.query_field_value`` -- (status, observed,
+  reason) for one entity field, fail-closed on non-linked records.
+* ``EvidenceLedger.field_invalidated_since`` -- snapshot staleness
+  probe: did any succeeded mutation touch this entity field after
+  the snapshot's position?
+* ``check_eligibility`` -- (status, reason) with status in
+  {"eligible", "ineligible", "unknown"} for supported consumers
+  only (see CONSUMER_CONTRACTS / UNSUPPORTED_CONSUMERS).
+* ``make_prover_validity`` -- adapts a ledger + proposal position
+  into the callable the prover's ``validity`` parameter expects.
 """
 
 from __future__ import annotations
@@ -745,6 +769,63 @@ class EvidenceLedger:
                                                position=position, field=field)
         return {"status": status, "evidence": evidence, "reason": reason}
 
+    # -- R5: field-value queries + snapshot staleness ------------------
+    def query_field_value(self, registry, entity, field, position=None):
+        """(status, observed_value_or_None, reason) for one entity field.
+
+        Strict entity linkage: only a field_value record whose
+        counterpart id equals the entity counts as field evidence.
+        A record that merely matches by value (e.g. an adapter
+        flattened existence record, or a mislabeled field_value
+        record with no counterpart) is IGNORED -- it cannot prove
+        what this entity's field holds -- so the result is
+        "unknown" with reason "field_record_not_entity_linked"
+        instead of a guessed value. Derived sources are resolved
+        by the underlying query (a dead derived source yields
+        "unknown" with a derived_source_* reason).
+        """
+        status, evidence, reason = self.query(
+            registry, entity, "field_value", position=position, field=field)
+        if status == "active":
+            cp = evidence.get("counterpart") if isinstance(evidence, dict) else None
+            if isinstance(cp, dict) and str(cp.get("id")) == str(entity):
+                return ("active", evidence.get("value"), reason)
+            return ("unknown", None, "field_record_not_entity_linked")
+        if status == "invalidated":
+            return ("invalidated", None, reason)
+        return ("unknown", None, reason)
+
+    def field_invalidated_since(self, registry, entity, field,
+                                since_position, position=None):
+        """(True, reason) if any succeeded mutation with
+        since_position < pos <= position touches this entity field
+        (same linkage as _record_killed_by for a field_value
+        record: delete kills any field, cancel kills only status
+        fields, update kills only touched fields or all fields when
+        the touched set is unknown). Used to detect stale snapshots:
+        a snapshot observed at since_position is unusable for this
+        field when this returns True. Positions are per-call audit
+        labels; a mutation at exactly since_position is treated as
+        concurrent (not invalidating) -- callers pass the
+        observation's own position.
+        """
+        upto = None if position is None else position
+        probe = {"registry": registry, "value": str(entity),
+                 "field": field, "claim": "field_value",
+                 "counterpart": {"id": str(entity)}}
+        for entry in self._journal:
+            if entry.get("_type") != "mutation" or not entry.get("_succeeded"):
+                continue
+            pos = entry.get("position", 0)
+            if pos <= since_position:
+                continue
+            if upto is not None and pos > upto:
+                continue
+            reason = self._record_killed_by(probe, entry)
+            if reason is not None:
+                return (True, reason)
+        return (False, None)
+
     def history(self):
         """Journal copies for audit (evidence + mutations, in
         journal order). Internal keys are stripped except _type /
@@ -755,3 +836,779 @@ class EvidenceLedger:
                   or k in ("_type", "_succeeded", "_ignored_reason")}
             out.append(cp)
         return out
+
+
+# ---------------------------------------------------------------------------
+# R5: producer -> claim -> mutation -> consumer table
+#
+# Read from the simulator implementation (zaic_tools/apps/*.py).
+# "Producer" = the call whose result establishes the claim.
+# "Killed by" = the mutation kinds that invalidate it (ledger
+# semantics: delete kills all claims; status-only cancel kills
+# eligibility + the status field_value only; update kills only
+# touched fields). Failed / noop / schema-rejected mutations kill
+# NOTHING (the ledger ignores them). "Consumer" = the tool whose
+# eligibility check reads the claim (see CONSUMER_CONTRACTS).
+# ---------------------------------------------------------------------------
+
+PRODUCER_CLAIM_CONSUMER_TABLE = [
+    # Existence: established by a create result (new id) or a read
+    # result that lists the entity (item present). Killed ONLY by
+    # delete. Every existence-gated consumer reads it.
+    {"producer": "create-result (App.create / book / place_order / "
+                 "reserve / schedule / enroll-adjacent creates)",
+     "claim": "existence",
+     "killed_by": "delete only",
+     "consumers": "all existence-gated consumers (see CONSUMER_CONTRACTS)",
+     "evidence": "base.py App.create / App.delete; every app's "
+                 "find() -> None gives noop, never a phantom entity"},
+    # Field values: established by a create/read/update result's
+    # item fields, recorded as field_value records (counterpart
+    # convention). Killed by an update touching the field, or by
+    # delete (all fields). A status-only cancel kills ONLY the
+    # status field_value, never other fields.
+    {"producer": "read-result / create-result / patch-result item fields",
+     "claim": "field_value",
+     "killed_by": "update touching the field; delete (all fields); "
+                  "cancel (status field only)",
+     "consumers": "flights.check_in (checked_in), bill_payment.pay "
+                  "(paid), learning.enroll (enrolled), bike_rental."
+                  "reserve (available), package_tracking."
+                  "reschedule_delivery (status), smart_home.*_set "
+                  "(type), music.add_to_playlist (track_ids)",
+     "evidence": "flights.py check_in; bill_payment.py pay; learning.py "
+                 "enroll; bike_rental.py reserve; package_tracking.py "
+                 "reschedule_delivery; smart_home.py light_set/fan_set/"
+                 "climate_set (require=); music.py add_to_playlist"},
+    # Eligibility (liveness): established by a create result (status
+    # confirmed/booked/scheduled/placed, enabled True) or a read
+    # result whose status is not cancelled. Killed by delete,
+    # status-only cancel, or a terminal update (status -> cancelled,
+    # enabled -> False). NOTE: cancel-type consumers do NOT require
+    # liveness -- cancelling is the action that ENDS liveness, so
+    # they require existence only (a patch-cancel even succeeds on
+    # an already-cancelled entity: App.patch has no guard).
+    {"producer": "create-result (live by construction) / read-result "
+                 "(status != cancelled)",
+     "claim": "eligibility",
+     "killed_by": "delete; status-only cancel; terminal update "
+                  "(status -> cancelled, enabled -> False)",
+     "consumers": "video_meeting.join, subscriptions.cancel, "
+                  "flights.check_in (via not_cancelled leg)",
+     "evidence": "video_meeting.py join (noop if cancelled); "
+                 "subscriptions.py cancel (noop if cancelled); "
+                 "flights.py check_in (noop if cancelled); base.py "
+                 "App.patch (no already-cancelled guard -- patch-"
+                 "cancels succeed on cancelled entities)"},
+    # Derived claims: established by copying a value out of a source
+    # record (code from lock+valid_until, meeting link from id+start,
+    # paid_with from source). Killed when ANY dependency source dies
+    # at the proposal position (ledger walks derived_from).
+    {"producer": "write-result copying source fields (door_lock code, "
+                 "video_meeting link, bill paid_with)",
+     "claim": "field_value (derived_from=[sources])",
+     "killed_by": "death of any dependency source (delete / update "
+                  "touching the source field / cancel of a status source)",
+     "consumers": "prover expiry (validity gating); eligibility "
+                  "field checks on derived values",
+     "evidence": "door_lock.py grant_guest_code (code is a pure function "
+                 "of lock_id+valid_until); video_meeting.py create "
+                 "(link derived from id+start); ledger derived "
+                 "resolution in _resolve_key"},
+    # Foreign-key existence: established by an existence record in
+    # the REFERENCED registry. Killed by delete of the referenced
+    # entity. The referencing call never validates the FK itself --
+    # the simulator noops on a missing FK.
+    {"producer": "existence record in the referenced registry "
+                 "(read/create result there)",
+     "claim": "existence (foreign registry)",
+     "killed_by": "delete of the referenced entity",
+     "consumers": "flights.book (flights.flights), home_automation."
+                  "create_rule (smart_home.devices), medication."
+                  "log_taken (medication.schedules), learning."
+                  "schedule_lesson / log_progress (learning.courses), "
+                  "food_delivery.place_order (food_delivery.restaurants "
+                  "+ menu items), music.add_to_playlist (music.tracks)",
+     "evidence": "flights.py book (noop if flight missing); "
+                 "home_automation.py create_rule (device must exist "
+                 "when smart_home installed); medication.py log_taken; "
+                 "learning.py schedule_lesson/log_progress; "
+                 "food_delivery.py place_order (noop if restaurant or "
+                 "menu item missing); music.py add_to_playlist"},
+]
+
+
+def field_value_record(registry, entity, field, observed, position,
+                       producer, source="read_result", outcome="succeeded",
+                       status="active", reason="field_observation"):
+    """Build a canonical field_value record (the counterpart
+    convention). value = the observed field value (NOT the entity
+    id); counterpart.id = the entity. Records built any other way
+    do not satisfy field checks (see query_field_value)."""
+    return {"kind": "entity", "value": observed, "registry": registry,
+            "claim": "field_value", "field": field,
+            "outcome": outcome, "counterpart": {"id": str(entity)},
+            "position": position, "producer": producer,
+            "source": source, "status": status, "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# R5: eligibility API
+#
+# check_eligibility(ledger, consumer, entity_id, ...) -> (status,
+# reason) with status in exactly {"eligible", "ineligible",
+# "unknown"}. Unknown is never presented as eligible or ineligible:
+# it always carries a reason naming what is missing. The function
+# never raises for an unlisted consumer (returns unknown +
+# "consumer_not_supported:<name>") and never invents a rule for an
+# unclear semantic -- those consumers are listed in
+# UNSUPPORTED_CONSUMERS with their boundary.
+#
+# Snapshot contract: snapshot is the entity's last observed full
+# item dict (from a read/create result); snapshot_position is that
+# observation's position. A fresh snapshot value beats an older
+# ledger record; a live ledger record beats snapshot ABSENCE (the
+# snapshot may be partial); a stale snapshot (a succeeded mutation
+# touched the field after snapshot_position) falls through to the
+# ledger, else unknown. A snapshot without a position is
+# treated as observed at position -1 (any touching mutation in the
+# prefix makes it unusable). Simulator defaults are mirrored
+# exactly: .get(field) absent counts as falsy; .get("available",
+# True) absent counts as True; require={type} fails on absent.
+# ---------------------------------------------------------------------------
+
+import unicodedata as _unicodedata
+
+
+def _fold_text(s):
+    """Lower + strip diacritics (mirrors zaic_tools.utils._fold for
+    member-name comparison in household_chores.assign)."""
+    if s is None:
+        return ""
+    nfkd = _unicodedata.normalize("NFKD", str(s))
+    return "".join(c for c in nfkd if not _unicodedata.combining(c)).lower()
+
+
+def _ledger_existence(ledger, registry, entity, position):
+    """(status, reason): ledger existence for one entity."""
+    st, _, reason = ledger.query(registry, entity, "existence",
+                                 position=position)
+    if st == "active":
+        return ("active", "entity_exists")
+    if st == "invalidated":
+        return ("invalidated", "entity_deleted:" + reason)
+    return ("unknown", "no_existence_evidence")
+
+
+def _resolve_field(ledger, registry, entity, field, position,
+                   snapshot, snapshot_position):
+    """("known", value, basis) | ("absent", None, basis) |
+    ("unknown", None, reason) for one entity field.
+
+    Precedence: a fresh snapshot value > a live ledger record >
+    snapshot absence > unknown. A snapshot is fresh iff no
+    succeeded mutation touched the field after snapshot_position.
+    Snapshot absence is WEAK evidence (the snapshot may be
+    partial), so a live ledger record beats it; but a fresh
+    snapshot value beats an older ledger record (the caller
+    observed it directly). A stale snapshot falls through to the
+    ledger (a re-read after the mutation may have recorded the new
+    value), and only if the ledger has nothing does the answer
+    become unknown with the staleness named.
+    """
+    stale_reason = None
+    if snapshot is not None:
+        since = -1 if snapshot_position is None else snapshot_position
+        stale, sreason = ledger.field_invalidated_since(
+            registry, entity, field, since, position)
+        if not stale:
+            if field in snapshot:
+                return ("known", snapshot[field], "snapshot")
+            st, observed, reason = ledger.query_field_value(
+                registry, entity, field, position)
+            if st == "active":
+                return ("known", observed, "ledger")
+            return ("absent", None, "snapshot_absent")
+        stale_reason = sreason
+    st, observed, reason = ledger.query_field_value(
+        registry, entity, field, position)
+    if st == "active":
+        return ("known", observed, "ledger")
+    if st == "invalidated":
+        return ("unknown", None, "field_invalidated:" + reason)
+    if stale_reason is not None:
+        return ("unknown", None,
+                "snapshot_stale:" + stale_reason
+                + "; no_current_field_evidence")
+    return ("unknown", None, reason)
+
+
+def _not_cancelled(ledger, registry, entity, position,
+                   snapshot, snapshot_position):
+    """(True, reason) not cancelled | (False, reason) cancelled |
+    (None, reason) unknown. Generic eligibility is checked first
+    (cancel kills it); the status field is the fallback. A status
+    field killed by a cancel mutation is itself evidence of
+    cancellation (kill reason "status_cancelled@posN").
+    """
+    st, _, reason = ledger.query(registry, entity, "eligibility",
+                                 position=position)
+    if st == "invalidated":
+        return (False, "entity_cancelled_or_terminal:" + reason)
+    if st == "active":
+        return (True, "eligibility_active")
+    fr = _resolve_field(ledger, registry, entity, "status", position,
+                        snapshot, snapshot_position)
+    if fr[0] == "known":
+        if fr[1] == "cancelled":
+            return (False, "status_cancelled")
+        return (True, "status_not_cancelled")
+    if fr[0] == "absent":
+        return (True, "status_absent_not_cancelled")
+    if fr[2] and "status_cancelled@" in fr[2]:
+        return (False, "status_cancelled_via_field_invalidation")
+    return (None, fr[2])
+
+
+def _existence_gate(ledger, registry, entity, position):
+    """(ok, status, reason) for the existence precondition shared by
+    all handlers: ok=True -> proceed; ok=False -> ineligible;
+    ok=None -> unknown."""
+    st, reason = _ledger_existence(ledger, registry, entity, position)
+    if st == "active":
+        return (True, "eligible", "entity_exists")
+    if st == "invalidated":
+        return (False, "ineligible", "entity_deleted")
+    return (None, "unknown", reason)
+
+
+def _h_existence(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, status, reason = _existence_gate(ledger, c["registry"], entity,
+                                         position)
+    return (status, reason)
+
+
+def _h_not_cancelled(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    nc, reason = _not_cancelled(ledger, c["registry"], entity, position,
+                                snapshot, spos)
+    if nc is True:
+        return ("eligible", "entity_exists_not_cancelled")
+    if nc is False:
+        return ("ineligible", reason)
+    return ("unknown", reason)
+
+
+def _h_field_not_true(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    fr = _resolve_field(ledger, c["registry"], entity, c["field"],
+                        position, snapshot, spos)
+    if fr[0] == "known":
+        if bool(fr[1]):
+            return ("ineligible", "field_true:" + c["field"])
+        return ("eligible", "field_not_true:" + c["field"])
+    if fr[0] == "absent":
+        return ("eligible", "field_absent_default_falsy:" + c["field"])
+    return ("unknown", fr[2])
+
+
+def _h_field_default_true(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    fr = _resolve_field(ledger, c["registry"], entity, c["field"],
+                        position, snapshot, spos)
+    if fr[0] == "known":
+        if fr[1] is False:
+            return ("ineligible", "field_false:" + c["field"])
+        return ("eligible", "field_not_false:" + c["field"])
+    if fr[0] == "absent":
+        return ("eligible", "field_absent_default_true:" + c["field"])
+    return ("unknown", fr[2])
+
+
+def _h_field_not_value(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    fr = _resolve_field(ledger, c["registry"], entity, c["field"],
+                        position, snapshot, spos)
+    if fr[0] == "known":
+        if fr[1] == c["value"]:
+            return ("ineligible",
+                    "field_equals:%s=%s" % (c["field"], c["value"]))
+        return ("eligible", "field_not_value:%s" % c["field"])
+    if fr[0] == "absent":
+        return ("eligible", "field_absent_not_value:%s" % c["field"])
+    return ("unknown", fr[2])
+
+
+def _h_type_is(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    fr = _resolve_field(ledger, c["registry"], entity, "type",
+                        position, snapshot, spos)
+    if fr[0] == "known":
+        if fr[1] == c["type"]:
+            return ("eligible", "type_matches:" + c["type"])
+        return ("ineligible", "type_mismatch:%s" % (fr[1],))
+    if fr[0] == "absent":
+        # Simulator require={type} fails on absent (None != type).
+        return ("ineligible", "type_absent_not_" + c["type"])
+    return ("unknown", fr[2])
+
+
+def _h_fk(ledger, c, entity, position, snapshot, spos, args, ctx):
+    st, reason = _ledger_existence(ledger, c["registry"], entity, position)
+    if st == "active":
+        return ("eligible", "fk_exists:" + c["registry"])
+    if st == "invalidated":
+        return ("ineligible", "fk_deleted:" + c["registry"])
+    return ("unknown", "fk_existence_unknown:" + c["registry"])
+
+
+def _h_bill_pay(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    fr = _resolve_field(ledger, c["registry"], entity, "paid",
+                        position, snapshot, spos)
+    if fr[0] == "known" and bool(fr[1]):
+        return ("ineligible", "field_true:paid")
+    if fr[0] == "unknown":
+        return ("unknown", fr[2])
+    # Bill leg passed (unpaid, or paid absent which .get() reads
+    # falsy). The ewallet leg is a second entity + a numeric guard
+    # and is NOT evaluated here: paying from the wallet needs the
+    # wallet installed and balance >= amount (bill_payment.py pay).
+    if (args or {}).get("source") == "ewallet":
+        return ("unknown", "ewallet_balance_leg_unknown")
+    return ("eligible", "bill_unpaid")
+
+
+def _h_grant_guest_code(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    # State leg only. valid_until tz-aware ISO is ARGUMENT
+    # validation (door_lock.py grant_guest_code), not state
+    # eligibility: the reason always names the unchecked leg so an
+    # "eligible" here is never misread as a full simulator pass.
+    return ("eligible",
+            "lock_exists; valid_until_not_checked(argument_validation)")
+
+
+def _h_library_reserve(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    if not isinstance(ctx, dict) or "reservations" not in ctx:
+        return ("unknown", "active_reservation_unknown")
+    for r in ctx.get("reservations") or []:
+        if isinstance(r, dict) and r.get("book_id") == entity \
+                and r.get("status") in ("ready", "waiting"):
+            return ("ineligible", "book_already_reserved")
+    return ("eligible",
+            "book_exists_no_active_reservation(context_basis)")
+
+
+def _h_chores_assign(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    assignee = (args or {}).get("assignee")
+    if assignee is None:
+        return ("unknown", "assignee_missing")
+    if not isinstance(ctx, dict) or "members" not in ctx:
+        return ("unknown", "assignee_membership_unknown")
+    want = _fold_text(assignee)
+    for m in ctx.get("members") or []:
+        if _fold_text(m) == want:
+            return ("eligible",
+                    "chore_exists_assignee_member(context_basis)")
+    return ("ineligible", "assignee_not_member")
+
+
+def _h_add_to_playlist(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    track_id = (args or {}).get("track_id")
+    if track_id is None:
+        return ("unknown", "track_id_missing")
+    st, _ = _ledger_existence(ledger, "music.tracks", track_id, position)
+    if st == "invalidated":
+        return ("ineligible", "track_deleted")
+    if st != "active":
+        return ("unknown", "track_existence_unknown")
+    fr = _resolve_field(ledger, c["registry"], entity, "track_ids",
+                        position, snapshot, spos)
+    if fr[0] == "known":
+        ids = fr[1] if isinstance(fr[1], list) else []
+        if track_id in ids:
+            return ("ineligible", "track_already_in_playlist")
+        return ("eligible", "track_not_in_playlist")
+    if fr[0] == "absent":
+        # Simulator setdefault("track_ids", []) reads absent as empty.
+        return ("eligible", "track_ids_absent_empty")
+    return ("unknown", fr[2])
+
+
+def _h_place_order(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    items = (args or {}).get("items")
+    if not items:
+        return ("ineligible", "empty_order")
+    if not isinstance(snapshot, dict) or "menu" not in snapshot:
+        return ("unknown", "menu_unknown")
+    menu = {m.get("id") for m in snapshot.get("menu") or []
+            if isinstance(m, dict)}
+    for it in items:
+        iid = it.get("item_id") if isinstance(it, dict) else None
+        if iid not in menu:
+            return ("ineligible", "menu_item_missing:%s" % (iid,))
+    return ("eligible",
+            "restaurant_exists_all_items_in_menu(snapshot_basis)")
+
+
+def _h_not_cancelled_checked_in(ledger, c, entity, position, snapshot, spos, args, ctx):
+    ok, _, _ = _existence_gate(ledger, c["registry"], entity, position)
+    if ok is not True:
+        return ("ineligible", "entity_deleted") if ok is False \
+            else ("unknown", "no_existence_evidence")
+    nc, reason = _not_cancelled(ledger, c["registry"], entity, position,
+                                snapshot, spos)
+    if nc is False:
+        return ("ineligible", reason)
+    if nc is None:
+        return ("unknown", reason)
+    fr = _resolve_field(ledger, c["registry"], entity, "checked_in",
+                        position, snapshot, spos)
+    if fr[0] == "known" and bool(fr[1]):
+        return ("ineligible", "field_true:checked_in")
+    if fr[0] == "unknown":
+        return ("unknown", fr[2])
+    return ("eligible", "booking_live_not_checked_in")
+
+
+_HANDLER_BY_NAME = {
+    "existence": _h_existence,
+    "not_cancelled": _h_not_cancelled,
+    "field_not_true": _h_field_not_true,
+    "field_default_true": _h_field_default_true,
+    "field_not_value": _h_field_not_value,
+    "type_is": _h_type_is,
+    "fk": _h_fk,
+    "bill_pay": _h_bill_pay,
+    "grant_guest_code": _h_grant_guest_code,
+    "library_reserve": _h_library_reserve,
+    "chores_assign": _h_chores_assign,
+    "add_to_playlist": _h_add_to_playlist,
+    "place_order": _h_place_order,
+    "not_cancelled_checked_in": _h_not_cancelled_checked_in,
+}
+
+
+def _C(registry, id_arg, handler, **kw):
+    d = {"registry": registry, "id_arg": id_arg, "handler": handler}
+    d.update(kw)
+    return d
+
+
+# Supported consumers: contract verified against the simulator
+# implementation (file:line in the "evidence" column). "handler"
+# selects the precondition evaluation; "id_arg" is the argument
+# whose value is passed as entity_id.
+CONSUMER_CONTRACTS = {
+    # Existence-only: App.patch / App.delete with no guard beyond
+    # the find() (missing -> noop). A patch-cancel even succeeds on
+    # an already-cancelled entity (patch has no guard) -- so these
+    # do NOT require liveness, only existence.
+    "flights.cancel": _C("flights.bookings", "booking_id", "existence",
+                         evidence="flights.py cancel: patch status=cancelled, no guard"),
+    "ride_hailing.cancel": _C("ride_hailing.rides", "ride_id", "existence",
+                              evidence="ride_hailing.py:41-42 patch, no guard"),
+    "food_delivery.cancel_order": _C("food_delivery.orders", "order_id", "existence",
+                                     evidence="food_delivery.py:46-47 patch, no guard"),
+    "calendar.cancel_event": _C("calendar.events", "event_id", "existence",
+                                evidence="calendar.py:30-31 patch, no guard"),
+    "tasks.complete": _C("tasks.tasks", "task_id", "existence",
+                         evidence="tasks.py:20-21 patch done=True, idempotent"),
+    "reminders.complete": _C("reminders.reminders", "reminder_id", "existence",
+                             evidence="reminders.py:19-20 patch done=True"),
+    "reminders.delete": _C("reminders.reminders", "reminder_id", "existence",
+                           evidence="reminders.py:23-24 App.delete"),
+    "alarm.delete": _C("alarm.alarms", "alarm_id", "existence",
+                       evidence="alarm.py:23-24 App.delete"),
+    "alarm.update": _C("alarm.alarms", "alarm_id", "existence",
+                       evidence="alarm.py:19-20 patch, no guard"),
+    "shopping_list.remove": _C("shopping_list.items", "item_id", "existence",
+                               evidence="shopping_list.py:24-25 App.delete"),
+    "shopping_list.check": _C("shopping_list.items", "item_id", "existence",
+                              evidence="shopping_list.py:28-29 patch checked=True"),
+    "contacts.update": _C("contacts.contacts", "contact_id", "existence",
+                          evidence="contacts.py:20-21 patch phone/email"),
+    "calendar.update_event": _C("calendar.events", "event_id", "existence",
+                                evidence="calendar.py:26-27 patch, no guard"),
+    "email.archive": _C("email.emails", "email_id", "existence",
+                        evidence="email.py:72-75 delete branch or patch folder, both existence-gated"),
+    "notes.append": _C("notes.notes", "note_id", "existence",
+                       evidence="notes.py:19-23 noop if note missing, else append"),
+    "chat_ott.send_message": _C("chat_ott.chats", "chat_id", "existence",
+                                evidence="chat_ott.py:22-28 noop if chat missing"),
+    "chat_ott.send_location": _C("chat_ott.chats", "chat_id", "existence",
+                                 evidence="chat_ott.py:31-37 noop if chat missing"),
+    "home_security.acknowledge_alert": _C("home_security.alerts", "alert_id", "existence",
+                                          evidence="home_security.py:41-42 patch acknowledged=True"),
+    "door_lock.set_lock": _C("door_lock.locks", "lock_id", "existence",
+                             evidence="door_lock.py:18-21 noop if lock missing, else patch"),
+    "appliances.stop": _C("appliances.appliances", "appliance_id", "existence",
+                          evidence="appliances.py:32-36 noop if missing, else patch to idle"),
+    "medication.remove": _C("medication.schedules", "schedule_id", "existence",
+                            evidence="medication.py:28-29 App.delete"),
+    # Not-cancelled: explicit cancelled guard (join on joined
+    # succeeds; cancel on cancelled noops only for subscriptions --
+    # patch-cancels above have no such guard).
+    "video_meeting.join": _C("video_meeting.meetings", "meeting_id", "not_cancelled",
+                             evidence="video_meeting.py join: noop if missing/cancelled; joined->joined succeeds"),
+    "subscriptions.cancel": _C("subscriptions.subscriptions", "subscription_id", "not_cancelled",
+                               evidence="subscriptions.py:15-20 noop if missing/cancelled"),
+    # Field-not-true: simulator .get(field) truthy -> noop; absent
+    # counts as falsy.
+    "flights.check_in": _C("flights.bookings", "booking_id", "not_cancelled_checked_in",
+                           evidence="flights.py check_in: noop if missing/cancelled/checked_in; sets checked_in=True"),
+    "bill_payment.pay": _C("bill_payment.bills", "bill_id", "bill_pay",
+                           evidence="bill_payment.py:16-33 noop if missing/paid; ewallet leg separate"),
+    "learning.enroll": _C("learning.courses", "course_id", "field_not_true",
+                          field="enrolled",
+                          evidence="learning.py:15-21 noop if missing/enrolled"),
+    # Field-default-true: .get("available", True) -- absent counts
+    # as available; only a known False blocks.
+    "bike_rental.reserve": _C("bike_rental.bikes", "bike_id", "field_default_true",
+                              field="available",
+                              evidence="bike_rental.py:27-33 noop if missing/not available; sets available=False"),
+    # Field-not-value: status == delivered blocks, anything else
+    # (including absent) passes.
+    "package_tracking.reschedule_delivery": _C("package_tracking.shipments", "tracking_id", "field_not_value",
+                                               field="status", value="delivered",
+                                               evidence="package_tracking.py:29-35 noop if missing/delivered"),
+    # Type-gated patch (require=): absent type FAILS the require
+    # (None != type), unlike the falsy-default guards above.
+    "smart_home.light_set": _C("smart_home.devices", "device_id", "type_is",
+                               type="light",
+                               evidence="smart_home.py:18-19 patch require type=light"),
+    "smart_home.fan_set": _C("smart_home.devices", "device_id", "type_is",
+                             type="fan",
+                             evidence="smart_home.py:22-23 patch require type=fan"),
+    "smart_home.climate_set": _C("smart_home.devices", "device_id", "type_is",
+                                 type="climate",
+                                 evidence="smart_home.py:26-27 patch require type=climate"),
+    "smart_home.switch_set": _C("smart_home.devices", "device_id", "existence",
+                                evidence="smart_home.py:30-31 patch, no type require"),
+    # Foreign-key existence: the call noops when the referenced
+    # entity is missing.
+    "flights.book": _C("flights.flights", "flight_id", "fk",
+                       evidence="flights.py book: noop if flight missing"),
+    "home_automation.create_rule": _C("smart_home.devices", "device_id", "fk",
+                                      evidence="home_automation.py:15-20 device must exist when smart_home installed"),
+    "medication.log_taken": _C("medication.schedules", "schedule_id", "fk",
+                               evidence="medication.py:19-23 noop if schedule missing"),
+    "learning.schedule_lesson": _C("learning.courses", "course_id", "fk",
+                                   evidence="learning.py:25-28 noop if course missing"),
+    "learning.log_progress": _C("learning.courses", "course_id", "fk",
+                                evidence="learning.py:32-36 noop if course missing"),
+    "door_lock.grant_guest_code": _C("door_lock.locks", "lock_id", "grant_guest_code",
+                                     evidence="door_lock.py:24-34 noop if lock missing; valid_until is argument validation"),
+    # Context-gated: a second evidence source the caller supplies
+    # (reservations list, members list) because the guard reads
+    # state beyond the entity itself.
+    "library.reserve": _C("library.books", "book_id", "library_reserve",
+                          evidence="library.py:15-26 noop if book missing or a ready/waiting reservation exists"),
+    "household_chores.assign": _C("household_chores.chores", "chore_id", "chores_assign",
+                                  evidence="household_chores.py:16-23 noop if chore missing or assignee not a member"),
+    "music.add_to_playlist": _C("music.playlists", "playlist_id", "add_to_playlist",
+                                evidence="music.py:46-54 noop if track/playlist missing or track already present"),
+    "food_delivery.place_order": _C("food_delivery.restaurants", "restaurant_id", "place_order",
+                                    evidence="food_delivery.py:26-42 noop if restaurant/menu item missing or no lines"),
+}
+
+
+# Explicitly unsupported consumers: the contract is NOT clear enough
+# for a sound eligibility decision, or the guard needs machinery
+# this round does not build (numeric comparison, multi-entity
+# atomicity, global state). check_eligibility returns unknown for
+# all of these (via the not-in-CONTRACTS path) -- never eligible,
+# never ineligible, always with consumer_not_supported + the
+# boundary below. This list is part of the coverage report.
+UNSUPPORTED_CONSUMERS = {
+    # Numeric balance guards + multi-entity: amount vs balance
+    # comparison is arithmetic on ledger values, out of scope.
+    "banking.transfer": "numeric guard (accounts exist + balance sufficient) + beneficiary leg; no arithmetic on ledger values this round",
+    "ewallet.transfer": "numeric guard (balance sufficient); phone->contact completion is not validation",
+    "ewallet.topup_mobile": "numeric guard (balance sufficient)",
+    "ewallet.pay_qr": "numeric guard (balance sufficient)",
+    "loyalty.redeem": "numeric guard (points sufficient) + program leg",
+    "banking.open_savings": "numeric guard (account exists + balance sufficient)",
+    # Multi-entity / roster guards.
+    "video_meeting.create": "attendee roster guard (every attendee id in contacts, skipped when contacts not installed); multi-entity + installation-conditional",
+    "smart_home.scene_run": "atomic multi-entity guard (scene exists + every action device exists); one bad device noops everything",
+    "tv.record": "program FK + already-scheduled NEGATIVE over recordings registry; negative leg needs schedule evidence",
+    "appliances.start_cycle": "cycle-membership + running/scheduled state-machine guard; needs full appliance snapshot evaluation",
+    # Global state: no entity id to key the ledger on.
+    "music.play": "global now_playing, no entity id",
+    "music.control": "global now_playing/volume, no entity id",
+    "tv.tune": "global power/channel, no entity id",
+    "tv.control": "global power/volume/muted, no entity id",
+    "robot_vacuum.start": "global status/current_job + battery guard, no entity id",
+    "robot_vacuum.stop": "global status, no entity id",
+    "home_energy.set_alert": "global alert_threshold_kwh, no entity id",
+    "home_security.arm": "global mode field, no entity id",
+    "fitness.set_goal": "global goal_steps, no entity id",
+    "podcast_radio.play": "global now_playing + queue mutation, no entity id",
+    "podcast_radio.queue": "global queue membership, no entity id",
+    "podcast_radio.subscribe": "global subscriptions membership, no entity id",
+    # Creates / reads / meta with no entity precondition: not
+    # applicable to an entity eligibility API (nothing to check).
+    "ride_hailing.book": "no entity guard (creates a ride unconditionally)",
+    "calendar.create_event": "no entity guard (creates an event)",
+    "tasks.add": "no entity guard (creates a task)",
+    "reminders.create": "no entity guard (creates a reminder)",
+    "alarm.create": "no entity guard (creates an alarm)",
+    "notes.create": "no entity guard (creates a note)",
+    "shopping_list.add": "no entity guard (creates an item)",
+    "email.send": "no entity guard (creates a sent mail)",
+    "email.create_draft": "no entity guard (creates a draft)",
+    "email.reply": "no entity guard (creates a sent mail + marks original)",
+    "sms.send": "no entity guard (never validates contacts; contact_ref completion only)",
+    "phone.call": "no entity guard (never validates contacts; contact_ref completion only)",
+    "chat_ott.call": "no entity guard (creates a call record)",
+    "fitness.log_workout": "no entity guard (creates a workout)",
+    "bill_payment.schedule_autopay": "no entity guard (upsert by type)",
+    "maps.save_place": "no entity guard (upsert by place_id)",
+    "news.save": "no entity guard (upsert by article_id)",
+    "package_tracking.schedule_pickup": "no entity guard (creates a pickup)",
+    "medication.add": "no entity guard (creates a schedule)",
+    "sys.ask_missing_info": "meta tool, touches no state",
+}
+
+
+def check_eligibility(ledger, consumer, entity_id, position=None,
+                      snapshot=None, snapshot_position=None,
+                      args=None, context=None):
+    """(status, reason) for one consumer call's entity precondition.
+
+    status in {"eligible", "ineligible", "unknown"} -- exactly.
+    "unknown" always carries a reason naming what is missing and is
+    never to be read as eligible or ineligible. Unlisted consumers
+    return ("unknown", "consumer_not_supported:<name>"); a missing
+    entity_id returns ("unknown", "entity_id_missing"). Failed /
+    noop / schema-rejected mutations never revoke evidence (the
+    ledger ignores them), so eligibility computed from the ledger
+    is unaffected by them. A future mutation (position > query
+    position) never affects the prefix before it (the ledger's
+    position-bounded queries). A re-read appends NEW evidence; it
+    never rewrites history (killed records stay killed; a fresh
+    record for the same key makes the key active again).
+    """
+    contract = CONSUMER_CONTRACTS.get(consumer)
+    if contract is None:
+        return ("unknown", "consumer_not_supported:" + str(consumer))
+    if entity_id is None or (isinstance(entity_id, str)
+                             and not entity_id):
+        return ("unknown", "entity_id_missing")
+    handler = _HANDLER_BY_NAME[contract["handler"]]
+    return handler(ledger, contract, str(entity_id), position,
+                   snapshot, snapshot_position, args, context)
+
+
+# ---------------------------------------------------------------------------
+# R5: prover validity adapter
+# ---------------------------------------------------------------------------
+
+def _values_equal(a, b):
+    """Observed-value equality for validity checks: exact equality,
+    numeric equality (bools excluded -- True != 1 here), or ISO
+    datetime equality (same instant, format-insensitive). Anything
+    else is unequal (a changed value is stale, not unknown).
+    """
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a is b
+    if a == b:
+        return True
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        try:
+            return float(a) == float(b)
+        except (TypeError, ValueError):
+            return False
+    if isinstance(a, str) and isinstance(b, str):
+        try:
+            from datetime import datetime as _dt
+            da = _dt.fromisoformat(a.replace("Z", "+00:00"))
+            db = _dt.fromisoformat(b.replace("Z", "+00:00"))
+            return da == db
+        except ValueError:
+            return False
+    return False
+
+
+def make_prover_validity(ledger, position, registry_for_tool=None):
+    """Adapt a ledger + proposal position into the prover's
+    ``validity`` callable: check(obs_tool, field, value, entity) ->
+    (status, reason) with status in {"active", "invalidated",
+    "unknown"}.
+
+    Semantics: an observation proves only if an entity-linked
+    field_value record (counterpart convention) for (registry,
+    entity, field) is alive at the proposal position AND its
+    observed value equals the observation's value. A live record
+    with a DIFFERENT value means the field changed and was
+    re-observed -> "invalidated" (stale, not unknown). No record
+    -> "unknown" (the adapter never recorded this observation as
+    entity-linked field evidence). An entity-less observation can
+    never be linked -> "unknown" (it never proves under gating;
+    the adapter must attach entity ids where possible). A tool
+    with no registry mapping -> "unknown" (registry_for_tool
+    covers read tools; MUTATION_TABLE covers write tools).
+    """
+    def check(obs_tool, field, value, entity):
+        if field is None:
+            return ("unknown", "field_unknown")
+        registry = None
+        if registry_for_tool is not None:
+            registry = registry_for_tool(obs_tool)
+        if registry is None:
+            entry = MUTATION_TABLE.get(obs_tool or "")
+            registry = entry["registry"] if entry else None
+        if registry is None:
+            return ("unknown", "registry_unknown_for_tool:%s" % (obs_tool,))
+        if entity is None:
+            return ("unknown", "entity_unknown_for_observation")
+        st, observed, reason = ledger.query_field_value(
+            registry, entity, field, position)
+        if st == "active":
+            if _values_equal(observed, value):
+                return ("active", reason)
+            return ("invalidated", "field_value_changed")
+        if st == "invalidated":
+            return ("invalidated", reason)
+        return ("unknown", reason)
+
+    return check

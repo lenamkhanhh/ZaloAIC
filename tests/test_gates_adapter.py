@@ -16,9 +16,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
 from lifemate_gates_adapter import (  # noqa: E402
     _vetoed_by_selection,
+    build_ledger,
     decide,
     filtered_prefix_for_phone,
 )
+from lifemate_evidence_lifecycle import check_eligibility  # noqa: E402
 
 KINDS = {
     "contacts.search": "read", "contacts.get": "read",
@@ -2473,6 +2475,66 @@ class TestRound10Batch10Adapter(unittest.TestCase):
         self.assertFalse(self._dec(
             prefix, self._call(self.Y),
             "Mà số %s là số mới" % self.Y).fired)
+
+
+class TestR5EligibilityReport(unittest.TestCase):
+    """Coordinator integration (R5): build_ledger emits counterpart
+    field_value records; decide(eligibility=True) reports eligibility
+    WITHOUT changing fired/applicable/adjustments."""
+
+    KINDS5 = {
+        "contacts.search": "read", "contacts.update": "write",
+        "phone.call": "write", "reminders.create": "write",
+        "reminders.delete": "write",
+    }
+    ROSTER = [{"id": "c_1", "name": "Bình", "phone": "0911111111"}]
+
+    def test_fired_identical_and_unknown_for_unsupported(self):
+        d0 = decide({"name": "phone.call",
+                     "arguments": {"phone_number": "0911111111"}},
+                    [], self.ROSTER, "Gọi cho Bình đi",
+                    self.KINDS5, proposal_position=0)
+        d1 = decide({"name": "phone.call",
+                     "arguments": {"phone_number": "0911111111"}},
+                    [], self.ROSTER, "Gọi cho Bình đi",
+                    self.KINDS5, proposal_position=0, eligibility=True)
+        self.assertEqual(d0.fired, d1.fired)
+        self.assertEqual(d0.applicable, d1.applicable)
+        self.assertEqual(d0.adjustments, d1.adjustments)
+        self.assertEqual(d1.notes["eligibility"]["status"], "unknown")
+        self.assertTrue(d1.notes["eligibility"]["reason"].startswith(
+            "consumer_not_supported"))
+
+    def test_field_value_emission_and_eligible(self):
+        prefix = [call_entry(
+            "contacts.search", {},
+            {"ok": True, "contacts": [{"id": "c_1", "name": "Bình",
+                                       "phone": "0911111111"}]}, 0)]
+        ledger, _ = build_ledger(prefix, self.ROSTER, self.KINDS5)
+        status, observed, _ = ledger.query_field_value(
+            "contacts.contacts", "c_1", "phone")
+        self.assertEqual((status, observed), ("active", "0911111111"))
+        self.assertEqual(
+            check_eligibility(ledger, "contacts.update", "c_1",
+                              position=5),
+            ("eligible", "entity_exists"))
+
+    def test_ineligible_after_delete_and_unknown_missing(self):
+        prefix = [
+            call_entry("reminders.create", {},
+                       {"ok": True,
+                        "item": {"id": "r_1", "title": "x"}}, 0),
+            call_entry("reminders.delete", {"reminder_id": "r_1"},
+                       {"ok": True}, 1)]
+        ledger, _ = build_ledger(prefix, [], self.KINDS5)
+        self.assertEqual(
+            check_eligibility(ledger, "reminders.delete", "r_1",
+                              position=5),
+            ("ineligible", "entity_deleted"))
+        status, reason = check_eligibility(
+            ledger, "contacts.update", "c_missing", position=5)
+        self.assertEqual(status, "unknown")
+        self.assertTrue(reason)
 
 
 if __name__ == "__main__":

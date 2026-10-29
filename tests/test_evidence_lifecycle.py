@@ -15,6 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lifemate.lifemate_evidence_lifecycle import (
     MUTATION_TABLE, classify_outcome, classify_tool,
     cancel_tools_are_status_only, result_succeeded, EvidenceLedger,
+    CONSUMER_CONTRACTS, UNSUPPORTED_CONSUMERS,
+    PRODUCER_CLAIM_CONSUMER_TABLE, check_eligibility,
+    field_value_record, make_prover_validity,
 )
 
 
@@ -644,6 +647,551 @@ class TestReviewerRound2FixedFields(unittest.TestCase):
         entry = classify_tool("email.archive")
         self.assertEqual(entry["kind_arg"], "action")
         self.assertEqual(entry["fields"], ["folder"])
+
+def ex(registry, entity, position, producer="synth.read"):
+    """Pure existence record (field None: never killed by update)."""
+    return ev(entity, "existence", position, registry=registry,
+              field=None, producer=producer)
+
+
+def fv(registry, entity, field, observed, position, producer="synth.read"):
+    """Canonical field_value record (counterpart convention)."""
+    return field_value_record(registry, entity, field, observed,
+                              position, producer)
+
+
+def el(registry, entity, position, producer="synth.read"):
+    """Generic eligibility (liveness) record."""
+    return ev(entity, "eligibility", position, registry=registry,
+              field=None, producer=producer)
+
+
+def L(*events):
+    led = EvidenceLedger()
+    led.apply_prefix(list(events))
+    return led
+
+
+class TestR5FailedMutationsNeverRevoke(unittest.TestCase):
+    def test_noop_result_keeps_evidence(self):
+        led = L(fv("synth.items", "e1", "amount", 500000, 1),
+                mut("synth.write", "e1", 2, "update", registry="synth.items",
+                    result={"ok": True, "done": False},
+                    fields=["amount"]))
+        st, obs, _ = led.query_field_value("synth.items", "e1",
+                                           "amount", 3)
+        self.assertEqual(st, "active")
+        self.assertEqual(obs, 500000)
+
+    def test_schema_rejected_result_keeps_evidence(self):
+        led = L(fv("synth.items", "e1", "amount", 500000, 1),
+                mut("synth.write", "e1", 2, "update", registry="synth.items",
+                    result={"ok": False}, fields=["amount"]))
+        st, obs, _ = led.query_field_value("synth.items", "e1",
+                                           "amount", 3)
+        self.assertEqual(st, "active")
+        self.assertEqual(obs, 500000)
+
+    def test_ineffective_flag_keeps_evidence(self):
+        led = L(fv("synth.items", "e1", "amount", 500000, 1),
+                mut("synth.write", "e1", 2, "update", registry="synth.items", fields=["amount"],
+                    effective=False))
+        st, obs, _ = led.query_field_value("synth.items", "e1",
+                                           "amount", 3)
+        self.assertEqual(st, "active")
+        self.assertEqual(obs, 500000)
+
+    def test_noop_cancel_keeps_eligibility(self):
+        led = L(ex("flights.bookings", "bk_01", 1),
+                el("flights.bookings", "bk_01", 1),
+                mut("synth.write", "bk_01", 2, "cancel", registry="flights.bookings",
+                    result={"ok": True, "done": False}))
+        st, _, _ = led.query("flights.bookings", "bk_01", "eligibility",
+                             position=3)
+        self.assertEqual(st, "active")
+
+
+class TestR5DerivedChainDeath(unittest.TestCase):
+    def test_multi_hop_source_death(self):
+        reg = "synth.items"
+        a = fv(reg, "e1", "start", "2026-11-19T09:00", 1)
+        b = ev("link-1", "field_value", 2, registry=reg, field="link",
+               counterpart={"id": "e1"},
+               derived_from=[{"registry": reg, "value": "e1",
+                              "claim": "field_value", "field": "start"}])
+        c = ev("code-1", "field_value", 2, registry=reg, field="code",
+               counterpart={"id": "e1"},
+               derived_from=[{"registry": reg, "value": "link-1",
+                              "claim": "field_value", "field": "link"}])
+        led = L(a, b, c)
+        st, _, _ = led.query(reg, "code-1", "field_value", position=2,
+                             field="code")
+        self.assertEqual(st, "active")
+        # Kill the root source: the update touches "start".
+        led.apply_mutation(mut("synth.write", "e1", 3, "update", registry=reg, fields=["start"]))
+        st, _, reason = led.query(reg, "link-1", "field_value",
+                                  position=4, field="link")
+        self.assertEqual(st, "unknown")
+        self.assertIn("derived_source_invalidated", reason)
+        st, _, reason = led.query(reg, "code-1", "field_value",
+                                  position=4, field="code")
+        self.assertEqual(st, "unknown")
+        self.assertIn("derived_source_unknown", reason)
+
+    def test_derived_survives_unrelated_field_update(self):
+        reg = "synth.items"
+        a = fv(reg, "e1", "start", "2026-11-19T09:00", 1)
+        b = ev("link-1", "field_value", 2, registry=reg, field="link",
+               counterpart={"id": "e1"},
+               derived_from=[{"registry": reg, "value": "e1",
+                              "claim": "field_value", "field": "start"}])
+        led = L(a, b, mut("synth.write", "e1", 3, "update", registry=reg, fields=["label"]))
+        st, _, _ = led.query(reg, "link-1", "field_value", position=4,
+                             field="link")
+        self.assertEqual(st, "active")
+
+
+class TestR5FieldValueConvention(unittest.TestCase):
+    def test_counterpart_link_required(self):
+        # A field_value record that matches the query by value (its
+        # value IS the entity id) but carries no counterpart link
+        # must NOT satisfy an entity field check: the observed value
+        # it would report is the entity id, not a field value.
+        rec = ev("e1", "field_value", 1, registry="synth.items",
+                 field="amount", counterpart=None)
+        led = L(rec)
+        st, obs, reason = led.query_field_value("synth.items", "e1",
+                                                "amount", 2)
+        self.assertEqual(st, "unknown")
+        self.assertIsNone(obs)
+        self.assertEqual(reason, "field_record_not_entity_linked")
+
+    def test_counterpart_record_returns_observed_value(self):
+        led = L(fv("synth.items", "e1", "amount", 500000, 1))
+        st, obs, _ = led.query_field_value("synth.items", "e1",
+                                           "amount", 2)
+        self.assertEqual(st, "active")
+        self.assertEqual(obs, 500000)
+
+    def test_field_invalidated_since(self):
+        reg = "synth.items"
+        led = L(fv(reg, "e1", "amount", 500000, 1))
+        stale, _ = led.field_invalidated_since(reg, "e1", "amount", 1, 2)
+        self.assertFalse(stale)
+        led.apply_mutation(mut("synth.write", "e1", 3, "update", registry=reg, fields=["label"]))
+        stale, _ = led.field_invalidated_since(reg, "e1", "amount", 1, 4)
+        self.assertFalse(stale)
+        led.apply_mutation(mut("synth.write", "e1", 5, "update", registry=reg, fields=["amount"]))
+        stale, reason = led.field_invalidated_since(reg, "e1", "amount",
+                                                    1, 6)
+        self.assertTrue(stale)
+        self.assertIn("field_updated@pos5", reason)
+        # Mutation beyond the query position is invisible: the label
+        # update sits at pos 3, so a query bounded at pos 2 sees
+        # nothing touching the field.
+        stale, _ = led.field_invalidated_since(reg, "e1", "label", 1, 2)
+        self.assertFalse(stale)
+        # Cancel kills only status fields, not amount.
+        led2 = L(fv(reg, "e1", "amount", 500000, 1),
+                 fv(reg, "e1", "status", "confirmed", 1),
+                 mut("synth.write", "e1", 2, "cancel", registry=reg))
+        stale, _ = led2.field_invalidated_since(reg, "e1", "amount", 1, 3)
+        self.assertFalse(stale)
+        stale, _ = led2.field_invalidated_since(reg, "e1", "status", 1, 3)
+        self.assertTrue(stale)
+
+
+class TestR5Eligibility(unittest.TestCase):
+    def test_existence_only_variants(self):
+        led = L(ex("tasks.tasks", "t_01", 1))
+        self.assertEqual(check_eligibility(led, "tasks.complete", "t_01"),
+                         ("eligible", "entity_exists"))
+        self.assertEqual(check_eligibility(led, "tasks.complete", "t_99"),
+                         ("unknown", "no_existence_evidence"))
+        led.apply_mutation(mut("synth.write", "t_01", 2, "delete", registry="tasks.tasks"))
+        self.assertEqual(check_eligibility(led, "tasks.complete", "t_01"),
+                         ("ineligible", "entity_deleted"))
+
+    def test_patch_cancel_vs_guarded_cancel_contrast(self):
+        # Same cancelled booking: patch-cancel still succeeds
+        # (App.patch has no guard), guarded cancel does not.
+        led = L(ex("flights.bookings", "bk_01", 1),
+                el("flights.bookings", "bk_01", 1),
+                mut("synth.write", "bk_01", 2, "cancel", registry="flights.bookings"))
+        self.assertEqual(check_eligibility(led, "flights.cancel", "bk_01"),
+                         ("eligible", "entity_exists"))
+        led2 = L(ex("subscriptions.subscriptions", "sub_01", 1),
+                 el("subscriptions.subscriptions", "sub_01", 1),
+                 mut("synth.write", "sub_01", 2, "cancel", registry="subscriptions.subscriptions"))
+        st, reason = check_eligibility(led2, "subscriptions.cancel",
+                                       "sub_01")
+        self.assertEqual(st, "ineligible")
+        self.assertIn("cancelled", reason)
+
+    def test_join_cancelled_via_status_field_only(self):
+        # No eligibility record: the status field killed by a cancel
+        # is itself evidence of cancellation.
+        led = L(ex("video_meeting.meetings", "m_01", 1),
+                fv("video_meeting.meetings", "m_01", "status",
+                   "scheduled", 1),
+                mut("synth.write", "m_01", 2, "cancel", registry="video_meeting.meetings"))
+        st, reason = check_eligibility(led, "video_meeting.join", "m_01")
+        self.assertEqual(st, "ineligible")
+        self.assertIn("status_cancelled", reason)
+        # Join on joined succeeds (no joined guard).
+        led2 = L(ex("video_meeting.meetings", "m_02", 1),
+                 el("video_meeting.meetings", "m_02", 1),
+                 fv("video_meeting.meetings", "m_02", "status",
+                    "joined", 1))
+        self.assertEqual(check_eligibility(led2, "video_meeting.join",
+                                           "m_02"),
+                         ("eligible", "entity_exists_not_cancelled"))
+
+    def test_check_in_legs(self):
+        snap = {"status": "confirmed"}
+        led = L(ex("flights.bookings", "bk_01", 1),
+                el("flights.bookings", "bk_01", 1))
+        # No checked_in evidence and no snapshot -> unknown, not eligible.
+        st, _ = check_eligibility(led, "flights.check_in", "bk_01")
+        self.assertEqual(st, "unknown")
+        # Snapshot without checked_in (absent == falsy) -> eligible.
+        st, reason = check_eligibility(led, "flights.check_in", "bk_01",
+                                       snapshot=snap, snapshot_position=1)
+        self.assertEqual(st, "eligible")
+        self.assertEqual(reason, "booking_live_not_checked_in")
+        # Snapshot with checked_in=True -> ineligible.
+        st, reason = check_eligibility(
+            led, "flights.check_in", "bk_01",
+            snapshot={"status": "confirmed", "checked_in": True},
+            snapshot_position=1)
+        self.assertEqual(st, "ineligible")
+        self.assertEqual(reason, "field_true:checked_in")
+        # Ledger record checked_in=True beats a fresh-looking snapshot.
+        led2 = L(ex("flights.bookings", "bk_02", 1),
+                 el("flights.bookings", "bk_02", 1),
+                 fv("flights.bookings", "bk_02", "checked_in", True, 1))
+        st, _ = check_eligibility(led2, "flights.check_in", "bk_02",
+                                  snapshot={"status": "confirmed"},
+                                  snapshot_position=1)
+        self.assertEqual(st, "ineligible")
+
+    def test_bill_pay_legs(self):
+        led = L(ex("bill_payment.bills", "bill_01", 1))
+        # Unpaid via snapshot (paid absent == falsy is covered by the
+        # paid=False snapshot here; absent alone is tested below).
+        st, _ = check_eligibility(led, "bill_payment.pay", "bill_01",
+                                  snapshot={"paid": False},
+                                  snapshot_position=1)
+        self.assertEqual(st, "eligible")
+        st, reason = check_eligibility(led, "bill_payment.pay", "bill_01",
+                                       snapshot={"paid": True},
+                                       snapshot_position=1)
+        self.assertEqual(st, "ineligible")
+        self.assertEqual(reason, "field_true:paid")
+        # Paid leg passes but ewallet leg is unknown, never eligible.
+        st, reason = check_eligibility(
+            led, "bill_payment.pay", "bill_01",
+            snapshot={"paid": False}, snapshot_position=1,
+            args={"source": "ewallet"})
+        self.assertEqual(st, "unknown")
+        self.assertEqual(reason, "ewallet_balance_leg_unknown")
+        # No paid evidence at all -> unknown.
+        st, _ = check_eligibility(led, "bill_payment.pay", "bill_01")
+        self.assertEqual(st, "unknown")
+
+    def test_enroll_bike_reschedule_type(self):
+        led = L(ex("learning.courses", "c_01", 1),
+                ex("bike_rental.bikes", "bike_01", 1),
+                ex("package_tracking.shipments", "tr_01", 1),
+                ex("smart_home.devices", "dev_01", 1))
+        self.assertEqual(
+            check_eligibility(led, "learning.enroll", "c_01",
+                              snapshot={}, snapshot_position=1),
+            ("eligible", "field_absent_default_falsy:enrolled"))
+        self.assertEqual(
+            check_eligibility(led, "learning.enroll", "c_01",
+                              snapshot={"enrolled": True},
+                              snapshot_position=1),
+            ("ineligible", "field_true:enrolled"))
+        self.assertEqual(
+            check_eligibility(led, "bike_rental.reserve", "bike_01",
+                              snapshot={}, snapshot_position=1),
+            ("eligible", "field_absent_default_true:available"))
+        self.assertEqual(
+            check_eligibility(led, "bike_rental.reserve", "bike_01",
+                              snapshot={"available": False},
+                              snapshot_position=1),
+            ("ineligible", "field_false:available"))
+        self.assertEqual(
+            check_eligibility(led, "package_tracking.reschedule_delivery",
+                              "tr_01", snapshot={"status": "shipped"},
+                              snapshot_position=1),
+            ("eligible", "field_not_value:status"))
+        self.assertEqual(
+            check_eligibility(led, "package_tracking.reschedule_delivery",
+                              "tr_01", snapshot={"status": "delivered"},
+                              snapshot_position=1),
+            ("ineligible", "field_equals:status=delivered"))
+        self.assertEqual(
+            check_eligibility(led, "smart_home.light_set", "dev_01",
+                              snapshot={"type": "light"},
+                              snapshot_position=1),
+            ("eligible", "type_matches:light"))
+        self.assertEqual(
+            check_eligibility(led, "smart_home.light_set", "dev_01",
+                              snapshot={"type": "fan"},
+                              snapshot_position=1),
+            ("ineligible", "type_mismatch:fan"))
+        # Absent type FAILS the require (unlike falsy-default guards).
+        self.assertEqual(
+            check_eligibility(led, "smart_home.light_set", "dev_01",
+                              snapshot={}, snapshot_position=1),
+            ("ineligible", "type_absent_not_light"))
+        self.assertEqual(
+            check_eligibility(led, "smart_home.switch_set", "dev_01"),
+            ("eligible", "entity_exists"))
+
+    def test_fk_and_grant_guest_code(self):
+        led = L(ex("flights.flights", "fl_01", 1),
+                ex("door_lock.locks", "lock_01", 1))
+        self.assertEqual(check_eligibility(led, "flights.book", "fl_01"),
+                         ("eligible", "fk_exists:flights.flights"))
+        self.assertEqual(check_eligibility(led, "flights.book", "fl_99"),
+                         ("unknown", "fk_existence_unknown:flights.flights"))
+        st, reason = check_eligibility(led, "door_lock.grant_guest_code",
+                                       "lock_01")
+        self.assertEqual(st, "eligible")
+        self.assertIn("valid_until_not_checked", reason)
+
+    def test_context_gated_consumers(self):
+        led = L(ex("library.books", "book_01", 1),
+                ex("household_chores.chores", "ch_01", 1),
+                ex("music.playlists", "pl_01", 1),
+                ex("music.tracks", "tr_01", 1),
+                ex("food_delivery.restaurants", "rest_01", 1))
+        # Library: no context -> unknown; empty list -> eligible;
+        # ready reservation -> ineligible.
+        st, _ = check_eligibility(led, "library.reserve", "book_01")
+        self.assertEqual(st, "unknown")
+        self.assertEqual(check_eligibility(led, "library.reserve",
+                                           "book_01",
+                                           context={"reservations": []}),
+                         ("eligible",
+                          "book_exists_no_active_reservation(context_basis)"))
+        st, _ = check_eligibility(
+            led, "library.reserve", "book_01",
+            context={"reservations": [{"book_id": "book_01",
+                                       "status": "ready"}]})
+        self.assertEqual(st, "ineligible")
+        # Chores: folded/diacritic-insensitive member match.
+        st, _ = check_eligibility(led, "household_chores.assign", "ch_01",
+                                  args={"assignee": "Bình"})
+        self.assertEqual(st, "unknown")
+        self.assertEqual(check_eligibility(
+            led, "household_chores.assign", "ch_01",
+            args={"assignee": "binh"}, context={"members": ["An", "Bình"]}),
+                         ("eligible",
+                          "chore_exists_assignee_member(context_basis)"))
+        st, _ = check_eligibility(
+            led, "household_chores.assign", "ch_01",
+            args={"assignee": "Lan"}, context={"members": ["An", "Bình"]})
+        self.assertEqual(st, "ineligible")
+        # Playlist: track present / absent / track unknown.
+        self.assertEqual(check_eligibility(
+            led, "music.add_to_playlist", "pl_01",
+            snapshot={"track_ids": ["tr_01"]}, snapshot_position=1,
+            args={"track_id": "tr_01"}),
+                         ("ineligible", "track_already_in_playlist"))
+        self.assertEqual(check_eligibility(
+            led, "music.add_to_playlist", "pl_01",
+            snapshot={"track_ids": []}, snapshot_position=1,
+            args={"track_id": "tr_01"}),
+                         ("eligible", "track_not_in_playlist"))
+        st, _ = check_eligibility(led, "music.add_to_playlist", "pl_01",
+                                  snapshot={"track_ids": []},
+                                  snapshot_position=1,
+                                  args={"track_id": "tr_99"})
+        self.assertEqual(st, "unknown")
+        # Place order: menu membership from the snapshot.
+        menu = {"menu": [{"id": "m_01"}, {"id": "m_02"}]}
+        self.assertEqual(check_eligibility(
+            led, "food_delivery.place_order", "rest_01",
+            snapshot=menu, snapshot_position=1,
+            args={"items": [{"item_id": "m_01"}]}),
+                         ("eligible",
+                          "restaurant_exists_all_items_in_menu(snapshot_basis)"))
+        st, reason = check_eligibility(
+            led, "food_delivery.place_order", "rest_01",
+            snapshot=menu, snapshot_position=1,
+            args={"items": [{"item_id": "m_09"}]})
+        self.assertEqual(st, "ineligible")
+        self.assertEqual(reason, "menu_item_missing:m_09")
+        st, _ = check_eligibility(led, "food_delivery.place_order",
+                                  "rest_01", snapshot=menu,
+                                  snapshot_position=1, args={"items": []})
+        self.assertEqual(st, "ineligible")
+        st, _ = check_eligibility(led, "food_delivery.place_order",
+                                  "rest_01",
+                                  args={"items": [{"item_id": "m_01"}]})
+        self.assertEqual(st, "unknown")
+
+    def test_snapshot_staleness(self):
+        # Snapshot observed at pos 1; an update touching the field
+        # at pos 2 makes it unusable; the ledger has no newer record.
+        led = L(ex("bill_payment.bills", "bill_01", 1),
+                mut("synth.write", "bill_01", 2, "update", registry="bill_payment.bills",
+                    fields=["paid"]))
+        st, reason = check_eligibility(
+            led, "bill_payment.pay", "bill_01",
+            snapshot={"paid": False}, snapshot_position=1)
+        self.assertEqual(st, "unknown")
+        self.assertIn("snapshot_stale", reason)
+        # A re-read after the mutation re-establishes the field.
+        led.add_evidence(fv("bill_payment.bills", "bill_01", "paid",
+                            True, 3))
+        st, _ = check_eligibility(led, "bill_payment.pay", "bill_01",
+                                  snapshot={"paid": False},
+                                  snapshot_position=1)
+        self.assertEqual(st, "ineligible")
+        # Snapshot without a position: any touching mutation in the
+        # prefix makes it unusable -- and with no newer ledger
+        # record, the answer is unknown (not a guessed value).
+        led2 = L(ex("bill_payment.bills", "bill_02", 1),
+                 mut("synth.write", "bill_02", 2, "update",
+                     registry="bill_payment.bills", fields=["paid"]))
+        st, reason = check_eligibility(
+            led2, "bill_payment.pay", "bill_02",
+            snapshot={"paid": False})
+        self.assertEqual(st, "unknown")
+        self.assertIn("snapshot_stale", reason)
+
+    def test_reread_keeps_history_intact(self):
+        led = L(fv("synth.items", "e1", "amount", 500000, 1),
+                mut("synth.write", "e1", 2, "update", registry="synth.items", fields=["amount"]))
+        st, _, _ = led.query_field_value("synth.items", "e1", "amount", 3)
+        self.assertEqual(st, "invalidated")
+        led.add_evidence(fv("synth.items", "e1", "amount", 600000, 4))
+        st, obs, _ = led.query_field_value("synth.items", "e1",
+                                           "amount", 5)
+        self.assertEqual(st, "active")
+        self.assertEqual(obs, 600000)
+        # Both records are still in the journal (history intact).
+        kinds = [e.get("claim") for e in led.history()
+                 if e.get("_type") == "evidence"]
+        self.assertEqual(kinds.count("field_value"), 2)
+
+    def test_id_reuse_needs_fresh_evidence(self):
+        led = L(ex("synth.items", "e1", 1),
+                mut("synth.write", "e1", 2, "delete", registry="synth.items"))
+        st, _, _ = led.query("synth.items", "e1", "existence", position=3)
+        self.assertEqual(st, "invalidated")
+        led.add_evidence(ex("synth.items", "e1", 4))
+        st, _, _ = led.query("synth.items", "e1", "existence", position=5)
+        self.assertEqual(st, "active")
+
+    def test_registry_collision_isolated(self):
+        led = L(fv("reg.one", "x", "amount", 100, 1),
+                mut("synth.write", "x", 2, "update", registry="reg.two", fields=["amount"]))
+        st, obs, _ = led.query_field_value("reg.one", "x", "amount", 3)
+        self.assertEqual(st, "active")
+        self.assertEqual(obs, 100)
+        st, _, _ = led.query_field_value("reg.two", "x", "amount", 3)
+        self.assertEqual(st, "unknown")
+
+    def test_unknown_consumer_and_missing_entity(self):
+        led = L(ex("synth.items", "e1", 1))
+        st, reason = check_eligibility(led, "banking.transfer", "e1")
+        self.assertEqual(st, "unknown")
+        self.assertEqual(reason, "consumer_not_supported:banking.transfer")
+        st, reason = check_eligibility(led, "tasks.complete", None)
+        self.assertEqual(st, "unknown")
+        self.assertEqual(reason, "entity_id_missing")
+        st, reason = check_eligibility(led, "no.such_tool", "e1")
+        self.assertEqual(st, "unknown")
+        self.assertTrue(reason.startswith("consumer_not_supported:"))
+
+    def test_future_mutation_invisible_to_eligibility(self):
+        led = L(ex("subscriptions.subscriptions", "sub_01", 1),
+                el("subscriptions.subscriptions", "sub_01", 1),
+                mut("synth.write", "sub_01", 10, "cancel", registry="subscriptions.subscriptions"))
+        st, _ = check_eligibility(led, "subscriptions.cancel", "sub_01",
+                                  position=5)
+        self.assertEqual(st, "eligible")
+        st, _ = check_eligibility(led, "subscriptions.cancel", "sub_01",
+                                  position=10)
+        self.assertEqual(st, "ineligible")
+
+
+class TestR5CoverageTables(unittest.TestCase):
+    def test_contracts_are_well_formed(self):
+        from lifemate.lifemate_evidence_lifecycle import _HANDLER_BY_NAME
+        for name, c in CONSUMER_CONTRACTS.items():
+            self.assertIn("registry", c, name)
+            self.assertIn("id_arg", c, name)
+            self.assertIn("handler", c, name)
+            self.assertIn(c["handler"], _HANDLER_BY_NAME, name)
+            self.assertIn("evidence", c, name)
+            self.assertTrue(c["evidence"], name)
+        overlap = set(CONSUMER_CONTRACTS) & set(UNSUPPORTED_CONSUMERS)
+        self.assertEqual(overlap, set())
+        for name, reason in UNSUPPORTED_CONSUMERS.items():
+            self.assertTrue(reason, name)
+        for row in PRODUCER_CLAIM_CONSUMER_TABLE:
+            for key in ("producer", "claim", "killed_by", "consumers",
+                        "evidence"):
+                self.assertIn(key, row)
+                self.assertTrue(row[key], key)
+
+    def test_supported_count(self):
+        # 21 existence + 2 not_cancelled + 3 field-ish (check_in,
+        # bill_pay, enroll) + 1 default_true + 1 not_value + 4 type
+        # (3 type + switch) + 6 fk-ish (5 fk + grant) + 4 context =
+        # 42. Pin the count so silent additions/removals are noticed.
+        self.assertEqual(len(CONSUMER_CONTRACTS), 42)
+
+
+class TestR5ProverValidityBuilder(unittest.TestCase):
+    def test_active_invalidated_unknown(self):
+        led = L(fv("alarm.alarms", "al_01", "time",
+                   "2026-11-14T06:15:00+07:00", 1))
+        check = make_prover_validity(
+            led, 2, registry_for_tool=lambda t: "alarm.alarms")
+        self.assertEqual(check("alarm.list_alarms", "time",
+                               "2026-11-14T06:15:00+07:00", "al_01")[0],
+                         "active")
+        self.assertEqual(check("alarm.list_alarms", "time",
+                               "2026-11-14T07:00:00+07:00", "al_01"),
+                         ("invalidated", "field_value_changed"))
+        self.assertEqual(check("alarm.list_alarms", "time",
+                               "2026-11-14T06:15:00+07:00", "al_99")[0],
+                         "unknown")
+        self.assertEqual(check("alarm.list_alarms", "time",
+                               "2026-11-14T06:15:00+07:00", None)[0],
+                         "unknown")
+        self.assertEqual(check("alarm.list_alarms", None,
+                               "2026-11-14T06:15:00+07:00", "al_01")[0],
+                         "unknown")
+
+    def test_registry_mapping_fallback(self):
+        # Write tools resolve via MUTATION_TABLE; unknown tools do not.
+        led = L(fv("tasks.tasks", "t_01", "done", True, 1))
+        check = make_prover_validity(led, 2)
+        self.assertEqual(check("tasks.complete", "done", True, "t_01")[0],
+                         "active")
+        st, reason = check("mystery.read", "done", True, "t_01")
+        self.assertEqual(st, "unknown")
+        self.assertIn("registry_unknown_for_tool", reason)
+
+    def test_values_equal_rules(self):
+        from lifemate.lifemate_evidence_lifecycle import _values_equal
+        self.assertTrue(_values_equal(500000, 500000.0))
+        self.assertFalse(_values_equal(True, 1))
+        self.assertTrue(_values_equal("2026-11-19T09:00:00+07:00",
+                                      "2026-11-19T09:00:00+07:00"))
+        self.assertFalse(_values_equal("2026-11-19T09:00:00+07:00",
+                                       "2026-11-19T10:00:00+07:00"))
+        self.assertFalse(_values_equal("abc", "abd"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

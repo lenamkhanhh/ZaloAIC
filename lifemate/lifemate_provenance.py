@@ -1139,7 +1139,7 @@ def _observation_candidates(value, turn_obs, history_obs, tool, slot,
         for key, val in call_args.items():
             if key.endswith("_id") and isinstance(val, str):
                 call_ids.add(val)
-    eligible = []   # (entity, source)
+    eligible = []   # (obs_tool, field, value, entity, source)
     cross = False
     unknown = False
     for source, obs_list in (("turn", turn_obs), ("history", history_obs)):
@@ -1163,22 +1163,25 @@ def _observation_candidates(value, turn_obs, history_obs, tool, slot,
             else:
                 if source != "turn":
                     continue
-            eligible.append((entity, source))
+            eligible.append((obs_tool, field, obs_value, entity, source))
     if eligible:
-        entities = {e for e, _ in eligible if e is not None}
+        entities = {e[3] for e in eligible if e[3] is not None}
         if len(entities) > 1:
             return ("ambiguous", "observation_ambiguous",
-                    "%d distinct observation entities match" % len(entities))
+                    "%d distinct observation entities match" % len(entities),
+                    eligible)
         return ("proven", "observation",
                 "unique %s observation %s=%r"
-                % (eligible[0][1], slot, value))
+                % (eligible[0][4], slot, value),
+                eligible)
     if cross:
         return ("cross_app", "observation_cross_app",
-                "value seen only in a different app's result")
+                "value seen only in a different app's result", eligible)
     if unknown:
         return ("unknown", "observation_unknown_source",
-                "value seen only in untyped (field/app unknown) entries")
-    return (None, None, None)
+                "value seen only in untyped (field/app unknown) entries",
+                eligible)
+    return (None, None, None, eligible)
 
 
 def _roster_intent(entry, rosters, current_text):
@@ -1415,8 +1418,57 @@ def _history_value_matches(candidate, value, slot):
     return False
 
 
+def _validity_check(validity, obs_entry):
+    """Run one validity check: validity(obs_tool, field, value,
+    entity) -> (status, reason) with status in {"active",
+    "invalidated", "unknown"}. A raising callable propagates (the
+    closure is the caller's bug, not prover data); a malformed
+    return raises ValueError (fail loudly, never silently prove).
+    """
+    obs_tool, field, value, entity = obs_entry[0], obs_entry[1], \
+        obs_entry[2], obs_entry[3]
+    out = validity(obs_tool, field, value, entity)
+    if not isinstance(out, tuple) or len(out) != 2:
+        raise ValueError("validity must return (status, reason)")
+    status, reason = out
+    if status not in ("active", "invalidated", "unknown"):
+        raise ValueError("validity status must be active/invalidated/"
+                         "unknown, got %r" % (status,))
+    return status, reason
+
+
+def _event_entity(event, call_ids):
+    """The entity id linking an observation event to the write:
+    the event's primary id when it is among the call's ids, else
+    the first matched id (deterministic), else None."""
+    for key in ("id", "event_id", "alarm_id", "reminder_id"):
+        if event.get(key) is not None and str(event[key]) in call_ids:
+            return str(event[key])
+    matched = sorted({str(event.get(k)) for k in
+                      ("id", "event_id", "alarm_id", "reminder_id")
+                      if event.get(k)} & call_ids)
+    return matched[0] if matched else None
+
+
+def _event_field_valid(validity, obs_tool, event, field, entity):
+    """True iff the event's field value is validity-active (or no
+    validity gating). A missing/unknown entity, or a non-active
+    check, vetoes the event as a base -- the event dict may be
+    stale (its field changed after it was observed)."""
+    if validity is None:
+        return True
+    if entity is None or field is None:
+        return False
+    value = event.get(field)
+    if not isinstance(value, str):
+        return False
+    status, _ = _validity_check(
+        validity, (obs_tool, field, value, entity))
+    return status == "active"
+
+
 def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
-                   _depth=0):
+                   _depth=0, validity=None):
     """Prove one tool argument against evidence.
 
     This is a typed-evidence RULE ENGINE, not a graph DAG: each verdict
@@ -1448,6 +1500,25 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
     duration rule, and roster intent).
     _depth: internal recursion guard for base/start proofs (callers
     leave it at 0).
+    validity: optional callable check(obs_tool, field, value, entity)
+    -> (status, reason) with status in {"active", "invalidated",
+    "unknown"} (see lifemate_evidence_lifecycle.make_prover_validity
+    for the ledger adapter; the prover never imports the ledger).
+    When provided, an observation-based PROVEN verdict requires
+    every observation it rests on to be "active": validity is
+    applied BEFORE uniqueness, so a killed entity drops out of an
+    ambiguous set (a surviving unique entity still proves), and a
+    fully vetoed observation falls through to later rules instead
+    of proving. If nothing else proves, the final verdict is
+    UNPROVEN with rule "observation_expired" and the veto in its
+    detail (more diagnostic than "none"). Event bases for
+    datetime_assembly / offset / duration are gated the same way
+    (a stale event dict never bases a proof). History_reference is
+    NOT validity-gated: its candidates are bare values with no
+    entity linkage, so no ledger query can attach to them (a
+    documented boundary, not an oversight). With validity=None
+    the behavior is EXACTLY the old behavior (no validity call is
+    made at all).
     """
     all_rules = ["supersede", "verbatim", "number_words", "relative_date",
                  "observation", "roster", "history_reference",
@@ -1457,6 +1528,7 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
     cross_app_candidate = False
     unknown_candidate = False
     roster_no_intent = False
+    validity_veto = None
 
     # --- supersede: correction markers change what counts as evidence.
     if "supersede" in wanted and any(
@@ -1512,13 +1584,41 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
     # aware, unique. Contact slots are not proven by observations:
     # contacts come from rosters (existence + intent) and history.
     if "observation" in wanted and slot not in ("contact_id", "to"):
-        status, rule, detail = _observation_candidates(
+        status, rule, detail, eligible = _observation_candidates(
             value, evidence.turn_observations, evidence.history_observations,
             tool, slot, call_args)
-        if status == "proven":
-            return Verdict("PROVEN", rule, detail)
-        if status == "ambiguous":
-            return Verdict("AMBIGUOUS", rule, detail)
+        if status == "proven" or status == "ambiguous":
+            if validity is None:
+                if status == "proven":
+                    return Verdict("PROVEN", rule, detail)
+                return Verdict("AMBIGUOUS", rule, detail)
+            # Validity filtering BEFORE uniqueness: a killed entity
+            # drops out of the set; a surviving unique entity still
+            # proves; a fully vetoed set falls through (veto noted
+            # for the final verdict) instead of proving.
+            survivors = []
+            vetoed = []
+            for entry in eligible:
+                st, vreason = _validity_check(validity, entry)
+                if st == "active":
+                    survivors.append(entry)
+                else:
+                    vetoed.append((entry, st, vreason))
+            if not survivors:
+                validity_veto = (
+                    "observation_evidence_not_active: " + "; ".join(
+                        "%s.%s=%r entity=%s -> %s(%s)"
+                        % (e[0], e[1], e[2], e[3], st, vr)
+                        for e, st, vr in vetoed))
+            else:
+                entities = {e[3] for e in survivors if e[3] is not None}
+                if len(entities) > 1:
+                    return Verdict("AMBIGUOUS", "observation_ambiguous",
+                                   "%d distinct observation entities match"
+                                   % len(entities))
+                return Verdict("PROVEN", "observation",
+                               "unique %s observation %s=%r"
+                               % (survivors[0][4], slot, value))
         if status == "cross_app":
             cross_app_candidate = True
         elif status == "unknown":
@@ -1622,6 +1722,15 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
                               if event.get(k)}
                     if not (ev_ids & call_ids):
                         continue
+                    # Validity gate: the event's primary field must
+                    # still be alive (a rescheduled event's old time
+                    # never bases an assembly).
+                    primary_key = "start" if isinstance(
+                        event.get("start"), str) else "time"
+                    if not _event_field_valid(
+                            validity, obs_tool, event, primary_key,
+                            _event_entity(event, call_ids)):
+                        continue
                     primary = event.get("start") or event.get("time")
                     base = _parse_gold_datetime(primary) \
                         if isinstance(primary, str) else None
@@ -1670,8 +1779,14 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
                               if event.get(k)}
                     if not id_args or not (ev_ids & id_args):
                         continue
+                    entity = _event_entity(event, id_args)
                     for key in ("start", "time"):
                         if isinstance(event.get(key), str):
+                            # Validity gate: a stale event base
+                            # never grounds an offset.
+                            if not _event_field_valid(
+                                    validity, obs_tool, event, key, entity):
+                                continue
                             base = _parse_gold_datetime(event[key])
                             if base is not None:
                                 bases.append(base)
@@ -1701,7 +1816,8 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
                                         continue
                                     check = prove_argument(
                                         pk, pargs[pk], ptool, evidence,
-                                        call_args=pargs, _depth=_depth + 1)
+                                        call_args=pargs, _depth=_depth + 1,
+                                        validity=validity)
                                     if check.status == "PROVEN":
                                         bases.append(base)
                 for delta, direction in cues:
@@ -1726,7 +1842,8 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
         if gold_dt is not None and start_dt is not None:
             start_check = prove_argument(
                 "start", call_args["start"], tool, evidence,
-                call_args=call_args, _depth=_depth + 1)
+                call_args=call_args, _depth=_depth + 1,
+                validity=validity)
             if start_check.status == "PROVEN":
                 app = (tool or "").split(".", 1)[0] \
                     if "." in (tool or "") else ""
@@ -1743,6 +1860,17 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
                               ("id", "event_id", "alarm_id", "reminder_id")
                               if event.get(k)}
                     if not id_args or not (ev_ids & id_args):
+                        continue
+                    # Validity gate: BOTH start and end must still
+                    # be alive -- the duration is end minus start of
+                    # the ORIGINAL event, and either side changing
+                    # invalidates it.
+                    entity = _event_entity(event, id_args)
+                    if not _event_field_valid(
+                            validity, obs_tool, event, "start", entity):
+                        continue
+                    if not _event_field_valid(
+                            validity, obs_tool, event, "end", entity):
                         continue
                     try:
                         obs_start = _parse_gold_datetime(event["start"])
@@ -1765,6 +1893,11 @@ def prove_argument(slot, value, tool, evidence, rules=None, call_args=None,
             return Verdict("PROVEN", "default",
                            "value equals a declared default")
 
+    if validity_veto is not None:
+        # The only same-app observation that could have proven was
+        # vetoed by expiry, and no later rule proved instead: say
+        # so explicitly instead of the generic "none".
+        return Verdict("UNPROVEN", "observation_expired", validity_veto)
     if cross_app_candidate:
         return Verdict("UNPROVEN", "observation_cross_app",
                        "value seen only in a different app's result")
@@ -1794,11 +1927,13 @@ def _slot_value_in_text(slot, value, text, anchor):
     return False
 
 
-def prove_call(call, evidence, rules=None):
+def prove_call(call, evidence, rules=None, validity=None):
     """Prove every monitored argument of one gold/proposed call.
 
     Monitored slots: time, date, start, end, amount, contact_id, plus
     'to' when it holds a contact id. Returns {slot: Verdict}.
+    validity is threaded to every prove_argument call (None keeps
+    the exact old behavior).
     """
     monitored = ("time", "date", "start", "end", "amount", "contact_id")
     name = call.get("name", "")
@@ -1807,10 +1942,12 @@ def prove_call(call, evidence, rules=None):
     for slot in monitored:
         if slot in args:
             out[slot] = prove_argument(slot, args[slot], name, evidence,
-                                       rules=rules, call_args=args)
+                                       rules=rules, call_args=args,
+                                       validity=validity)
     if "to" in args and isinstance(args["to"], str) \
             and "@" not in args["to"]:
         # 'to' holding a contact id (not an email) is monitored too.
         out["to"] = prove_argument("to", args["to"], name, evidence,
-                                   rules=rules, call_args=args)
+                                   rules=rules, call_args=args,
+                                   validity=validity)
     return out

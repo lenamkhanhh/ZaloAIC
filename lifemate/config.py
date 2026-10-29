@@ -42,6 +42,7 @@ class PipelineConfig:
     max_steps: int = 12
     max_repeats: int = 2  # a call seen this many times is pre-blocked
     grounding: bool = False  # adapter hook in agent.py; baseline.json=False, recommended.json=True
+    shadow_observer: bool = False  # R5 shadow-only G&G observer; OFF by default, logs decisions only, never alters behaviour
     selective_reads: bool = True
     verification_read_after_write: bool = False
     constrained_decoding: str = "validate-and-retry"  # XGrammar via vLLM when available

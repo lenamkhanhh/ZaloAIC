@@ -437,14 +437,48 @@ def main():
     ap.add_argument("--lifemate-dir", default=None)
     ap.add_argument("--e7-audit", default=None)
     ap.add_argument("--out-json", default="/tmp/t2_shadow.json")
+    ap.add_argument("--validity", action="store_true",
+                    help="R5: gate prover observations by ledger validity "
+                    "(evidence expiry). Off by default so the control run "
+                    "reproduces prior shadow numbers exactly.")
+    ap.add_argument("--eligibility", action="store_true",
+                    help="R5: report object-state eligibility in each row "
+                    "(report-only, never changes the guard decision). Off "
+                    "by default.")
     args = ap.parse_args()
 
     lifemate_dir = resolve_lifemate_dir(args.lifemate_dir)
     sys.path.insert(0, str(lifemate_dir))
     from lifemate_provenance import Evidence, prove_argument  # noqa: E402
     from lifemate_gates import (  # noqa: E402
-        gate_read_before_write, PriorCall, flatten_result_entries)
-    from lifemate_gates_adapter import decide as adapter_decide  # noqa: E402
+        PRODUCER_REGISTRY, gate_read_before_write, PriorCall,
+        flatten_result_entries)
+    from lifemate_gates_adapter import (  # noqa: E402
+        build_ledger, decide as adapter_decide,
+        filtered_prefix_for_phone)
+    from lifemate_evidence_lifecycle import (  # noqa: E402
+        make_prover_validity)
+
+    # R5: tool -> unique registry from PRODUCER_REGISTRY "id" entries.
+    # Ambiguous tools (one tool, several "id" registries) map to None:
+    # validity for them is unknown, never guessed. Tools with no "id"
+    # mapping (e.g. tasks/calendar/notes search) also map to None --
+    # their observations stay unknown under --validity (documented
+    # recall-for-precision tradeoff, not a silent pass).
+    _reg_found = {}
+    _reg_ambiguous = set()
+    for (_t, _p, _f), _reg in PRODUCER_REGISTRY.items():
+        if _f != "id":
+            continue
+        if _t in _reg_found and _reg_found[_t] != _reg:
+            _reg_ambiguous.add(_t)
+        else:
+            _reg_found[_t] = _reg
+    for _t in _reg_ambiguous:
+        _reg_found[_t] = None
+
+    def _registry_for_tool(tool):
+        return _reg_found.get(tool)
 
     e7 = load_module("e7_audit", resolve_e7_path(args.e7_audit, lifemate_dir))
     flatten_obs = e7.flatten_observations_with_field
@@ -665,6 +699,36 @@ def main():
                                 _scan(v, entity)
                     _scan(pres)
             rosters = list(hist_rosters) + turn_rosters
+            # Candidate prefix: history (raw) + session tool events
+            # strictly before this generation, positions continuing.
+            # (Moved above the prover call for R5: the validity ledger
+            # must be built from this prefix before proving.)
+            cand_prefix = list(hist_prefix)
+            cand_pos = hist_pos[0]
+            for pev in prefix_tool_events:
+                pres = pev.get("result")
+                cand_prefix.append({
+                    "tool": pev.get("name"),
+                    "args": pev.get("arguments") or {},
+                    "result": pres,
+                    "outcome": "succeeded" if succeeded(pres)
+                    else ("schema_rejected"
+                          if isinstance(pres, dict)
+                          and pres.get("ok") is False else "noop"),
+                    "position": cand_pos, "origin": "session"})
+                cand_pos += 1
+            # R5 --validity: gate prover observations by ledger expiry.
+            # The ledger mirrors the adapter's own (P3g-filtered prefix
+            # + field_value records from build_ledger). Off by default
+            # (validity=None reproduces the old prover exactly).
+            validity = None
+            if args.validity:
+                _phone_prefix, _n_filt = filtered_prefix_for_phone(
+                    cand_prefix)
+                _led, _led_notes = build_ledger(
+                    _phone_prefix, rosters, kinds)
+                validity = make_prover_validity(
+                    _led, cand_pos, registry_for_tool=_registry_for_tool)
             evidence = Evidence(
                 current_text=t.get("model_current_transcript") or "",
                 history_user_texts=hist_asr,
@@ -683,7 +747,7 @@ def main():
                     continue
                 value = pargs[slot]
                 v = prove_argument(slot, value, name, evidence,
-                                   call_args=pargs)
+                                   call_args=pargs, validity=validity)
                 arg_rows.append({
                     "slot": slot, "value": value,
                     "verdict": v.status, "rule": v.rule,
@@ -691,26 +755,11 @@ def main():
             call = {"name": name, "arguments": pargs}
             g2 = gate_read_before_write(
                 call, list(hist_priors) + turn_priors, rosters, kinds)
-            # Candidate prefix: history (raw) + session tool events
-            # strictly before this generation, positions continuing.
-            cand_prefix = list(hist_prefix)
-            cand_pos = hist_pos[0]
-            for pev in prefix_tool_events:
-                pres = pev.get("result")
-                cand_prefix.append({
-                    "tool": pev.get("name"),
-                    "args": pev.get("arguments") or {},
-                    "result": pres,
-                    "outcome": "succeeded" if succeeded(pres)
-                    else ("schema_rejected"
-                          if isinstance(pres, dict)
-                          and pres.get("ok") is False else "noop"),
-                    "position": cand_pos, "origin": "session"})
-                cand_pos += 1
             cand = adapter_decide(
                 call, cand_prefix, rosters,
                 t.get("model_current_transcript") or "", kinds,
-                proposal_position=cand_pos)
+                proposal_position=cand_pos,
+                eligibility=args.eligibility)
             blocked_by = []
             if cand.fired:
                 blocked_by.append("g2")
@@ -790,6 +839,8 @@ def main():
                 "g2": {"fired": g2.fired, "applicable": g2.applicable,
                        "reason": g2.reason},
                 "g2_candidate": cand.to_dict(),
+                "eligibility": (cand.notes.get("eligibility")
+                                if args.eligibility else None),
                 "decision": decision, "blocked_by": blocked_by,
                 "adjudication": adjudication,
                 "adjudication_reason": adj_reason,
@@ -865,6 +916,13 @@ def main():
         "guard_decisions": dict(decisions),
         "guard_decisions_by_arm": by_arm,
         "guard_decisions_by_group": by_group,
+        "validity_enabled": args.validity,
+        "eligibility_enabled": args.eligibility,
+        "eligibility_status_counts": (
+            dict(collections.Counter(
+                (r["eligibility"] or {}).get("status")
+                for r in write_rows if r["eligibility"]))
+            if args.eligibility else {}),
         "adjudications": dict(adjudications),
         "g2_fired": sum(1 for r in write_rows if r["g2"]["fired"]),
         "g2_candidate_fired": sum(

@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
 from lifemate_callback_negation import (  # noqa: E402
+    _has_other_number,
     analyze_action_selection,
     analyze_instruction_selection,
     analyze_topic_selection,
@@ -23,6 +24,21 @@ from lifemate_callback_negation import (  # noqa: E402
     phone_mentions_all_content,
     phone_numbers_for_action,
 )
+from lifemate_gates_adapter import decide as _decide  # noqa: E402
+
+KINDS = {"phone.call": "write", "sms.send": "write"}
+Y = "0911111111"
+X = "0902345678"
+
+
+def dec(text, number=Y, tool="phone.call"):
+    return _decide({"name": tool,
+                    "arguments": {"phone_number": number}},
+                   [], [], text, KINDS)
+
+
+def dec_reasons(d):
+    return [a.get("selection_reason") for a in d.adjustments]
 
 
 def sel(text, names=(), phones=(), action="call"):
@@ -1550,11 +1566,21 @@ class TestRound10Batch10Selection(unittest.TestCase):
         # is the rejected value of a correction frame,
         # not a competing number, so the bare verb "gọi
         # lại" still selects the NEW tail's number.
+        # R5 marker note: the NEW tail "68" is itself a
+        # proper substring (suffix) of the target, so this
+        # bare positive ALSO depends on the 0676 substring
+        # exclusion -- the reason is therefore the
+        # substring marker, not the plain generic reason.
+        # Selection (positive) and decide() outcome
+        # (un-fire) are unchanged; only the reason is now
+        # more precise.
         r = sel("đọc nhầm số, đuôi là sáu tám chứ không "
                 "phải tám sáu, gọi lại giúp tôi",
                 phones=["0900000068"], action="call")
         self.assertEqual(r["selection"], "positive")
-        self.assertEqual(r["reason"], "generic_callback_positive")
+        self.assertEqual(
+            r["reason"],
+            "generic_callback_positive_substring_excluded")
 
     def test_b10_m1_gui_bare_number_ambiguous(self):
         # F2a: bare "gửi" + bare number, no named recipient
@@ -1567,6 +1593,284 @@ class TestRound10Batch10Selection(unittest.TestCase):
         r = sel("Gửi Vy số %s" % self.X, names=("Vy",),
                 phones=[self.X], action="message")
         self.assertEqual(r["selection"], "positive")
+
+
+class TestR5DigitRunObject(unittest.TestCase):
+    """R5 fix for R4 batch-11 S1: a verb whose object span
+    contains ANY digit run is specific, never general/bare.
+
+    Scope: object classification only (the governed span,
+    never a whole-sentence digit scan). Fragment 2345 is
+    never completed into a full number (group joining stays
+    a MINOR backlog item). Every case asserts the layer-C
+    selection + reason AND the decide() outcome.
+    """
+
+    def test_s1_typed_short_run_object_fires(self):
+        # THE R4 batch-11 S1 repro: verb governs short run
+        # 2345, proposal is the other phone mention Y.
+        # Before the fix this un-fired (general + bare verb
+        # selected Y); now the verb is specific and the
+        # target mention is bare in its own clause (F-b).
+        r = sel("Gọi số 2345 đi, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        self.assertEqual(r["reason"],
+                         "positive_verb_not_governing_target")
+        d = dec("Gọi số 2345 đi, số 0911111111")
+        self.assertTrue(d.fired)
+        self.assertIn("positive_verb_not_governing_target",
+                      dec_reasons(d))
+
+    def test_s1_spoken_short_run_object_fires(self):
+        # Spoken variant: "số không chín" (09) is a digit
+        # run in the object span, so the verb is specific
+        # even though 09 is not a phone mention.
+        r = sel("Gọi số không chín đi, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        self.assertEqual(r["reason"],
+                         "positive_verb_not_governing_target")
+        d = dec("Gọi số không chín đi, số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_full_phone_object_fires(self):
+        # Full-phone object (pre-existing behaviour): the
+        # verb governs X specifically, never Y.
+        r = sel("Gọi số 0902345678 đi, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        d = dec("Gọi số 0902345678 đi, số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_digit_object_without_generic_head_unchanged(self):
+        # Control: "Gọi 2345 đi" (no "số" head) was already
+        # specific before the fix (2345 is not a generic
+        # head); the fix targets the generic-head path only.
+        r = sel("Gọi 2345 đi, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        d = dec("Gọi 2345 đi, số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_truly_bare_verb_still_unfires(self):
+        # F4a control, MUST NOT change: the verb "gọi" is
+        # clause-final with an empty object span (truly
+        # bare), so bare + exactly 1 phone mention selects Y.
+        # The reason stays the PLAIN generic reason: no
+        # substring fragment is involved, so the 0676
+        # marker must not leak here.
+        r = sel("Số 0911111111, số 2345, gọi đi",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "positive")
+        self.assertEqual(r["reason"], "generic_callback_positive")
+        d = dec("Số 0911111111, số 2345, gọi đi")
+        self.assertFalse(d.fired)
+
+    def test_bare_verb_exactly_one_phone_mention(self):
+        # Bare verb + exactly 1 phone mention selects it.
+        r = sel("Gọi đi, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "positive")
+        d = dec("Gọi đi, số 0911111111")
+        self.assertFalse(d.fired)
+
+    def test_bare_verb_two_phone_mentions_fires(self):
+        # Bare verb + 2 phone mentions selects neither
+        # (bare_verb_ambiguous via a true competitor).
+        r = sel("Gọi đi, số 0902345678, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        d = dec("Gọi đi, số 0902345678, số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_target_before_verb_other_clause_fires(self):
+        # Target mentioned in an earlier clause, verb in a
+        # later clause governs a short run: no event, no
+        # general event (specific object) -> fired.
+        r = sel("Số 0911111111, gọi số 2345 đi",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        d = dec("Số 0911111111, gọi số 2345 đi")
+        self.assertTrue(d.fired)
+
+    def test_quantity_distractor_fires(self):
+        # "3 lần" after the short-run object does not rescue
+        # the verb into a bare positive for Y.
+        r = sel("Gọi số 2345 đi 3 lần, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        d = dec("Gọi số 2345 đi 3 lần, số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_time_distractor_does_not_rescue(self):
+        # A time phrase in another clause does not change
+        # the governed short-run object.
+        r = sel("Gọi số 2345 đi lúc 3 giờ, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        d = dec("Gọi số 2345 đi lúc 3 giờ, số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_money_distractor_control_unfires(self):
+        # Money text elsewhere does not break a genuine
+        # bare-verb + 1 phone mention selection ("100k" is
+        # not a digit run: the token is not all digits).
+        r = sel("Gọi đi, số 0911111111, hết 100k",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "positive")
+        d = dec("Gọi đi, số 0911111111, hết 100k")
+        self.assertFalse(d.fired)
+
+    def test_va_chain_still_governs_both(self):
+        # "và"-chain control (v10 government rule): the verb
+        # governs both numbers, so Y is positively selected.
+        r = sel("Gọi số 0902345678 và số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "positive")
+        d = dec("Gọi số 0902345678 và số 0911111111")
+        self.assertFalse(d.fired)
+
+    def test_roi_never_chains(self):
+        # "rồi" control (v10 government rule): the verb
+        # governs X only; Y past X is not governed, and the
+        # number-governed fallback (F-a) fires.
+        r = sel("Gọi số 0902345678 rồi số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        self.assertEqual(r["reason"],
+                         "positive_verb_not_governing_target")
+        d = dec("Gọi số 0902345678 rồi số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_cross_action_message_verb_call_proposal(self):
+        # Cross-action separation: a message verb never
+        # selects a call proposal, short run or not.
+        r = sel("Nhắn số 2345 đi, số 0911111111",
+                phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        self.assertEqual(r["reason"], "other_action_verb_only")
+        d = dec("Nhắn số 2345 đi, số 0911111111")
+        self.assertTrue(d.fired)
+
+    def test_lone_fragment_never_binds(self):
+        # A phone fragment standing alone authorises
+        # nothing: layer C may report "positive" (no veto
+        # for another target) but the adapter has no
+        # binding (no mention, no roster, no log), so
+        # decide() must fire. This test pins the split:
+        # negation-positive is NOT an un-fire by itself.
+        r = sel("Gọi số 2345 đi", phones=(X,), action="call")
+        self.assertEqual(r["selection"], "positive")
+        self.assertEqual(r["reason"],
+                         "positive_action_no_target_veto")
+        d = dec("Gọi số 2345 đi", number=X)
+        self.assertTrue(d.fired)
+        r2 = sel("Số 2345 đi", phones=(X,), action="call")
+        self.assertEqual(r2["selection"], "unknown")
+        self.assertEqual(r2["reason"], "no_callback_verb")
+        d2 = dec("Số 2345 đi", number=X)
+        self.assertTrue(d2.fired)
+
+
+class TestR5Fallback0676PathProof(unittest.TestCase):
+    """Path proof for the 0676 substring fallback.
+
+    Outcome-correct and mechanism-tested are separate
+    claims. (1) Direct unit tests of _has_other_number
+    prove the substring branch executes. (2) An end-to-end
+    decide() case proves the bare-verb positive depends on
+    it: the trail reason is the distinct marker
+    "generic_callback_positive_substring_excluded", which
+    is produced ONLY when a proper-substring fragment
+    exclusion is decisive (fragments present, no true
+    competitor, target mentioned). A general-rule-preempted
+    case (F4a) is NEVER cited as fallback evidence.
+    """
+
+    def test_helper_fragment_groups_excluded(self):
+        # Prefix + suffix fragment groups of the target are
+        # excluded (proper substrings), so no competitor.
+        has_other, excluded = _has_other_number(
+            [(0, 1, "0911"), (2, 3, "1111")], [Y], set())
+        self.assertFalse(has_other)
+        self.assertEqual(excluded, [(0, 1, "0911"),
+                                    (2, 3, "1111")])
+
+    def test_helper_true_competitor(self):
+        # A phone-like run that is no substring of the
+        # target is a competitor; nothing is excluded.
+        has_other, excluded = _has_other_number(
+            [(0, 1, "1112")], [Y], set())
+        self.assertTrue(has_other)
+        self.assertEqual(excluded, [])
+
+    def test_helper_exact_match_not_listed(self):
+        # An exact target match is excluded from has_other
+        # but is NOT fallback evidence (it is the target).
+        has_other, excluded = _has_other_number(
+            [(0, 1, Y)], [Y], set())
+        self.assertFalse(has_other)
+        self.assertEqual(excluded, [])
+
+    def test_helper_rejected_run_ignored(self):
+        # A rejected correction value never counts, even
+        # when it is not a substring of the target.
+        has_other, excluded = _has_other_number(
+            [(0, 1, "1112")], [Y], {(0, 1)})
+        self.assertFalse(has_other)
+        self.assertEqual(excluded, [])
+
+    def test_helper_no_targets(self):
+        # With no target phones there is nothing to
+        # compete with (pinned no-target generic case).
+        has_other, excluded = _has_other_number(
+            [(0, 1, "1112")], [], set())
+        self.assertFalse(has_other)
+        self.assertEqual(excluded, [])
+
+    def test_helper_mixed_runs(self):
+        # Exact + fragment + competitor: only the fragment
+        # is listed, and the competitor still counts.
+        has_other, excluded = _has_other_number(
+            [(0, 1, Y), (2, 3, "1111"), (4, 5, "1112")],
+            [Y], set())
+        self.assertTrue(has_other)
+        self.assertEqual(excluded, [(2, 3, "1111")])
+
+    def test_end_to_end_marker_only_on_decisive_shape(self):
+        # Bare verb + typed target mention + a spoken
+        # suffix group (1111, a proper substring of Y) in
+        # a "số" clause: the bare positive stands ONLY
+        # because the fragment is excluded. The decide()
+        # trail carries the distinct marker reason.
+        text = "Gọi đi, số 0911111111, số một một một một"
+        r = sel(text, phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "positive")
+        self.assertEqual(
+            r["reason"],
+            "generic_callback_positive_substring_excluded")
+        d = dec(text)
+        self.assertFalse(d.fired)
+        self.assertIn(
+            "generic_callback_positive_substring_excluded",
+            dec_reasons(d))
+
+    def test_end_to_end_true_competitor_no_marker(self):
+        # Same shape but the spoken group (1112) is NOT a
+        # substring of Y: a true competitor, so the bare
+        # verb is ambiguous and the decision fires with no
+        # marker anywhere in the trail.
+        text = "Gọi đi, số 0911111111, số một một một hai"
+        r = sel(text, phones=(Y,), action="call")
+        self.assertEqual(r["selection"], "unknown")
+        self.assertEqual(r["reason"],
+                         "positive_verb_not_governing_target")
+        d = dec(text)
+        self.assertTrue(d.fired)
+        self.assertNotIn(
+            "generic_callback_positive_substring_excluded",
+            dec_reasons(d))
 
 
 if __name__ == "__main__":
