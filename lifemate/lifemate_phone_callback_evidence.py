@@ -1,0 +1,1602 @@
+"""Phone evidence + history/callback contract for the G&G round.
+
+Standalone, pure Python (stdlib only). Deliberately does NOT import
+lifemate_gates or lifemate_provenance: the coordinator wires this
+module's verdicts into the gates. Nothing here changes a proposal,
+submitted calls, state, retries, or termination.
+
+Two questions are kept SEPARATE in every verdict (see the round
+brief):
+
+  (a) Which valid source does this number / counterpart come from?
+  (b) Does the current request select this number / counterpart as
+      the action target?
+
+Proving (a) alone never counts as proving (b). A verdict is PROVEN
+only when (a) has a valid source AND (b) is True. Sources present
+with (b) undetermined give AMBIGUOUS; no valid source gives UNKNOWN.
+
+Valid sources (verified against zaic_tools implementations, see
+gg_phone_callback_notes.md):
+  - roster: a contact's phone in the address book (unique match only;
+    contact_ref completes a phone to a contact only on a unique
+    match, and a phone matching two contacts completes nothing).
+  - call_log / message_log: a phone_number field in a SUCCEEDED
+    phone.recent_calls / sms.read_recent result. These are reads of
+    the interaction log; the number itself is observed data.
+  - user_text: a number the user states in the current request as
+    the action target, in digits or in spoken Vietnamese digits.
+  - history_text: a number bound from a history turn through an
+    explicit anaphoric / callback / prior-instruction reference.
+  - read_result: a number observed in the text content of a
+    SUCCEEDED read result (e.g. a chat message), selected by an
+    anaphoric reference in the current request.
+
+Explicitly NOT sources:
+  - the proposal's own arguments (a proposal never evidences itself);
+  - phone.call / sms.send result fields: those are echoes of the
+    call's own argument (phone/sms never validate contacts, so a
+    first use would launder a hallucinated number);
+  - negated, corrected-away, or background-only mentions;
+  - a number merely present somewhere in history with no binding
+    reference in the current request;
+  - a contact_id found in free text or as a foreign key of another
+    registry's record (it proves nothing about contacts membership).
+
+Only outcome "succeeded" counts as evidence. A schema-rejected,
+failed, or noop call establishes nothing.
+
+Phone normalisation follows exactly the _norm_phone rule shared by
+the gates and zaic_tools base.contact_ref: digits only, with an
+11-digit "84..." prefix folded to "0...". No digit is ever added,
+dropped, or changed to force a match (except the documented tail
+correction, which is itself user-stated and recorded as a binding,
+not as an existence claim).
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import re
+import unicodedata
+
+__all__ = [
+    "norm_phone",
+    "fold_vietnamese",
+    "find_digit_runs",
+    "classify_phone_context",
+    "parse_phone_mentions",
+    "parse_tail_correction",
+    "apply_tail_correction",
+    "parse_history_result",
+    "extract_log_records",
+    "bind_history_reference",
+    "phone_evidence_for",
+    "callback_reference_for",
+    "CALL_LOG_TOOLS",
+    "MESSAGE_LOG_TOOLS",
+    "READ_RESULT_CONTENT_TOOLS",
+    "CONSUMER_REQUIRES_MEMBERSHIP",
+]
+
+# ---------------------------------------------------------------------------
+# Normalisation
+# ---------------------------------------------------------------------------
+
+_DIGIT_WORDS = {
+    "khong": "0",
+    "mot": "1",
+    "hai": "2",
+    "ba": "3",
+    "bon": "4",
+    "nam": "5",
+    "sau": "6",
+    "bay": "7",
+    "tam": "8",
+    "chin": "9",
+}
+
+# Vietnamese digit words in their diacritic form (for reference only;
+# matching is done on the folded form, which is length-preserving).
+_DIGIT_WORDS_DIACRITIC = {
+    "không": "0", "một": "1", "hai": "2", "ba": "3", "bốn": "4",
+    "năm": "5", "sáu": "6", "bảy": "7", "tám": "8", "chín": "9",
+}
+
+# Tools whose SUCCEEDED result phone_number fields are log evidence.
+CALL_LOG_TOOLS = ("phone.recent_calls",)
+MESSAGE_LOG_TOOLS = ("sms.read_recent",)
+# Tools whose SUCCEEDED result text content may carry observed numbers.
+READ_RESULT_CONTENT_TOOLS = (
+    "chat_ott.read_chat",
+    "sms.read_recent",
+    "phone.recent_calls",
+)
+
+# Consumers whose implementation provably requires contacts membership
+# for a contact_id argument (see notes). phone.call / sms.send /
+# ewallet.transfer never validate a contact_id (contact_ref only
+# completes on unique match, never rejects), so for them an observed
+# counterpart suffices for execution -- but it still does NOT prove
+# roster membership; the verdict says so explicitly.
+CONSUMER_REQUIRES_MEMBERSHIP = {
+    "contacts.update": True,   # patch: find-or-noop
+    # NOTE: there is NO contacts.delete tool in the catalog
+    # (reviewer correction): the old entry claiming it was dead.
+    "contacts.get": False,     # read: returns empty when absent
+    "contacts.search": False,  # read: returns empty when absent
+    "phone.call": False,
+    "sms.send": False,
+    "ewallet.transfer": False,
+    "chat_ott.send_message": False,  # validates chat_id, not contact_id
+}
+
+# A Vietnamese phone candidate: hotlines (1900xxxx, 8 digits) up to
+# 11-digit +84 forms (folded to 10). Shorter digit runs are tails,
+# amounts, times, or codes, never phone numbers on their own.
+MIN_PHONE_DIGITS = 7
+MAX_PHONE_DIGITS = 12
+
+
+def fold_vietnamese(text):
+    """Lowercase + strip diacritics, LENGTH-PRESERVING.
+
+    NFD decomposition maps each precomposed Vietnamese character to
+    exactly one base character plus combining marks, so stripping
+    the marks keeps every character position identical to the
+    original text. Spans computed on the folded text therefore apply
+    to the original text as well. 'd' (đ) maps to 'd'.
+    """
+    if text is None:
+        return ""
+    decomposed = unicodedata.normalize("NFD", str(text).lower())
+    folded = "".join(
+        ch for ch in decomposed if unicodedata.category(ch) != "Mn"
+    )
+    return folded.replace("đ", "d")
+
+
+def norm_phone(value):
+    """Digits-only phone, +84/84 country prefix folded to 0.
+
+    Identical rule to lifemate_gates._norm_phone and
+    zaic_tools base.contact_ref. No other change is ever made.
+    """
+    d = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if d.startswith("84") and len(d) == 11:
+        return "0" + d[2:]
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Digit runs: raw enumeration (phone and non-phone alike)
+# ---------------------------------------------------------------------------
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_MONEY_UNITS = ("dong", "nghin", "trieu", "ty", "vnd", "d")
+_TIME_UNITS = ("gio", "phut", "giay")
+_DATE_UNITS = ("ngay", "thang", "nam")
+_ACTION_VERBS = ("goi", "nhan", "lien", "luu", "goi lai")
+_ORDER_CUES = ("ma don", "ma van don", "don hang", "ma hang")
+
+
+def _tokens_with_spans(folded):
+    """[(token, start, end)] for word tokens in folded text."""
+    return [(m.group(0), m.start(), m.end())
+            for m in _TOKEN_RE.finditer(folded)]
+
+
+def find_digit_runs(text):
+    """Enumerate every digit run in the text, phone or not.
+
+    A run is either a contiguous digit string (possibly with a
+    leading '+') or a maximal sequence of Vietnamese digit-word
+    tokens, where commas / punctuation between digit words do NOT
+    break the run but any other word does. Each run:
+
+      {"raw": <substring of the ORIGINAL text>,
+       "digits": <digit string, or "" if unresolvable>,
+       "kind": "digits" | "spoken" | "mixed",
+       "span": (start, end) in the original text,
+       "token_span": (first_token_idx, last_token_idx),
+       "ambiguous_khong": bool}
+
+    "không" inside a run counts as digit 0, EXCEPT when it is the
+    negation in "không phải" (handled by the caller: the run is
+    split there; see _split_negation). A run that starts with
+    "không" and has no phone cue nearby is flagged ambiguous_khong
+    rather than silently read as a leading zero -- the caller
+    decides, never the parser alone.
+    """
+    if not text:
+        return []
+    folded = fold_vietnamese(text)
+    tokens = _tokens_with_spans(folded)
+    runs = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok, start, end = tokens[i]
+        if tok.isdigit():
+            # Contiguous digit string; absorb a following digit
+            # token only when joined by whitespace inside a phone
+            # group (e.g. "0987 654 321" is NOT produced by this
+            # dataset, so digit strings stay single tokens).
+            runs.append({
+                "raw": text[start:end],
+                "digits": tok,
+                "kind": "digits",
+                "span": (start, end),
+                "token_span": (i, i),
+                "ambiguous_khong": False,
+            })
+            i += 1
+            continue
+        if tok in _DIGIT_WORDS:
+            # Spoken run: consecutive digit words, punctuation
+            # between them does not break the run.
+            digits = []
+            j = i
+            last_end = end
+            ambiguous = False
+            while j < n:
+                t, s, e = tokens[j]
+                if t in _DIGIT_WORDS:
+                    # "không phải" is negation, not digit 0: stop
+                    # the run before "không".
+                    if t == "khong" and j + 1 < n \
+                            and tokens[j + 1][0] == "phai":
+                        break
+                    digits.append(_DIGIT_WORDS[t])
+                    last_end = e
+                    j += 1
+                    continue
+                break
+            if digits:
+                # Ambiguity flag: run starts with "không" and no
+                # phone cue ("số", call verb) in the preceding
+                # 4 tokens -- a bare "không" may be negation.
+                window = [t for t, _, _ in tokens[max(0, i - 4):i]]
+                if tokens[i][0] == "khong" and not any(
+                        w in ("so", "goi", "nhan", "tong", "dai")
+                        for w in window):
+                    ambiguous = True
+                runs.append({
+                    "raw": text[start:last_end],
+                    "digits": "".join(digits),
+                    "kind": "spoken",
+                    "span": (start, last_end),
+                    "token_span": (i, j - 1),
+                    "ambiguous_khong": ambiguous,
+                })
+                i = j
+                continue
+            # Empty run: the run started at a "không phải"
+            # negation -- skip the "không" so we cannot loop.
+            i = j + 1
+            continue
+        i += 1
+    return runs
+
+
+def classify_phone_context(text, run):
+    """Classify one digit run against its surrounding context.
+
+    Returns {"classification": ..., "reason": ...} where
+    classification is one of:
+      "phone"      -- plausibly a phone number
+      "money"      -- an amount (currency unit / money verb nearby)
+      "time"       -- a clock time (colon form or giờ/phút)
+      "date"       -- a calendar date (slash/dash form or ngày/tháng)
+      "order_code" -- an order / tracking code (mã đơn, đơn hàng)
+      "other_number" -- a digit string that is not a phone number
+        (too short, too long, or a code-like value)
+      "ambiguous"  -- cannot be told apart from context
+
+    Classification uses context cues, never digit length alone:
+    length only excludes runs that cannot be phone numbers at all
+    (shorter than MIN_PHONE_DIGITS or longer than MAX_PHONE_DIGITS).
+    A run that is both money-adjacent and phone-adjacent is
+    AMBIGUOUS, never guessed.
+    """
+    if not text or not run:
+        return {"classification": "ambiguous",
+                "reason": "empty_text_or_run"}
+    folded = fold_vietnamese(text)
+    tokens = _tokens_with_spans(folded)
+    first, last = run["token_span"]
+    window_before = [t for t, _, _ in tokens[max(0, first - 6):first]]
+    window_after = [t for t, _, _ in tokens[last + 1:last + 7]]
+    window = window_before + window_after
+    digits = run.get("digits") or ""
+    # Separator between this run and the next token ("/", ":", "-"
+    # belong to dates/times, not to the number itself).
+    gap = ""
+    if last + 1 < len(tokens):
+        gap = folded[run["span"][1]:tokens[last + 1][1]]
+    after1 = window_after[0] if window_after else ""
+    before1 = window_before[-1] if window_before else ""
+    if ":" in gap:
+        return {"classification": "time", "reason": "colon_time_form"}
+    if "/" in gap or "-" in gap:
+        return {"classification": "date", "reason": "slash_or_dash_date_form"}
+    # Cues must be ADJACENT (first token after / before the run):
+    # a money unit three tokens later usually belongs to a
+    # different number in the same sentence.
+    time_cue = after1 in _TIME_UNITS
+    date_cue = after1 in _DATE_UNITS or before1 in ("ngay", "thang")
+    order_cue = any(cue in " ".join(window_before[-4:])
+                    for cue in _ORDER_CUES)
+    phone_cue = any(w in ("so", "goi", "nhan", "tong", "dai", "truc")
+                    for w in window)
+    if order_cue and not phone_cue:
+        return {"classification": "order_code", "reason": "order_cue"}
+    if order_cue and phone_cue:
+        return {"classification": "ambiguous",
+                "reason": "order_and_phone_cues_conflict"}
+    # An ADJACENT unit wins over distant cues of another kind: the
+    # unit belongs to this run, while a phone cue three tokens away
+    # usually belongs to a different number in the same sentence.
+    if after1 in _MONEY_UNITS or after1 == "tien":
+        return {"classification": "money", "reason": "money_unit_adjacent"}
+    if time_cue:
+        return {"classification": "time", "reason": "time_unit"}
+    if date_cue:
+        return {"classification": "date", "reason": "date_unit"}
+    if before1 == "tien" and phone_cue:
+        return {"classification": "ambiguous",
+                "reason": "money_and_phone_cues_conflict"}
+    if before1 == "tien":
+        return {"classification": "money", "reason": "money_unit_or_verb"}
+    if len(digits) < MIN_PHONE_DIGITS:
+        return {"classification": "other_number",
+                "reason": "too_short_for_phone"}
+    if len(digits) > MAX_PHONE_DIGITS:
+        return {"classification": "other_number",
+                "reason": "too_long_for_phone"}
+    if run.get("ambiguous_khong"):
+        # Leading "không" is ambiguous only for SHORT runs
+        # without a phone cue: a 7+ digit sequence cannot be a
+        # negation, and a phone cue ("số", call verb) resolves it
+        # (reviewer fix R2-A1).
+        if len(digits) < 7 and not phone_cue:
+            return {"classification": "ambiguous",
+                    "reason": "leading_khong_ambiguous"}
+    if phone_cue:
+        return {"classification": "phone", "reason": "phone_cue"}
+    # A long SPOKEN digit sequence with no conflicting cue is a
+    # phone number by shape: amounts use units, dates/times are
+    # short, order codes are digit strings, not spoken runs.
+    if run.get("kind") == "spoken" and len(digits) >= 9:
+        return {"classification": "phone", "reason": "long_spoken_shape"}
+    # A bare long digit string with no cue at all: it is shaped
+    # like a phone number but nothing selects it as one.
+    return {"classification": "ambiguous",
+            "reason": "no_context_cue"}
+
+
+# ---------------------------------------------------------------------------
+# Phone mentions in free text (roles)
+# ---------------------------------------------------------------------------
+
+# (Negation phrases are matched inline in parse_phone_mentions
+# with an adjacency requirement; see there.)
+_BACKGROUND_PATTERNS = ("so moi la", "so cua", "so anh la", "so chi la",
+                        "so em la", "doi so")
+
+
+def _is_retired_old_number(before, after):
+    """True only when retired-number language names THIS mention.
+
+    before: folded words before the mention; after: folded words
+    after it. "số cũ" immediately before the mention (or "số cũ"
+    before + "không dùng nữa" after) retires it. A bare "không
+    dùng nữa" after the mention, without "số cũ" before it, refers
+    to some other number and does not retire this one.
+
+    Matching is TOKEN-based, never substring (reviewer fix
+    R2-A5): "số của" folds to "so cua", which CONTAINS "so cu"
+    as a prefix -- the old substring check retired every
+    "Số của em là X" mention as corrected_away.
+    """
+    before_words = before.split()
+    for i in range(len(before_words) - 1):
+        if before_words[i] == "so" and before_words[i + 1] == "cu":
+            return True
+    return False
+
+
+_SPEAKER_OWNERSHIP = ("so cua em", "so cua toi", "so cua minh",
+                      "so em la", "so toi la", "so minh la")
+
+
+def _is_speaker_number_called(before, after):
+    """True when the mention is the speaker's own number AND the
+    action is on the speaker ("Số của em là X, gọi giúp em").
+
+    Then X IS the call target, not background information
+    (reviewer fix R2-A5 follow-up). Third-party ownership
+    ("số của anh A") does not qualify, and neither does a
+    speaker-owned number stated without an action on the speaker.
+    """
+    if not any(p in before for p in _SPEAKER_OWNERSHIP):
+        return False
+    after_words = after.split()
+    return ("goi" in after_words or "nhan" in after_words) \
+        and any(w in after_words for w in ("em", "toi", "minh",
+                                           "giup"))
+
+
+def _window_text(folded, tokens, first, last, radius=8):
+    before = " ".join(t for t, _, _ in tokens[max(0, first - radius):first])
+    after = " ".join(t for t, _, _ in tokens[last + 1:last + radius + 1])
+    return before, after
+
+
+def parse_phone_mentions(text):
+    """Phone-number mentions in free text, with roles.
+
+    Only runs that classify as "phone" are returned. Each mention:
+
+      {"raw", "normalized" (via norm_phone, never edited to fit),
+       "span", "kind": "digits"|"spoken", "role": ...,
+       "reason": <machine-readable str>}
+
+    Roles:
+      requested_target -- the text asks to call / message / save /
+        use this number (action verb or phone cue selects it);
+      negated          -- explicitly negated ("không phải số X",
+        "đừng gọi số X");
+      corrected_away   -- the old value in a correction ("số cũ ...
+        không dùng nữa", or the Y in "X chứ không phải Y");
+      background       -- mentioned as information only ("số mới
+        là X" stated without an action on X);
+      ambiguous        -- role cannot be determined (incl. an
+        ambiguous leading "không").
+
+    Non-phone runs (money, time, date, order codes, short tails)
+    are NOT returned here; use find_digit_runs +
+    classify_phone_context to see them. A mention is never invented
+    from a run the classifier rejects.
+    """
+    if not text:
+        return []
+    folded = fold_vietnamese(text)
+    tokens = _tokens_with_spans(folded)
+    mentions = []
+    for run in find_digit_runs(text):
+        cls = classify_phone_context(text, run)
+        if cls["classification"] != "phone":
+            continue
+        first, last = run["token_span"]
+        before, after = _window_text(folded, tokens, first, last)
+        role, reason = "requested_target", "phone_cue"
+        # Negation must attach ADJACENTLY to this mention: the
+        # negation phrase plus at most a call verb / "số" between
+        # it and the run. A negation eight tokens back usually
+        # belongs to a different number ("Không phải số A, mà là
+        # số B" must leave B affirmed).
+        before_tail = " ".join(
+            t for t, _, _ in tokens[max(0, first - 5):first])
+        if re.search(
+                r"(khong phai|dung goi|dung nhan|khong goi|"
+                r"khong nhan)(\s+(so|goi|nhan))*\s*$",
+                before_tail):
+            role, reason = "negated", "negation_before"
+        elif _is_retired_old_number(before, after):
+            # Only when the retired-number language attaches to
+            # THIS mention ("số cũ ... không dùng nữa" naming it):
+            # a following "số cũ không dùng nữa" about some OTHER
+            # (often unstated) number must not retire this one --
+            # e.g. "số mới của anh là X, số cũ anh không dùng
+            # nữa đâu" states X as the new number, it does not
+            # retire X.
+            role, reason = "corrected_away", "old_number_retired"
+        elif _is_speaker_number_called(before, after):
+            role, reason = "requested_target", "speaker_number_called"
+        elif any(pat in before for pat in _BACKGROUND_PATTERNS) \
+                and not any(v in before for v in _ACTION_VERBS):
+            role, reason = "background", "information_only"
+        elif run.get("ambiguous_khong") \
+                and len(run["digits"]) < 7 \
+                and not any(w in (before.split() + after.split())
+                            for w in ("so", "goi", "nhan", "tong",
+                                      "dai", "truc")):
+            # Leading-"không" ambiguity survives only for SHORT
+            # runs without a phone cue: a 7+ digit sequence cannot
+            # be a negation, and a phone cue resolves it
+            # (reviewer fix R2-A1; mirrors classify_phone_context).
+            role, reason = "ambiguous", "leading_khong_ambiguous"
+        elif not any(v in before or v in after
+                     for v in _ACTION_VERBS + ("so", "truc", "tong")):
+            # Phone-shaped but nothing in the sentence acts on it.
+            role, reason = "ambiguous", "no_action_verb"
+        mentions.append({
+            "raw": run["raw"],
+            "normalized": norm_phone(run["digits"]),
+            "span": run["span"],
+            "kind": run["kind"],
+            "role": role,
+            "reason": reason,
+        })
+    return mentions
+
+
+# ---------------------------------------------------------------------------
+# Tail corrections ("đuôi là X chứ không phải Y")
+# ---------------------------------------------------------------------------
+
+_SPOKEN_RUN_RE = (
+    r"(?:khong|mot|hai|ba|bon|nam|sau|bay|tam|chin)"
+    r"(?:[\s,]+(?:khong|mot|hai|ba|bon|nam|sau|bay|tam|chin))*"
+)
+_DIGIT_RUN_RE = r"\d+"
+
+
+def _tail_digits(fragment):
+    """Digit string of a tail fragment (spoken words or digits)."""
+    fragment = fragment.strip(" ,.")
+    if not fragment:
+        return ""
+    if re.fullmatch(r"\d+", fragment):
+        return fragment
+    words = re.findall(
+        r"khong|mot|hai|ba|bon|nam|sau|bay|tam|chin",
+        fold_vietnamese(fragment))
+    if not words or len(" ".join(words)) < len(fragment.strip()) - 1:
+        # Fragment contains non-digit words: not a clean tail.
+        return ""
+    return "".join(_DIGIT_WORDS[w] for w in words)
+
+
+def parse_tail_correction(text):
+    """Parse an explicit tail correction, or return None.
+
+    Recognised (folded) patterns:
+      "duoi la <A> chu khong phai <B>"
+      "<A> chu khong phai <B>"  (A, B digit runs)
+    Returns {"old_tail": B, "new_tail": A, "reason": ...} or None.
+    The correction itself proves nothing about any full number; it
+    only says: take a number ending in B and replace its tail by A.
+    """
+    if not text:
+        return None
+    folded = fold_vietnamese(text)
+    m = re.search(
+        r"(?:duoi la\s+)?(" + _SPOKEN_RUN_RE + r"|" + _DIGIT_RUN_RE +
+        r")\s+chu khong phai\s+(" + _SPOKEN_RUN_RE + r"|" +
+        _DIGIT_RUN_RE + r")",
+        folded)
+    if not m:
+        return None
+    new_tail = _tail_digits(m.group(1))
+    old_tail = _tail_digits(m.group(2))
+    if not new_tail or not old_tail or new_tail == old_tail:
+        return None
+    if len(old_tail) > 6 or len(new_tail) > 6:
+        return None
+    return {"old_tail": old_tail, "new_tail": new_tail,
+            "reason": "explicit_tail_correction"}
+
+
+def apply_tail_correction(number, correction):
+    """Apply a parsed tail correction to a full number, or None.
+
+    Only the tail is replaced; every other digit must already match
+    (the number must end with old_tail). No digit is invented: if
+    the number does not end with old_tail, there is no correction.
+    """
+    if not number or not correction:
+        return None
+    num = norm_phone(number)
+    old, new = correction["old_tail"], correction["new_tail"]
+    if not num.endswith(old):
+        return None
+    corrected = num[:len(num) - len(old)] + new
+    if len(corrected) < MIN_PHONE_DIGITS \
+            or len(corrected) > MAX_PHONE_DIGITS:
+        return None
+    return corrected
+
+
+# ---------------------------------------------------------------------------
+# Safe history-result parsing (never eval, never char-wise zip)
+# ---------------------------------------------------------------------------
+
+def parse_history_result(raw):
+    """Parse a history tool result safely.
+
+    Accepts dict / list as-is; a string is tried as JSON, then as a
+    Python literal (repr form: single quotes, True/False/None) via
+    ast.literal_eval. Anything else -- or a string that parses to
+    neither -- returns status "malformed" with a reason, never a
+    crash and never a guessed value. eval is never used, and
+    results are never zipped character by character.
+    """
+    if isinstance(raw, (dict, list)):
+        return {"status": "ok", "value": raw, "reason": "native"}
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if not stripped:
+            return {"status": "malformed", "value": None,
+                    "reason": "empty_string"}
+        try:
+            return {"status": "ok", "value": json.loads(stripped),
+                    "reason": "json"}
+        except (ValueError, TypeError):
+            pass
+        try:
+            return {"status": "ok", "value": ast.literal_eval(stripped),
+                    "reason": "python_repr"}
+        except (ValueError, SyntaxError, TypeError, MemoryError,
+                RecursionError):
+            return {"status": "malformed", "value": None,
+                    "reason": "unparsable_string"}
+    return {"status": "malformed", "value": None,
+            "reason": "unsupported_type_%s" % type(raw).__name__}
+
+
+# ---------------------------------------------------------------------------
+# Structured records out of read results
+# ---------------------------------------------------------------------------
+
+def extract_log_records(result, tool, position):
+    """Structured counterpart records from one SUCCEEDED read result.
+
+    Handles the shapes the simulator actually returns:
+      phone.recent_calls: {"calls": [{id, contact: {id, name,
+        phone} | contact_id, phone_number, direction, status, ...}]}
+      sms.read_recent:    {"messages": [{id, contact_id,
+        phone_number, direction, content, ...}]}
+      chat_ott.read_chat: {"messages": [{from, content, ...}]}
+        (no structured counterpart: content is free text, handled
+        by the read_result content path, NOT as a contact record)
+      contacts.search/get: {"contacts": [{id, name, phone, ...}]}
+    A record is a dict with tool / position / record_id /
+    contact_id / phone_number / name / direction / status / content
+    / time. Nested contact dicts are unpacked; free-text content is NEVER
+    mined for contact_ids (only phone digits via the content path).
+    Malformed results yield no records and a malformed flag via
+    parse_history_result (callers check that separately).
+    """
+    parsed = parse_history_result(result)
+    if parsed["status"] != "ok" or not isinstance(parsed["value"], dict):
+        return []
+    value = parsed["value"]
+    records = []
+    if tool in CALL_LOG_TOOLS:
+        for rec in value.get("calls") or []:
+            if not isinstance(rec, dict):
+                continue
+            contact = rec.get("contact") or {}
+            records.append({
+                "tool": tool, "position": position,
+                "record_id": rec.get("id"),
+                "contact_id": contact.get("id")
+                if isinstance(contact, dict)
+                else rec.get("contact_id"),
+                "phone_number": norm_phone(contact.get("phone"))
+                if isinstance(contact, dict) and contact.get("phone")
+                else norm_phone(rec.get("phone_number")),
+                "name": contact.get("name")
+                if isinstance(contact, dict) else None,
+                "direction": rec.get("direction"),
+                "status": rec.get("status"),
+                "content": None,
+                "time": rec.get("time"),
+            })
+    elif tool in MESSAGE_LOG_TOOLS:
+        for rec in value.get("messages") or []:
+            if not isinstance(rec, dict):
+                continue
+            records.append({
+                "tool": tool, "position": position,
+                "record_id": rec.get("id"),
+                "contact_id": rec.get("contact_id"),
+                "phone_number": norm_phone(rec.get("phone_number")),
+                "name": None,
+                "direction": rec.get("direction"),
+                "status": None,
+                "content": rec.get("content"),
+                "time": rec.get("time"),
+            })
+    elif tool == "chat_ott.read_chat":
+        for rec in value.get("messages") or []:
+            if not isinstance(rec, dict):
+                continue
+            records.append({
+                "tool": tool, "position": position,
+                "record_id": None,
+                "contact_id": None,
+                "phone_number": "",
+                "name": rec.get("from"),
+                "direction": None,
+                "status": None,
+                "content": rec.get("content"),
+                "time": rec.get("time"),
+            })
+    elif tool in ("contacts.search", "contacts.get"):
+        for rec in value.get("contacts") or []:
+            if not isinstance(rec, dict):
+                continue
+            records.append({
+                "tool": tool, "position": position,
+                "record_id": rec.get("id"),
+                "contact_id": rec.get("id"),
+                "phone_number": norm_phone(rec.get("phone")),
+                "name": rec.get("name"),
+                "direction": None,
+                "status": None,
+                "content": None,
+                "time": rec.get("time"),
+            })
+    return records
+
+
+# ---------------------------------------------------------------------------
+# Binding a current reference to exactly one history record
+# ---------------------------------------------------------------------------
+
+def _name_tokens(text):
+    """Folded word tokens of a text, for name matching."""
+    return set(_TOKEN_RE.findall(fold_vietnamese(text or "")))
+
+
+def _raw_tokens(text):
+    """Diacritic-sensitive lowercased word tokens of the ORIGINAL text.
+
+    NOTE: this must NOT reuse _TOKEN_RE ([a-z0-9]+), which drops
+    diacritic marks and would shred "Mạ" into {"m", "a"} -- a
+    false match against "mẹ" ({"m"}). The Unicode word regex
+    below keeps "mạ", "mẹ", "ăn" whole, which is exactly the
+    distinction the name matcher needs.
+    """
+    return set(re.findall(r"[^\W_]+", (text or "").lower(),
+                          flags=re.UNICODE))
+
+
+def _name_matches(name, text):
+    """True iff `name` is named in `text` (reviewer fix R2-A4).
+
+    A name is an identifier: it matches on diacritic-SENSITIVE
+    original tokens (case-insensitive), never on folded tokens
+    alone -- folded matching would confuse "An" (a name) with
+    "ăn" (to eat). A multi-token name may additionally match on
+    folded tokens: the full phrase is distinctive enough that a
+    folded hit is not a common-word collision. Matching is
+    token-based, never substring: "an" inside "anh" is not a hit.
+    Trade-off (documented): if ASR drops diacritics on a name
+    ("Bình" -> "binh"), a single-token name match fails and the
+    verdict falls back to AMBIGUOUS -- the safe direction.
+    """
+    if not name or not text:
+        return False
+    if _raw_tokens(name) & _raw_tokens(text):
+        return True
+    if len(_name_tokens(name)) >= 2 \
+            and _name_tokens(name) & _name_tokens(text):
+        return True
+    return False
+
+
+# Tokens that may sit in the addressee slot after a callback verb
+# without being a name ("trả lời tin nhắn", "gọi lại cho em",
+# "gọi lại cho mẹ"): they never trigger the name veto.
+_ADDRESSEE_STOPLIST = {
+    "toi", "em", "anh", "chi", "minh", "ban", "giup", "to",
+    "nhanh", "luon", "ngay", "so", "tin", "nhan", "cuoc", "goi",
+    "lai", "them", "nua", "di", "dum", "ho", "cho", "ca", "nha",
+    "nhe", "oi", "ay", "do", "day", "kia", "nay", "la", "thi",
+    "va", "cua", "co", "khong", "da", "dang", "se", "bi", "duoc",
+    "voi", "ve", "o", "tai", "tren", "trong", "tu", "den", "neu",
+    "khi", "ma", "vua", "moi", "xin", "gium", "cung",
+    # Family references, not names ("gọi lại cho mẹ" must not
+    # veto the single-pool fallback: the pool record may be the
+    # parent under a different name form).
+    "me", "ma", "bo", "ba", "vo", "chong", "con",
+    # Verbs that may sit in the slot before the real addressee
+    # ("nhắn lại bảo An ..."): not names, never veto.
+    "bao", "noi", "hoi", "ke", "nho", "dan", "chuyen", "ghi",
+    "nhac",
+    # Generic person references ("gọi lại người vừa gọi",
+    # "nhắn lại cho người đó"): not names, never veto.
+    "nguoi",
+}
+
+
+def _explicit_addressee(text):
+    """Token in the addressee slot after a callback verb, or None.
+
+    "gọi lại cho An" -> "an"; "trả lời tin nhắn" -> None ("tin"
+    is generic); "gọi lại" alone -> None. Only a non-generic,
+    non-family token counts: a name in this slot vetoes binding
+    to anyone else (reviewer fix R2-A3).
+    """
+    m = re.search(r"(goi lai|nhan lai|tra loi)\s+(cho\s+)?([a-z]+)",
+                  fold_vietnamese(text or ""))
+    if not m:
+        return None
+    tok = m.group(3)
+    return None if tok in _ADDRESSEE_STOPLIST else tok
+
+
+def _select_by_topic_amount(current_text, cands):
+    """Disambiguate log-record candidates by content overlap.
+
+    Topic: same-language content-token overlap (function words
+    removed). Amount: a simple amount in the current text that
+    appears in exactly one candidate's content. Returns
+    (record, reason) or (None, reason). Equality-based only: it
+    never creates a record, only selects among existing ones.
+    """
+    top = [(r, _topic_overlap(current_text, r.get("content") or ""))
+           for r in cands]
+    winners = [r for r, o in top if o > 0]
+    if len(winners) == 1:
+        return winners[0], "topic_unique"
+    amounts = _content_amounts(current_text)
+    if amounts:
+        amt = [r for r in cands
+               if _content_amounts(r.get("content") or "") & amounts]
+        if len(amt) == 1:
+            return amt[0], "amount_unique"
+    return None, "topic_amount_ambiguous"
+
+
+def _content_amounts(text):
+    """Simple amounts in a text: comma-grouped digit strings and
+    single-unit spoken amounts ("hai trăm nghìn" -> 200000,
+    "ba triệu" -> 3000000, "năm nghìn" -> 5000). Compound amounts
+    ("sáu trăm hai mươi nghìn", "một triệu tám") are NOT parsed:
+    they yield nothing rather than a guessed value.
+    """
+    if not text:
+        return set()
+    folded = fold_vietnamese(text)
+    amounts = set()
+    for m in re.finditer(r"\d{1,3}(?:,\d{3})+|\d{4,}", folded):
+        try:
+            amounts.add(int(m.group(0).replace(",", "")))
+        except ValueError:
+            pass
+    tokens = [t for t, _, _ in _tokens_with_spans(folded)]
+    i = 0
+    while i < len(tokens):
+        if tokens[i] in _DIGIT_WORDS and i + 1 < len(tokens):
+            num = int(_DIGIT_WORDS[tokens[i]])
+            if tokens[i + 1] == "tram" and i + 2 < len(tokens) \
+                    and tokens[i + 2] == "nghin":
+                amounts.add(num * 100000)
+                i += 3
+                continue
+            if tokens[i + 1] == "nghin":
+                amounts.add(num * 1000)
+                i += 2
+                continue
+            if tokens[i + 1] == "trieu":
+                amounts.add(num * 1000000)
+                i += 2
+                continue
+            if tokens[i + 1] == "dong":
+                amounts.add(num)
+                i += 2
+                continue
+        i += 1
+    return amounts
+
+
+_TOPIC_STOPWORDS = {
+    "la", "thi", "va", "cho", "cua", "em", "anh", "chi", "toi",
+    "co", "khong", "da", "dang", "se", "bi", "duoc", "voi", "ve",
+    "o", "tai", "tren", "trong", "tu", "den", "neu", "khi", "ma",
+    "nay", "do", "day", "kia", "ay", "oi", "nhe", "nha", "gium",
+    "dum", "giup", "xin", "moi", "ca", "cung", "ma", "vua",
+}
+
+
+def _topic_overlap(current_text, content):
+    """Content-token overlap between current text and a record's
+    content, ignoring function words. Returns the overlap count."""
+    if not current_text or not content:
+        return 0
+    cur = _name_tokens(current_text) - _TOPIC_STOPWORDS
+    con = _name_tokens(content) - _TOPIC_STOPWORDS
+    return len(cur & con)
+
+
+def bind_history_reference(current_text, history_records):
+    """Bind a current reference to exactly one history record.
+
+    history_records: list of record dicts (from
+    extract_log_records) and/or user-turn dicts
+    {"kind": "user_turn", "text": ..., "position": ...}.
+
+    Reference patterns recognised in the current text (folded):
+      - callback / reply: "goi lai", "nhan lai", "tra loi" (+ name)
+      - missed caller: "goi nho", "nguoi vua goi", "nguoi vua nhan",
+        "ai goi"
+      - anaphoric number: "so do", "so nay", "so moi nhat"
+      - prior instruction: "luc nay", "nhu ... dan", "nhu da noi",
+        "lam nhu" + a past marker
+
+    Returns (record, reason). record is the bound record dict (for
+    user turns, a synthetic {"kind": "user_turn", "phone_number",
+    "position"} record), or None. Binding requires EXACTLY ONE
+    candidate after name/topic filtering; "a number exists
+    somewhere in history" is never enough. No pattern in the
+    current text -> (None, "no_reference_pattern").
+    """
+    if not current_text:
+        return None, "empty_current_text"
+    folded = fold_vietnamese(current_text)
+    records = history_records or []
+
+    def log_records():
+        return [r for r in records if r.get("tool") in
+                CALL_LOG_TOOLS + MESSAGE_LOG_TOOLS]
+
+    def user_turns():
+        return [r for r in records if r.get("kind") == "user_turn"]
+
+    def most_recent(cands):
+        return max(cands, key=lambda r: r.get("position", -1)) \
+            if cands else None
+
+    def name_filter(cands, text):
+        """Keep records named in the text. Never falls back: an
+        empty result means the text names nobody in the pool
+        (reviewer fix R2-A3: the old `kept or cands` fallback
+        bound a wrong person when exactly one candidate existed)."""
+        return [r for r in cands
+                if r.get("name") and _name_matches(r["name"], text)]
+
+    # -- missed caller / callback -------------------------------------
+    is_callback = any(p in folded for p in
+                      ("goi lai", "nhan lai", "tra loi"))
+    is_missed = any(p in folded for p in
+                    ("goi nho", "nguoi vua goi", "nguoi vua nhan",
+                     "ai goi", "co ai goi"))
+    if is_callback or is_missed:
+        incoming = [r for r in log_records()
+                    if r.get("direction") == "incoming"]
+        missed = [r for r in incoming if r.get("status") == "missed"]
+        pool = missed or incoming
+        if not pool:
+            return None, "callback_no_incoming_record"
+        # A name in the current text selects among candidates.
+        named = name_filter(pool, current_text)
+        if not named and _explicit_addressee(current_text) is not None:
+            # The text names an addressee who is NOT in the pool
+            # ("gọi lại cho An" with only Bình missed): the name
+            # has veto power -- binding the single pool record
+            # would call the wrong person (reviewer fix R2-A3).
+            return None, "callback_name_mismatch"
+        if len(named) == 1:
+            return named[0], "callback_unique_match"
+        # Topic / amount disambiguation among the candidates.
+        # NOTE: no recency shortcut here: "người vừa gọi" with two
+        # missed calls does not identify one of them -- recency
+        # alone is not a binding (only the explicit "số mới nhất"
+        # + time field in the chat-content path binds by recency).
+        # Topic selection runs over the name-narrowed pool, or
+        # over the full pool when no name matched (name filtering
+        # narrows; it must not starve the topic fallback).
+        selected, sel_reason = _select_by_topic_amount(
+            current_text, named if named else pool)
+        if selected is not None:
+            return selected, "callback_" + sel_reason
+        if len(pool) == 1:
+            return pool[0], "callback_single_incoming"
+        if missed and len(missed) == 1:
+            return missed[0], "callback_single_missed"
+        return None, "callback_multiple_incoming_candidates"
+
+    # -- anaphoric number ("số đó", "số mới nhất") --------------------
+    if any(p in folded for p in ("so do", "so nay", "so moi nhat")):
+        logs = log_records()
+        if not logs:
+            # Fall back to chat content records (read_result path):
+            # numbers in the messages of the most recent chat read.
+            # Several messages share one result position, so all
+            # messages of the latest read are considered together.
+            chats = [r for r in records
+                     if r.get("tool") == "chat_ott.read_chat"
+                     and r.get("content")]
+            if not chats:
+                return None, "anaphoric_no_log_or_chat_record"
+            latest_pos = max(r.get("position", -1) for r in chats)
+            latest = [r for r in chats
+                      if r.get("position") == latest_pos]
+            num_to_rec = {}
+            for r in latest:
+                for m in parse_phone_mentions(r["content"] or ""):
+                    if m["role"] not in ("negated", "corrected_away"):
+                        num_to_rec.setdefault(m["normalized"], r)
+            if len(num_to_rec) == 1:
+                num, rec = next(iter(num_to_rec.items()))
+                out = dict(rec)
+                out["phone_number"] = num
+                return out, "anaphoric_chat_content_unique"
+            # Several numbers: "số mới nhất" selects the latest
+            # message by its time field; otherwise a topic overlap
+            # that narrows to one message's numbers selects it.
+            # Anything else stays ambiguous -- "a number exists
+            # somewhere in the chat" is never enough.
+            if "moi nhat" in folded:
+                timed = [r for r in latest if r.get("time")]
+                if timed:
+                    latest_time = max(r["time"] for r in timed)
+                    tnums = {}
+                    for r in timed:
+                        if r["time"] != latest_time:
+                            continue
+                        for m in parse_phone_mentions(
+                                r["content"] or ""):
+                            if m["role"] not in (
+                                    "negated", "corrected_away"):
+                                tnums.setdefault(m["normalized"], r)
+                    if len(tnums) == 1:
+                        num, rec = next(iter(tnums.items()))
+                        out = dict(rec)
+                        out["phone_number"] = num
+                        return out, "anaphoric_chat_latest_time"
+            topic_recs = {}
+            for r in latest:
+                if _topic_overlap(current_text, r["content"] or "") > 0:
+                    for m in parse_phone_mentions(r["content"] or ""):
+                        if m["role"] not in (
+                                "negated", "corrected_away"):
+                            topic_recs.setdefault(m["normalized"], r)
+            if len(topic_recs) == 1:
+                num, rec = next(iter(topic_recs.items()))
+                out = dict(rec)
+                out["phone_number"] = num
+                return out, "anaphoric_chat_topic_unique"
+            return None, "anaphoric_chat_content_ambiguous"
+        latest_pos = max(r.get("position", -1) for r in logs)
+        latest = [r for r in logs if r.get("position") == latest_pos]
+        nums = {r.get("phone_number") for r in latest
+                if r.get("phone_number")}
+        named = name_filter(latest, current_text)
+        if len(named) == 1 and named[0].get("phone_number"):
+            return named[0], "anaphoric_named_unique"
+        if len(nums) == 1:
+            rec = dict(latest[0])
+            rec["phone_number"] = next(iter(nums))
+            return rec, "anaphoric_latest_unique"
+        return None, "anaphoric_multiple_numbers"
+
+    # -- prior instruction ("làm như em dặn lúc nãy") ------------------
+    if any(p in folded for p in ("luc nay", "nhu da", "lam nhu",
+                                 "theo nhu", "nhu em dan", "nhu anh dan",
+                                 "nhu chi dan")):
+        turns = []
+        for t in user_turns():
+            mentions = [m for m in parse_phone_mentions(t.get("text") or "")
+                        if m["role"] == "requested_target"]
+            if mentions:
+                turns.append((t, mentions))
+        if not turns:
+            return None, "prior_instruction_no_phone_turn"
+        turn, mentions = turns[-1]
+        nums = {m["normalized"] for m in mentions}
+        if len(nums) == 1:
+            return {"kind": "user_turn", "tool": None,
+                    "position": turn.get("position"),
+                    "phone_number": next(iter(nums)),
+                    "contact_id": None, "name": None,
+                    "text": turn.get("text")}, \
+                "prior_instruction_unique"
+        return None, "prior_instruction_multiple_numbers"
+
+    return None, "no_reference_pattern"
+
+
+# ---------------------------------------------------------------------------
+# Shared verdict schema
+# ---------------------------------------------------------------------------
+
+def _evidence(kind, value, source, producer, field, outcome,
+              counterpart, position, claim, status, reason):
+    return {
+        "kind": kind, "value": value, "source": source,
+        "producer": producer, "field": field, "outcome": outcome,
+        "counterpart": counterpart, "position": position,
+        "claim": claim, "status": status, "reason": reason,
+    }
+
+
+def _verdict(established, basis, sources, b_selected, b_reason):
+    if established:
+        decision = "PROVEN"
+    elif sources:
+        decision = "AMBIGUOUS"
+    else:
+        decision = "UNKNOWN"
+    return {
+        "established": established,
+        "basis": basis,
+        "question_a_sources": sources,
+        "question_b_target_selected": b_selected,
+        "question_b_reason": b_reason,
+        "decision": decision,
+    }
+
+
+def _entry_outcome(entry):
+    """Normalise a prefix entry's outcome to the shared vocabulary."""
+    if isinstance(entry, dict):
+        outcome = entry.get("outcome")
+        if outcome in ("succeeded", "failed", "schema_rejected", "noop"):
+            return outcome
+        if entry.get("succeeded") is True:
+            return "succeeded"
+        if entry.get("succeeded") is False:
+            return "failed"
+    return "unknown"
+
+
+def _prefix_records(session_prefix):
+    """Split a session prefix into log records + user turns + roster.
+
+    session_prefix entries are dicts; recognised shapes:
+      {"tool", "args", "result", "outcome"|"succeeded", "position"}
+        -- a prior call (current session or history turn's call);
+      {"kind": "user_turn", "text", "position"}
+        -- a history user turn's text;
+      {"kind": "roster", "contacts": [...]}
+        -- handled by the roster argument instead; ignored here.
+    Call ARGS are never read as evidence (a proposal's arguments
+    prove nothing); only succeeded RESULTS and turn texts are.
+    """
+    logs = []
+    turns = []
+    for entry in session_prefix or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("kind") == "user_turn":
+            turns.append(entry)
+            continue
+        tool = entry.get("tool")
+        if not tool:
+            continue
+        if _entry_outcome(entry) != "succeeded":
+            continue
+        logs.extend(extract_log_records(
+            entry.get("result"), tool, entry.get("position", -1)))
+    return logs, turns
+
+
+def _question_b_for_phone(value, current_text, roster, bound):
+    """Decide question (b) for a phone value from the current text.
+
+    True  -- the text selects this value (direct mention, roster
+             contact name, or a bound reference to it);
+    False -- the text selects a DIFFERENT number / correction
+             replacing this value, or negates it;
+    None  -- the text carries no phone-selection signal at all.
+    """
+    if not current_text:
+        return None, "current_text_not_provided"
+    mentions = parse_phone_mentions(current_text)
+    for m in mentions:
+        if m["normalized"] == value and m["role"] == "negated":
+            return False, "value_negated_in_current_text"
+        if m["normalized"] == value \
+                and m["role"] == "corrected_away":
+            return False, "value_corrected_away_in_current_text"
+    for m in mentions:
+        if m["normalized"] == value \
+                and m["role"] == "requested_target":
+            return True, "value_directly_requested"
+    if bound is not None and bound.get("phone_number") == value:
+        return True, "bound_reference_selects_value"
+    # Roster contact named in the current text.
+    for contact in roster or []:
+        name = contact.get("name")
+        if name and norm_phone(contact.get("phone")) == value \
+                and _name_matches(name, current_text):
+            return True, "roster_contact_named"
+    # The text selects a different number for the action.
+    for m in mentions:
+        if m["role"] == "requested_target":
+            return False, "different_number_requested"
+    folded = fold_vietnamese(current_text)
+    if any(p in folded for p in ("goi lai", "nhan lai", "tra loi",
+                                 "so do", "so nay", "so moi nhat",
+                                 "luc nay")):
+        return None, "reference_present_but_unbound"
+    return None, "no_phone_selection_signal"
+
+
+def phone_evidence_for(value, session_prefix, roster, current_text=None):
+    """Verdict for one phone_number proposal value.
+
+    value: the proposed phone_number (any format; normalised by
+      norm_phone, never edited to fit).
+    session_prefix: prior-call / history-turn entries (see
+      _prefix_records). The CURRENT proposal must not be in the
+      prefix; its arguments are never evidence.
+    roster: [{id, name, phone}] address-book entries (may be []).
+    current_text: the current request text (optional; without it,
+      question (b) is None and nothing can be PROVEN).
+
+    Sources are checked in authority order (roster, log fields,
+    user text, bound history, read-result content); write echoes
+    (phone.call / sms.send results) are skipped explicitly even
+    when succeeded.
+    """
+    target = norm_phone(value)
+    sources = []
+    basis = None
+    if not target:
+        return _verdict(False, None, [], None, "empty_value")
+
+    roster = roster or []
+    roster_matches = [c for c in roster
+                      if norm_phone(c.get("phone")) == target]
+    if len(roster_matches) == 1:
+        c = roster_matches[0]
+        sources.append(_evidence(
+            "phone", target, "roster", "contacts", "phone",
+            "succeeded", {"contact_id": c.get("id")}, -1,
+            "existence", "active", "roster_unique_match"))
+    elif len(roster_matches) > 1:
+        sources.append(_evidence(
+            "phone", target, "roster", "contacts", "phone",
+            "succeeded", None, -1, "existence", "ambiguous",
+            "roster_multiple_match"))
+        # Number existence is separate from contact identity
+        # (reviewer fix R2-A2): >=1 roster entry carries this
+        # number, so for a NUMBER-target consumer (phone.call /
+        # sms.send) the number is established even though WHICH
+        # contact it is stays ambiguous. This active evidence must
+        # never be read as contact identity (counterpart None,
+        # ambiguous identity evidence alongside).
+        sources.append(_evidence(
+            "phone", target, "roster", "contacts", "phone",
+            "succeeded", None, -1, "existence", "active",
+            "roster_number_present_multiple_contacts"))
+
+    # Prefix: succeeded log fields first, then read-result content.
+    # Write echoes are excluded by construction: only the tools
+    # below are read as sources, never phone.call / sms.send.
+    logs, turns = _prefix_records(session_prefix)
+    history_records = list(logs) + [
+        {"kind": "user_turn", "text": t.get("text"),
+         "position": t.get("position", -1)} for t in turns]
+    for rec in logs:
+        if rec["tool"] in CALL_LOG_TOOLS + MESSAGE_LOG_TOOLS \
+                and rec.get("phone_number") == target:
+            src = "call_log" if rec["tool"] in CALL_LOG_TOOLS \
+                else "message_log"
+            sources.append(_evidence(
+                "phone", target, src, rec["tool"],
+                "result.phone_number", "succeeded",
+                {"tool": rec["tool"], "position": rec["position"],
+                 "record_id": rec.get("record_id"),
+                 "contact_id": rec.get("contact_id")},
+                rec["position"], "existence", "active",
+                "log_phone_number_field"))
+
+    # User text: direct requested target, or tail correction.
+    corrected_from = None
+    if current_text:
+        for m in parse_phone_mentions(current_text):
+            if m["normalized"] == target \
+                    and m["role"] == "requested_target":
+                sources.append(_evidence(
+                    "phone", target, "user_text", "user",
+                    "current_text", "succeeded", None, -1,
+                    "binding", "active", "user_requested_target"))
+        corr = parse_tail_correction(current_text)
+        if corr:
+            hist_numbers = set()
+            for t in turns:
+                for m in parse_phone_mentions(t.get("text") or ""):
+                    hist_numbers.add(m["normalized"])
+            for rec in logs:
+                if rec.get("phone_number"):
+                    hist_numbers.add(rec["phone_number"])
+            cands = [n for n in hist_numbers
+                     if n.endswith(corr["old_tail"])]
+            if len(cands) == 1:
+                corrected = apply_tail_correction(cands[0], corr)
+                if corrected == target:
+                    corrected_from = cands[0]
+                    sources.append(_evidence(
+                        "phone", target, "user_text", "user",
+                        "current_text_tail_correction", "succeeded",
+                        {"history_number": cands[0],
+                         "old_tail": corr["old_tail"],
+                         "new_tail": corr["new_tail"]}, -1,
+                        "binding", "active",
+                        "tail_correction_of_history_number"))
+            elif len(cands) > 1:
+                sources.append(_evidence(
+                    "phone", target, "user_text", "user",
+                    "current_text_tail_correction", "succeeded",
+                    None, -1, "binding", "ambiguous",
+                    "tail_correction_multiple_history_matches"))
+
+    # Bound history reference (anaphoric / callback / prior turn).
+    bound, bind_reason = (None, "no_current_text")
+    if current_text:
+        bound, bind_reason = bind_history_reference(
+            current_text, history_records)
+        if bound is not None and bound.get("phone_number") == target:
+            if bound.get("kind") == "user_turn":
+                src = "history_text"
+            elif bound.get("tool") in CALL_LOG_TOOLS:
+                src = "call_log"
+            elif bound.get("tool") in MESSAGE_LOG_TOOLS:
+                src = "message_log"
+            else:
+                src = "read_result"
+            sources.append(_evidence(
+                "phone", target, src,
+                bound.get("tool") or "user",
+                "bound_history_record", "succeeded",
+                {"tool": bound.get("tool"),
+                 "position": bound.get("position"),
+                 "record_id": bound.get("record_id"),
+                 "contact_id": bound.get("contact_id")},
+                bound.get("position", -1), "binding", "active",
+                "bound_reference:" + bind_reason))
+
+    # Read-result content numbers (chat messages etc.), selected
+    # only when the current text anaphorically selects them or the
+    # number is the unique content number of the latest read.
+    if current_text:
+        folded = fold_vietnamese(current_text)
+        anaphoric = any(p in folded for p in
+                        ("so do", "so nay", "so moi nhat"))
+        for rec in logs:
+            if rec["tool"] not in READ_RESULT_CONTENT_TOOLS:
+                continue
+            content = rec.get("content")
+            if not content:
+                continue
+            content_numbers = set()
+            for m in parse_phone_mentions(content):
+                if m["role"] in ("requested_target", "background"):
+                    content_numbers.add(m["normalized"])
+            for run in find_digit_runs(content):
+                if classify_phone_context(content, run)["classification"] \
+                        == "phone":
+                    content_numbers.add(norm_phone(run["digits"]))
+            content_numbers.discard("")
+            if target in content_numbers and (anaphoric
+                                              or len(content_numbers) == 1):
+                sources.append(_evidence(
+                    "phone", target, "read_result", rec["tool"],
+                    "result.messages[].content", "succeeded",
+                    {"tool": rec["tool"], "position": rec["position"],
+                     "record_id": rec.get("record_id")},
+                    rec["position"], "existence", "active",
+                    "observed_in_read_content"))
+
+    valid = [s for s in sources if s["status"] == "active"]
+    b_selected, b_reason = _question_b_for_phone(
+        target, current_text, roster, bound)
+    if corrected_from is not None and b_selected is None:
+        b_selected, b_reason = True, "tail_correction_selects_value"
+    if valid and b_selected is True:
+        # "source" when establishment does not depend on binding:
+        # roster, log, read-result, or a direct user-text target.
+        # "binding" only when it rests on a bound history
+        # reference or a tail correction.
+        direct = any(
+            s["status"] == "active" and (
+                s["source"] in ("roster", "call_log", "message_log",
+                                "read_result")
+                or (s["source"] == "user_text"
+                    and s["reason"] == "user_requested_target"))
+            for s in valid)
+        basis = "source" if direct else "binding"
+        return _verdict(True, basis, sources, b_selected, b_reason)
+    if valid and b_selected is False:
+        return _verdict(False, None, sources, b_selected, b_reason)
+    # (b) undetermined: sources exist but selection is not shown.
+    return _verdict(False, None, sources, b_selected, b_reason)
+
+
+def callback_reference_for(call_args, session_prefix, roster=None,
+                           current_text=None, consumer_tool=None):
+    """Verdict for one contact reference in a call's arguments.
+
+    call_args: the proposal's arguments (contact_id / contact_name /
+      to / phone_number). The proposal's own values are the
+      QUESTION, never evidence.
+    consumer_tool: the tool consuming the reference (e.g.
+      "phone.call", "contacts.update"). It decides whether roster
+      membership is required: phone/sms/ewallet never validate a
+      contact, contacts writes are patch-verified. Unknown
+      consumers are reported as unknown, never assumed.
+
+    The verdict distinguishes three facts, and never conflates them:
+      - roster_member: the id/name/phone is in the address book
+        (contacts.contacts records from a search/get also count);
+      - observed_counterpart: the id/phone appears in a SUCCEEDED
+        call/message log record (sufficient for execution by a
+        non-validating consumer, but NOT roster membership);
+      - consumer_accepted: whether the consumer's implementation
+        accepts the reference (validation rules above).
+    A contact_id found only in free text or as another registry's
+    foreign key is never a source for any of the three.
+    """
+    args = call_args or {}
+    ref_id = args.get("contact_id")
+    ref_name = args.get("contact_name")
+    to = args.get("to")
+    if not ref_id and isinstance(to, str) and to and "@" not in to:
+        if to.startswith("c_"):
+            ref_id = to
+        else:
+            ref_name = to
+    ref_phone = norm_phone(args.get("phone_number"))
+    roster = roster or []
+    logs, _turns = _prefix_records(session_prefix)
+
+    sources = []
+    roster_member = False
+    observed = False
+    if ref_id:
+        if any(str(c.get("id")) == str(ref_id) for c in roster):
+            roster_member = True
+            sources.append(_evidence(
+                "contact", str(ref_id), "roster", "contacts", "id",
+                "succeeded", {"contact_id": ref_id}, -1,
+                "existence", "active", "roster_id_match"))
+        for rec in logs:
+            if rec["tool"] in CALL_LOG_TOOLS + MESSAGE_LOG_TOOLS \
+                    and rec.get("contact_id") == ref_id:
+                observed = True
+                sources.append(_evidence(
+                    "contact", str(ref_id),
+                    "call_log" if rec["tool"] in CALL_LOG_TOOLS
+                    else "message_log", rec["tool"],
+                    "result.contact_id", "succeeded",
+                    {"tool": rec["tool"], "position": rec["position"],
+                     "record_id": rec.get("record_id")},
+                    rec["position"], "binding", "active",
+                    "observed_log_counterpart"))
+            if rec["tool"] in ("contacts.search", "contacts.get") \
+                    and rec.get("contact_id") == ref_id:
+                roster_member = True
+                sources.append(_evidence(
+                    "contact", str(ref_id), "roster", rec["tool"],
+                    "result.id", "succeeded",
+                    {"tool": rec["tool"], "position": rec["position"]},
+                    rec["position"], "existence", "active",
+                    "contacts_record"))
+    if ref_name:
+        folded_name = fold_vietnamese(ref_name)
+        matches = [c for c in roster
+                   if c.get("name")
+                   and fold_vietnamese(c["name"]) == folded_name]
+        if len(matches) == 1:
+            roster_member = True
+            sources.append(_evidence(
+                "contact", fold_vietnamese(ref_name), "roster",
+                "contacts", "name", "succeeded",
+                {"contact_id": matches[0].get("id")}, -1,
+                "existence", "active", "roster_name_unique_match"))
+        elif len(matches) > 1:
+            sources.append(_evidence(
+                "contact", fold_vietnamese(ref_name), "roster",
+                "contacts", "name", "succeeded", None, -1,
+                "existence", "ambiguous", "roster_name_multiple_match"))
+    if ref_phone:
+        phone_matches = [c for c in roster
+                         if norm_phone(c.get("phone")) == ref_phone]
+        if len(phone_matches) == 1:
+            roster_member = True
+            sources.append(_evidence(
+                "contact", ref_phone, "roster", "contacts", "phone",
+                "succeeded", None, -1, "existence", "active",
+                "roster_phone_match"))
+        elif len(phone_matches) > 1:
+            # Number present, identity ambiguous: never claim
+            # roster membership for a shared number (R2-A2).
+            sources.append(_evidence(
+                "contact", ref_phone, "roster", "contacts", "phone",
+                "succeeded", None, -1, "existence", "ambiguous",
+                "roster_phone_multiple_match"))
+        for rec in logs:
+            if rec["tool"] in CALL_LOG_TOOLS + MESSAGE_LOG_TOOLS \
+                    and rec.get("phone_number") == ref_phone:
+                observed = True
+                sources.append(_evidence(
+                    "contact", ref_phone,
+                    "call_log" if rec["tool"] in CALL_LOG_TOOLS
+                    else "message_log", rec["tool"],
+                    "result.phone_number", "succeeded",
+                    {"tool": rec["tool"], "position": rec["position"],
+                     "record_id": rec.get("record_id")},
+                    rec["position"], "binding", "active",
+                    "observed_log_counterpart"))
+
+    requires = CONSUMER_REQUIRES_MEMBERSHIP.get(consumer_tool) \
+        if consumer_tool else None
+    if consumer_tool is None:
+        consumer_note = "consumer_unknown"
+    elif requires is True:
+        consumer_note = "consumer_requires_membership"
+    else:
+        consumer_note = "consumer_no_membership_validation"
+
+    # Question (b): does the current text select this counterpart?
+    b_selected, b_reason = None, "current_text_not_provided"
+    if current_text:
+        folded = fold_vietnamese(current_text)
+        if ref_name and fold_vietnamese(ref_name) in folded:
+            b_selected, b_reason = True, "counterpart_named"
+        elif ref_phone:
+            b_sel, b_r = _question_b_for_phone(
+                ref_phone, current_text, roster, None)
+            b_selected, b_reason = b_sel, b_r
+        elif ref_id:
+            history_records = list(logs)
+            bound, bind_reason = bind_history_reference(
+                current_text, history_records)
+            if bound is not None \
+                    and bound.get("contact_id") == ref_id:
+                b_selected, b_reason = True, \
+                    "bound_reference_selects_counterpart"
+            else:
+                # The text may name the roster contact directly
+                # ("Cập nhật số cho An" where An's id is ref_id).
+                named_contact = next(
+                    (c for c in roster
+                     if str(c.get("id")) == str(ref_id)
+                     and c.get("name")), None)
+                if named_contact and _name_matches(
+                        named_contact["name"], current_text):
+                    b_selected, b_reason = True, "roster_contact_named"
+                else:
+                    # Topic / amount selection among incoming log
+                    # records: if the uniquely selected record's
+                    # contact_id equals ref_id, the text selects
+                    # this counterpart (e.g. "hoàn lại hai trăm
+                    # nghìn cho Emily" selects the message whose
+                    # content carries that amount / name).
+                    incoming = [r for r in logs
+                                if r.get("direction") == "incoming"]
+                    selected, _sel = _select_by_topic_amount(
+                        current_text, incoming or logs)
+                    if selected is not None \
+                            and selected.get("contact_id") == ref_id:
+                        b_selected, b_reason = True, \
+                            "topic_amount_selects_counterpart"
+                    elif any(p in folded for p in
+                             ("goi lai", "nhan lai", "tra loi")):
+                        b_selected, b_reason = None, \
+                            "callback_reference_unbound"
+                    else:
+                        b_selected, b_reason = None, \
+                            "no_counterpart_selection_signal"
+
+    valid = [s for s in sources if s["status"] == "active"]
+    if not valid:
+        return _verdict(False, None, sources, b_selected,
+                        b_reason + ";" + consumer_note)
+    if requires is True and not roster_member:
+        # Observed counterpart alone does not satisfy a consumer
+        # that requires membership: report AMBIGUOUS with both
+        # facts visible, never PROVEN.
+        return _verdict(False, None, sources, b_selected,
+                        "observed_counterpart_not_roster_membership;"
+                        + consumer_note)
+    if requires is None:
+        # Consumer acceptance is unknown: binding may be shown,
+        # but acceptance cannot be claimed. Cap at AMBIGUOUS.
+        return _verdict(False, None, sources, b_selected,
+                        b_reason + ";" + consumer_note)
+    if b_selected is True:
+        basis = "source" if roster_member else "binding"
+        return _verdict(True, basis, sources, b_selected,
+                        b_reason + ";" + consumer_note)
+    return _verdict(False, None, sources, b_selected,
+                    b_reason + ";" + consumer_note)
