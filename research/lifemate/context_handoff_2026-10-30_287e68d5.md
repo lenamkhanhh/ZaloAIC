@@ -4,7 +4,8 @@ Tài liệu tự chứa cho Codex. Ngày bàn giao: 2026-10-30. Commit được 
 `287e68d5022aac243f2b5721029b6db6a17d93b5` (nhánh `gg-phone-callback-lifecycle`).
 Trạng thái: **bản final — đã đối chiếu trực tiếp code/API/test trong task bàn giao
 ngày 2026-10-30; mọi điểm chưa xác minh được đều ghi rõ UNKNOWN hoặc "trích kết quả
-cũ" kèm nguồn, không đoán.**
+cũ" kèm nguồn, không đoán. Bản sửa đổi 1 (2026-10-30, sau push 47424307): bổ sung
+cross-check từ luồng pipeline — xem Phụ lục A.**
 
 Quy ước đọc:
 - `fired=True` = gate chặn (hướng an toàn), `fired=False` = un-fire (cho qua).
@@ -31,6 +32,7 @@ Quy ước đọc:
 - [Checklist cho Codex](#checklist-cho-codex)
 - [Thông tin chưa biết / cần Codex cung cấp](#thông-tin-chưa-biết--cần-codex-cung-cấp)
 - [Tóm tắt (≤15 dòng)](#tóm-tắt)
+- [Phụ lục A — Cross-check từ luồng pipeline (2026-10-30)](#phụ-lục-a--cross-check-từ-luồng-pipeline-2026-10-30)
 
 ## Bảng trạng thái tổng hợp (đọc nhanh)
 
@@ -126,8 +128,12 @@ LLM `Qwen/Qwen3-4B-Instruct-2507` revision `cdbee75` (backend vllm, temp 0.0, se
 ctx 16384, max_new_tokens 512); max_steps 12; max_repeats 2; total 4.244B
 (LLM 4.0B + ASR 0.244B); heldout_frac 0.2; split_seed 42; selective_reads true;
 verification_read_after_write false; constrained_decoding "validate-and-retry";
-local_files_only true. ASR revision: PhoWhisper-small rev `a86b604c` (trích kết quả cũ
-từ baseline; cần Codex xác nhận lại nếu dùng lại — xem §Thông tin chưa biết).
+local_files_only true. ASR revision: PhoWhisper-small rev
+`a86b604c346caf7148c37512eafe783a16420adb` (full SHA — XÁC NHẬN từ trace metadata
+của cả 3 traces V10/V11/V13, không còn là "trích kết quả cũ"; config JSON chỉ ghi
+checkpoint name, KHÔNG pin ASR revision — đừng suy ra rev từ config). LLM snapshot
+đầy đủ: `cdbee75f17c01a7cc42f958dc650907174af0554` (config `llm_revision: "cdbee75"`
+chỉ là prefix rút gọn).
 Tokenizer: dùng qua model revision trên; không có tokenizer revision riêng được ghi.
 
 ### 1.4 Artifact chỉ ở workspace local (không push, không có trên nhánh)
@@ -255,6 +261,30 @@ Khoảng thiếu giữa thiết kế và code: grounding (cả hai module) chỉ
 giá trị; nó KHÔNG phải là G&G (không có provenance veto, không có gate chặn, không
 có ledger). Đừng đặt G&G vào sơ đồ runtime như thể đã tích hợp — G&G chưa được agent
 nào gọi (bằng chứng grep §1.3).
+
+Chi tiết module grounding A2E (đã verify trực tiếp): `grounding.py:ground_arguments`
+(190) — "Normalize only supplied slots; never invent a missing argument. Ambiguity
+goes back to the model as a validation error, not an auto-ask." Helpers cùng file:
+`parse_money` (68), `parse_date` (109), `normalise_id` (147), `ground_name` (152);
+`FUZZY_THRESHOLD = 88.0`, `FUZZY_MARGIN = 8.0` (48–49); backend RapidFuzz nếu có,
+else difflib fallback (backend được report trên mỗi kết quả fuzzy). Bên trong dùng
+`EvidenceLedger` từ `evidence.py:33` (thu thập ids/phones từ executed/results/history/
+transcript/context). Không có module "hook" riêng trong A2E: agent import trực tiếp
+(`agent.py:39`) và gọi inline trước validate.
+Config default (đã verify trực tiếp): `config.py:PipelineConfig` có `grounding: bool
+= True  # False in baseline.json` — tức default khi không load JSON là BẬT; chỉ
+`baseline.json` tắt tường minh. Ghi đúng: baseline = TẮT, recommended = BẬT, default
+dataclass = BẬT.
+
+Cảnh báo lineage (đã verify trực tiếp — đừng dùng agent.py của V10 làm tài liệu cho
+runtime A2E, và ngược lại): agent.py của V10 KHÁC A2E ở những điểm cốt lõi — V10
+không có `ACTION_POLICY` (grep = 0); observation dùng `repr(result)` và truncate 300
+ký tự (`output[:300] + "..."`), trong khi A2E dùng compact JSON đầy đủ và phân biệt
+outcome `not_done` (ok nhưng done False) — V10 gộp thành "ok"; V10 có roster tracking
+(`self._roster`, `grounding_log`) và chuyển `NEEDS_ASK` (hoặc leftover contact-name
+key) thành `sys.ask_missing_info`. V10 là lineage grounding-hook round 8, không phải
+A2E cộng thêm G&G. Main và V10 share cùng agent.py (byte-identical, §1.3), nhưng cả
+hai đều khác A2E.
 
 ### 2.3 Sơ đồ mong muốn cho G&G (BRIEF, chưa implement — lifecycle report §6)
 
@@ -950,7 +980,18 @@ sánh trực tiếp hai con số như cùng một phép đo.
   result + succeeded flag). NEVER: current proposal, rejected proposals, future tool
   results, gold values (gold CHỈ dùng cho adjudication bên ngoài, không feed vào evidence).
 - Row = một write proposal trong trace. Counts (trích kết quả cũ từ C reports v8–v10,
-  rows identical khi so paired): V10 14 rows, V11 10 rows, V13 29 rows.
+  rows identical khi so paired): V10 14 rows, V11 10 rows, V13 29 rows. Breakdown
+  decision từ output C v10 (trích output cũ, chưa chạy lại): V10 passed 8 / blocked 6;
+  V11 passed 4 / blocked 6; V13 blocked 16 / passed 6 / out-of-scope-guard 7 (khớp
+  regression control trong docstring gg_shadow.py).
+- Trace metadata (chỉ đọc metadata, không đọc nội dung trace): cả 3 traces đều có
+  field `usage = 'DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT'` — trace là diagnostic-only,
+  không bao giờ là agent input. Đừng viết "trace chạy trên agent a2e832b": trace sinh
+  từ commit 5fb5d0a (V10) / a472006 (V11, V13) như đã ghi ở trên.
+- Quan hệ script: `gg_shadow.py` = `model_trace_shadow.py` + phần adapter shadow
+  (import `adapter_decide`, dựng `hist_prefix` bằng ASR texts, `cand_prefix/cand_pos`,
+  gọi `adapter_decide`). Docstring usage của gg_shadow.py còn ghi tên cũ
+  `model_trace_shadow.py` — đừng nhầm thành hai script khác nhau.
 - Provenance chính xác của từng trace (đã verify trong task này từ audit .md trong
   analysis/runtime/, là primary source — ưu tiên hơn standing note):
   - V10 (E1 V10, audit E1_V10_AUDIT_2026-10-28.md): source
@@ -1326,8 +1367,9 @@ bàn giao này (user cấm) — đây chỉ là kế hoạch cho Codex / phiên 
 2. ~~Provenance chính xác của traces V10/V11/V13~~ — ĐÃ GIẢI QUYẾT trong task này từ
    audit .md trong analysis/runtime/ (xem §6.6), kèm hiệu chính: V13 base là a472006
    (giống V11), không phải "main e2245ab1" như standing note cũ.
-3. **ASR revision PhoWhisper-small** (`a86b604c` — trích kết quả cũ từ baseline;
-   cần xác nhận lại từ config/model card nếu dùng lại).
+3. ~~ASR revision PhoWhisper-small~~ — ĐÃ GIẢI QUYẾT (cross-check 2026-10-30):
+   full SHA `a86b604c346caf7148c37512eafe783a16420adb` từ trace metadata cả 3
+   traces; config JSON không pin ASR revision (xem §1.3).
 4. **Wilson upper chính thức** cho candidate false-block 2/976 (bản bàn giao chỉ tính
    nhẩm ≈ 0.7%; cần tính lại có audit trail nếu dùng làm bằng chứng adoption bar).
 5. ~~Tên helper outcome chính xác~~ — ĐÃ GIẢI QUYẾT trong task này:
@@ -1346,6 +1388,40 @@ bàn giao này (user cấm) — đây chỉ là kế hoạch cho Codex / phiên 
    do Muse hay Codex làm (C1/C2).
 10. **Ngân sách GPU cho các bước cần model runs** (shadow on/off diff, E7 40-trial sau
     khi CPU-ready, benchmark D6) — cần user xác nhận trước khi chạy.
+
+## Phụ lục A — Cross-check từ luồng pipeline (2026-10-30)
+
+Sau khi bản chính được push (commit 47424307), luồng bằng chứng pipeline đã bàn giao
+và điều phối viên đã spot-verify trực tiếp từng điểm mới trước khi đưa vào đây
+(grep + đọc metadata, không tin mù). Các điểm sau BỔ SUNG (không sửa kết luận chính):
+
+1. **V10 agent.py ≠ A2E agent.py** (xem §2.2): không ACTION_POLICY, observation
+   truncate 300 ký tự, outcome gộp not_done→ok, roster tracking + NEEDS_ASK →
+   ask_missing_info. Main == V10 agent (byte-identical), nhưng cả hai đều khác A2E.
+2. **Module grounding A2E chi tiết** (xem §2.2): helpers parse_money/parse_date/
+   normalise_id/ground_name, EvidenceLedger (evidence.py:33), FUZZY 88.0/8.0,
+   RapidFuzz/difflib, không có module hook riêng.
+3. **Config default grounding = True** (config.py:47); chỉ baseline.json tắt tường
+   minh (xem §2.2).
+4. **ASR rev + LLM snapshot full SHA từ trace metadata** (xem §1.3):
+   a86b604c346caf7148c37512eafe783a16420adb và
+   cdbee75f17c01a7cc42f958dc650907174af0554; config JSON không pin ASR rev.
+5. **Trace usage = DIAGNOSTIC_ONLY_NEVER_AGENT_INPUT** cho cả 3 traces; decision
+   breakdowns V10/V11 từ output C v10 (xem §6.6); quan hệ gg_shadow =
+   model_trace_shadow + phần adapter shadow.
+6. **ASR backends** (bổ sung cho §2.1, chưa verify trực tiếp trong task này —
+   trích từ luồng pipeline, ghi rõ nguồn): TransformersASR (WAV mono 16-bit 16 kHz,
+   pipeline automatic-speech-recognition, generate_kwargs language vi / task
+   transcribe / num_beams 1 / do_sample False); FasterWhisperASR là alternative
+   (CT2); TranscriptOracle train-only, raise trên public_test ("Public/private
+   samples must go through real ASR"). Tool list per-sample = sample.installed_tools
+   + sys.ask_missing_info ("Never put the full split catalog in a prompt").
+
+Không có điểm nào trong cross-check này làm thay đổi kết luận chính (G&G audit-only,
+số paired/shadow, adoption bar, điều kiện dừng). Các điểm pipeline agent ghi
+UNKNOWN (prompt template từ initial_prompt_sha256; paired 976 không chạy lại trong
+luồng đó) đã được tài liệu chính xử lý: 976 ghi "trích kết quả cũ" từ C10 (§6.3),
+prompt hash không được dùng làm bằng chứng nội dung.
 
 ## Tóm tắt
 
