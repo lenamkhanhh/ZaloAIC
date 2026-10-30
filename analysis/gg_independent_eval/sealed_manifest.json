@@ -1,0 +1,110 @@
+{
+ "salt_note": "Salt is held by the independent evaluator until reveal; hashes commit to case content.",
+ "cases": [
+  {
+   "id": "SEAL-001",
+   "category": "wrong-person-message",
+   "group": "attack",
+   "finding_class": "scope",
+   "sha256_salted": "2c1133455d96c8a19f42f4a15aa7f87def7234fc33acfe2d8f0d294bdff79cba"
+  },
+  {
+   "id": "SEAL-002",
+   "category": "content-then-correction",
+   "group": "attack",
+   "finding_class": "contract",
+   "sha256_salted": "3f624d86a63fefbfe70ee0502f6c559c364c19523fa97d6f76c9b04628b5f889"
+  },
+  {
+   "id": "SEAL-003",
+   "category": "emphatic-negation",
+   "group": "attack",
+   "finding_class": "contract",
+   "sha256_salted": "60167a8712d87879797cc2db006625215f33bd3384c70894e074e9e856eb0bb6"
+  },
+  {
+   "id": "SEAL-004",
+   "category": "question-about-prior",
+   "group": "attack",
+   "finding_class": "contract",
+   "sha256_salted": "92a11b8dbac6ee4acf0c94ed9fcb14df2644054d738975874759b93e50dd65a3"
+  },
+  {
+   "id": "SEAL-005",
+   "category": "re-replacement",
+   "group": "control",
+   "finding_class": "contract",
+   "sha256_salted": "5c31df6d2ddfab4cefdca07e12956aee9d778aeb4832ade769fe5e030d140e48"
+  },
+  {
+   "id": "SEAL-006",
+   "category": "family-wrong-number",
+   "group": "attack",
+   "finding_class": "scope",
+   "sha256_salted": "461fc83fc9acac0b1dd4aab906617c63c78c276396c1d621b389900d96a5f2d1"
+  },
+  {
+   "id": "SEAL-007",
+   "category": "duplicate-disambiguated",
+   "group": "control",
+   "finding_class": "contract",
+   "sha256_salted": "a1d6d1cbbd0c2b3fe888bfa4ecde612b0033b721c19a1c96cde70d8255f3e971"
+  },
+  {
+   "id": "SEAL-008",
+   "category": "forward-then-explicit-call",
+   "group": "control",
+   "finding_class": "contract",
+   "sha256_salted": "05ed004fe536fe6d09bb257a6d5b14d19da21b00df61615ed52cf3d217a23cbc"
+  },
+  {
+   "id": "SEAL-009",
+   "category": "help-me-vs-delegate",
+   "group": "control",
+   "finding_class": "contract",
+   "sha256_salted": "8728e1fa726d371b164df98bb163bab8de72a2762b03d311e9740e2b3b160b35"
+  },
+  {
+   "id": "SEAL-010",
+   "category": "delete-then-recreate",
+   "group": "control",
+   "finding_class": "contract",
+   "sha256_salted": "72d388e2d23f95ebd117db4fdb053a1ee11bb046c305e397a9c482fc89d94d96"
+  },
+  {
+   "id": "SEAL-011",
+   "category": "delete-other-reread",
+   "group": "attack",
+   "finding_class": "contract",
+   "sha256_salted": "61666f349a1ff5b8085d21db691c222e55d7059e13b4e11f290fa31c98475dc9"
+  },
+  {
+   "id": "SEAL-012",
+   "category": "va-chain",
+   "group": "control",
+   "finding_class": "contract",
+   "sha256_salted": "6ec31bda1bd733b244ff9842961596d0194bf7691e7f561de36292c112748786"
+  },
+  {
+   "id": "SEAL-013",
+   "category": "roi-no-chain",
+   "group": "attack",
+   "finding_class": "contract",
+   "sha256_salted": "02ef18cd62a22a431340e4198410657870daff0817e53ba39d1aacb99c49df23"
+  },
+  {
+   "id": "SEAL-014",
+   "category": "message-then-call-restated",
+   "group": "control",
+   "finding_class": "contract",
+   "sha256_salted": "fad5b5ae6534b5644b3973fe361ba25fde8bfdac36a6a0becfb969850658d765"
+  },
+  {
+   "id": "SEAL-015",
+   "category": "vocative-question",
+   "group": "attack",
+   "finding_class": "scope",
+   "sha256_salted": "a93b30231a56f8568c8867e5403a49eb5f92326b2774f89e1226a5378e04b5f1"
+  }
+ ]
+}
