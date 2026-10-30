@@ -1,23 +1,32 @@
 """R4 pending_ask_stop (variant, default OFF) + agent roster backfill.
 
-Self-contained: real AgentLoop, scripted generator, permissive FakeEnv
-with canned contacts.search results. No LifeMate data, no simulator,
-no model — what is proven is loop order and the loop's own roster.
+REVISED contract (supersedes the c0f7a9a pending-key contract in
+full): when the flag is ON, a sys.ask_missing_info that env.call
+executes SUCCESSFULLY (result ok is True) ends the turn IMMEDIATELY,
+with that ask kept in the submission. The generator is not called
+again after that ask, and no read / write / further ask runs after
+it. There is NO post-ask-read leaf exception in this contract: the
+same value in a later read does not prove the right slot/intent,
+and any continuation after an ask is a separate research direction,
+not part of this candidate. Distinct-key asks after a successful
+ask are therefore NOT allowed in this contract either — the turn
+is already over.
 
-pending_ask_stop semantics (agent.py, flag ON only):
-  * a successful sys.ask_missing_info opens pending key
-    (tool_name, params-tuple);
-  * a later proposal that would become the SAME ask ends the turn
-    with no second ask and no env.call for that proposal;
-  * a later write filling a pending slot ends the turn with no
-    env.call unless its exact value appeared as a leaf of a read
-    result executed AFTER that ask (post-ask reads only);
-  * a different (tool, params) ask is still allowed, and a write for
-    an unrelated slot is unchanged.
+The two non-success cases do NOT trigger this rule, and follow the
+old flow:
+  * an ask validation rejects -> it never reaches env.call; the
+    loop retries with the next generation (old validation flow);
+  * an ask whose env.call returns ok False -> it is not a
+    successful ask; the loop continues via guard / re-prompt.
 
-Roster backfill (agent.py, unconditional task-1 change, NOT gated by
-the flag): a later successful contacts.search for an id already in
-the roster supplements missing fields only — never overwrites a
+Self-contained: real AgentLoop, scripted generator, permissive
+FakeEnv with canned contacts.search results. No LifeMate data, no
+simulator, no model — what is proven is loop order and the loop's
+own roster.
+
+Roster backfill (agent.py, unconditional task-1 change, NOT gated
+by the flag): a later successful contacts.search for an id already
+in the roster supplements missing fields only — never overwrites a
 non-empty field, never overwrites with an empty value, never appends
 a duplicate entry. Backfill mutates the roster copy, not the search
 result's own dict.
@@ -57,8 +66,10 @@ ASK_PHONE = {"name": "sys.ask_missing_info",
              "arguments": {"tool_name": "contacts.update", "params": ["phone"]}}
 TIME_TAIL = {"name": "reminders.create",
              "arguments": {"time": "sáng mai", "content": "họp"}}
-ASK_TIME = {"name": "sys.ask_missing_info",
-            "arguments": {"tool_name": "reminders.create", "params": ["time"]}}
+REMINDER_ISO = {"name": "reminders.create",
+                "arguments": {"time": "2026-10-31T08:00:00+07:00",
+                              "content": "họp"}}
+SEARCH_LAN = {"name": "contacts.search", "arguments": {"query": "Lan"}}
 
 
 class CountingGen:
@@ -101,9 +112,34 @@ class FakeEnv:
                 "state_hash": "fake"}
 
 
-def run(proposals, search=None, pending=False):
+class AskValidateFailOnceEnv(FakeEnv):
+    """Rejects the FIRST ask at validation only; later validations
+    pass. The rejected ask never reaches env.call."""
+
+    def __init__(self, search=None):
+        super().__init__(search=search)
+        self._ask_validate_failed = False
+
+    def validate(self, name, arguments):
+        if name == "sys.ask_missing_info" and not self._ask_validate_failed:
+            self._ask_validate_failed = True
+            return {"ok": False, "error": "schema"}
+        return {"ok": True}
+
+
+class AskCallFailEnv(FakeEnv):
+    """Ask executes but returns ok False (execution failure)."""
+
+    def call(self, name, arguments):
+        if name == "sys.ask_missing_info":
+            self.calls.append({"name": name, "arguments": arguments})
+            return {"ok": False, "error": "ask failed"}
+        return super().call(name, arguments)
+
+
+def run(proposals, search=None, pending=False, env_cls=FakeEnv):
     gen = CountingGen(proposals)
-    env = FakeEnv(search=search)
+    env = env_cls(search=search)
     sample = SimpleNamespace(context=dict(CTX), history=[])
     loop = AgentLoop(
         PipelineConfig(grounding=True, shadow_observer=False,
@@ -121,9 +157,17 @@ class TestPendingOff(unittest.TestCase):
         self.assertEqual(out["tool_calls"], [ASK_PHONE, ASK_PHONE])
         self.assertEqual(gen.proposals, 3)
 
+    def test_off_ask_does_not_end_turn(self):
+        # OFF: after a successful ask the loop keeps going, so a
+        # second (distinct) ask still executes.
+        loop, out, gen = run([dict(TAIL), dict(TIME_TAIL)], pending=False)
+        self.assertEqual(len(out["tool_calls"]), 2)
+        self.assertEqual(out["tool_calls"][0], ASK_PHONE)
+        self.assertEqual(gen.proposals, 2)
+
     def test_off_ask_then_invented_write_executes(self):
         loop, out, gen = run(
-            [{"name": "contacts.search", "arguments": {"query": "Lan"}},
+            [dict(SEARCH_LAN),
              dict(TAIL),
              {"name": "contacts.update",
               "arguments": {"contact_id": "c1", "phone": "0903111222"}}],
@@ -136,95 +180,69 @@ class TestPendingOff(unittest.TestCase):
              "arguments": {"contact_id": "c1", "phone": "0903111222"}})
 
 
-class TestPendingOn(unittest.TestCase):
-    def test_on_repeat_tail_stops_after_one_ask(self):
-        loop, out, gen = run([dict(TAIL)] * 6, pending=True)
+class TestPendingOnSuccessEndsTurn(unittest.TestCase):
+    def test_on_successful_ask_then_next_ask_does_not_run(self):
+        loop, out, gen = run([dict(TAIL), dict(TIME_TAIL)], pending=True)
         self.assertEqual(out["tool_calls"], [ASK_PHONE])
-        # 1st proposal -> ask, 2nd proposal -> pending stop; the
-        # remaining proposals are never consumed.
-        self.assertEqual(gen.proposals, 2)
+        self.assertEqual(gen.proposals, 1)
 
-    def test_on_distinct_ask_allowed_then_repeat_stops(self):
-        loop, out, gen = run([dict(TAIL), dict(TIME_TAIL), dict(TAIL)],
-                             pending=True)
-        self.assertEqual(out["tool_calls"], [ASK_PHONE, ASK_TIME])
-        self.assertEqual(gen.proposals, 3)
-
-    def test_on_three_distinct_asks_preserved(self):
+    def test_on_successful_ask_then_read_does_not_run(self):
         loop, out, gen = run(
-            [{"name": "contacts.search", "arguments": {"query": "Lan"}},
-             dict(TAIL), dict(TIME_TAIL),
-             {"name": "phone.call",
-              "arguments": {"contact_name": "Người Lạ"}}],
+            [dict(TAIL), dict(SEARCH_LAN)],
             search={"Lan": [{"id": "c1", "name": "Lan"}]},
             pending=True)
-        self.assertEqual(len(out["tool_calls"]), 4)
-        asks = [c for c in out["tool_calls"]
-                if c["name"] == "sys.ask_missing_info"]
-        self.assertEqual(len(asks), 3)
-        self.assertEqual(
-            {(a["arguments"]["tool_name"], tuple(a["arguments"]["params"]))
-             for a in asks},
-            {("contacts.update", ("phone",)),
-             ("reminders.create", ("time",)),
-             ("phone.call", ("contact_id",))})
+        self.assertEqual(out["tool_calls"], [ASK_PHONE])
+        self.assertEqual(gen.proposals, 1)
 
-    def test_on_invented_write_after_ask_has_no_env_call(self):
-        loop, out, gen = run(
-            [{"name": "contacts.search", "arguments": {"query": "Lan"}},
-             dict(TAIL),
-             {"name": "contacts.update",
-              "arguments": {"contact_id": "c1", "phone": "0903111222"}}],
-            search={"Lan": [{"id": "c1", "name": "Lan",
-                             "phone": "0901111111"}]},
-            pending=True)
-        self.assertEqual(
-            out["tool_calls"],
-            [{"name": "contacts.search", "arguments": {"query": "Lan"}},
-             ASK_PHONE])
+    def test_on_successful_ask_then_write_does_not_run(self):
+        loop, out, gen = run([dict(TAIL), dict(REMINDER_ISO)], pending=True)
+        self.assertEqual(out["tool_calls"], [ASK_PHONE])
+        self.assertEqual(gen.proposals, 1)
 
-    def test_on_post_ask_read_without_value_does_not_unlock(self):
+    def test_on_successful_ask_then_all_kinds_do_not_run(self):
         loop, out, gen = run(
-            [dict(TAIL),
-             {"name": "contacts.search", "arguments": {"query": "Lan"}},
-             {"name": "contacts.update",
-              "arguments": {"contact_id": "c1", "phone": "0903111222"}}],
-            search={"Lan": [{"id": "c1", "name": "Lan",
-                             "phone": "0901111111"}]},
+            [dict(TAIL), dict(TIME_TAIL), dict(SEARCH_LAN),
+             dict(REMINDER_ISO)],
+            search={"Lan": [{"id": "c1", "name": "Lan"}]},
             pending=True)
-        self.assertEqual(
-            out["tool_calls"],
-            [ASK_PHONE,
-             {"name": "contacts.search", "arguments": {"query": "Lan"}}])
+        self.assertEqual(out["tool_calls"], [ASK_PHONE])
+        self.assertEqual(gen.proposals, 1)
 
-    def test_on_write_after_post_ask_read_with_value_allowed(self):
+    def test_on_successful_ask_mid_trace_kept_and_turn_ends(self):
         loop, out, gen = run(
-            [dict(TAIL),
-             {"name": "contacts.search", "arguments": {"query": "Lan"}},
-             {"name": "contacts.update",
-              "arguments": {"contact_id": "c1", "phone": "0903111222"}}],
-            search={"Lan": [{"id": "c1", "name": "Lan",
-                             "phone": "0903111222"}]},
+            [dict(SEARCH_LAN), dict(TAIL), dict(REMINDER_ISO)],
+            search={"Lan": [{"id": "c1", "name": "Lan"}]},
             pending=True)
-        self.assertEqual(
-            out["tool_calls"][2],
-            {"name": "contacts.update",
-             "arguments": {"contact_id": "c1", "phone": "0903111222"}})
+        self.assertEqual(out["tool_calls"], [dict(SEARCH_LAN), ASK_PHONE])
+        self.assertEqual(gen.proposals, 2)
 
-    def test_on_unrelated_write_after_ask_unchanged(self):
-        loop, out, gen = run(
-            [dict(TAIL),
-             {"name": "reminders.create",
-              "arguments": {"time": "2026-10-31T08:00:00+07:00",
-                            "content": "họp"}}],
-            pending=True)
-        self.assertEqual(out["tool_calls"][1]["name"], "reminders.create")
+
+class TestPendingOnNonSuccessDoesNotEndTurn(unittest.TestCase):
+    def test_on_validation_rejected_ask_does_not_end_turn(self):
+        # Ask validation fails once, so the ask never reaches
+        # env.call; the loop retries with the next generation and
+        # that generation (a reminder write) executes. No ask is in
+        # the submission, because the ask was never executed.
+        loop, out, gen = run([dict(TAIL), dict(REMINDER_ISO)],
+                             pending=True,
+                             env_cls=AskValidateFailOnceEnv)
+        self.assertEqual(out["tool_calls"], [dict(REMINDER_ISO)])
+        self.assertEqual(gen.proposals, 2)
+
+    def test_on_execution_failed_ask_does_not_end_turn(self):
+        # Ask executes with ok False, so it is not a successful ask;
+        # the old flow continues and the next proposal executes.
+        loop, out, gen = run([dict(TAIL), dict(REMINDER_ISO)],
+                             pending=True, env_cls=AskCallFailEnv)
+        self.assertEqual(out["tool_calls"],
+                         [ASK_PHONE, dict(REMINDER_ISO)])
+        self.assertEqual(gen.proposals, 2)
 
 
 class TestRosterBackfill(unittest.TestCase):
     def _roster_after(self, search, pending=False):
         loop, out, gen = run(
-            [{"name": "contacts.search", "arguments": {"query": "Lan"}},
+            [dict(SEARCH_LAN),
              {"name": "contacts.search", "arguments": {"query": "Lan2"}}],
             search=search, pending=pending)
         return loop, out
