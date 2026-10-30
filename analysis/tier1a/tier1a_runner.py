@@ -139,6 +139,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from metrics import attribution_bool, bootstrap_paired_ci, slot_error, wer  # noqa: E402
 
+PILOT_SIZE = int(os.environ.get("TIER1A_PILOT_SIZE", "20"))
+if not 1 <= PILOT_SIZE <= 20:
+    raise ValueError("pilot size must be between 1 and 20")
 BENCHMARK_SEED = 20261030
 BOOTSTRAP_SEED = 20261030
 EXPECTED_CONFIG_SHA = "71d5f38f23d126427b08c09925cbbd9da933fc3750cbec55942809737e980076"
@@ -1108,7 +1111,7 @@ def cmd_asr_cache(args) -> int:
     cache = AsrCache(out / "asr_cache_baseline.json", cfg.asr_checkpoint, "",
                      asr_backend, 1, "vi", model_dir=asr_model_dir)
     log = []
-    for sid in bench["ids"]:
+    for sid in (bench["ids"][:PILOT_SIZE] if os.environ.get("TIER1A_SMOKE_ONLY") == "1" else bench["ids"]):
         sample = samples.get(sid)
         if sample is None:
             log.append({"sample_id": sid, "status": "missing_sample"})
@@ -1153,7 +1156,7 @@ def cmd_run(args) -> int:
     verified = verify_source(source)
     manifest_report = validate_manifest(Path(args.benchmark), source)
     bench = load_benchmark(Path(args.benchmark))
-    ids = bench["ids"][:20] if args.pilot else bench["ids"]
+    ids = bench["ids"][:PILOT_SIZE] if args.pilot else bench["ids"]
     modes = [m.strip() for m in args.mode.split(",")]
     for m in modes:
         assert m in ("B0", "B-gold"), f"Tier 1a runs only B0 / B-gold, got {m}"
@@ -1415,7 +1418,7 @@ def cmd_check_off_on(args) -> int:
     # OFF-vs-ON runs are always fresh (never resumed): reusing a
     # previous pilot trace would hide an observer effect.
     bench = load_benchmark(Path(args.benchmark))
-    pilot_ids = bench["ids"][:20]
+    pilot_ids = bench["ids"][:PILOT_SIZE]
     results = {}
     for flag, sub in (("off", "off"), ("on", "on")):
         sub_out = base_out / sub
@@ -1490,9 +1493,9 @@ def check_trace_completeness(manifest: dict, traces_by_mode: dict,
     cover exactly the pilot ids, and have n_common == len(pilot).
     Anything else is INCOMPLETE: score must not print any total.
     This function is pure (no gold reads, no model runs)."""
-    expected = list(manifest["ids"][:20]) if pilot else list(manifest["ids"])
+    expected = list(manifest["ids"][:PILOT_SIZE]) if pilot else list(manifest["ids"])
     expected_set = set(expected)
-    pilot_ids = list(manifest["ids"][:20])
+    pilot_ids = list(manifest["ids"][:PILOT_SIZE])
     report: dict = {"status": "COMPLETE", "pilot": pilot,
                     "expected_n": len(expected), "per_mode": {},
                     "missing": {}, "extra": {}, "duplicates": {},
@@ -1594,7 +1597,7 @@ def cmd_score(args) -> int:
     samples = {s.id: s for s in load_split(data_root, "train")}
     fuzzy = fuzzy_params(catalog)
     gold_rows, asr_rows = gold_traces[0], asr_traces[0]
-    common = list(manifest["ids"][:20]) if pilot else list(manifest["ids"])
+    common = list(manifest["ids"][:PILOT_SIZE]) if pilot else list(manifest["ids"])
     scored = {}
     for mode, rows in (("B-gold", gold_rows), ("B0", asr_rows)):
         scored[mode] = {}

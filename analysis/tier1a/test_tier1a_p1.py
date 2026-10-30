@@ -18,6 +18,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -329,6 +330,17 @@ class TestScoreRefusalAndSeparation(unittest.TestCase):
 
 
 class TestAsrCacheBeforeLlm(unittest.TestCase):
+    def test_three_sample_pilot_rejects_fourth_trace(self):
+        ids = [f"dev_{i}" for i in range(25)]
+        with patch.object(R, "PILOT_SIZE", 3):
+            modes = {m: (traces_for(ids[:3], m), []) for m in ("B0", "B-gold")}
+            report = {"identical": True, "n_common": 3, "pilot_ids": ids[:3]}
+            self.assertEqual(R.check_trace_completeness(make_manifest(ids), modes,
+                             report, pilot=True)["status"], "COMPLETE")
+            modes["B0"][0][ids[3]] = fake_trace(ids[3], "B0")
+            self.assertEqual(R.check_trace_completeness(make_manifest(ids), modes,
+                             report, pilot=True)["status"], "INCOMPLETE")
+
     def test_cache_coverage_requires_nonempty_transcripts(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
