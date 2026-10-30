@@ -166,5 +166,104 @@ class TestHarnessRoster(unittest.TestCase):
             self.assertTrue(decide_for(contact_id, roster).fired)
 
 
+class TestHarnessRosterBackfillR4(unittest.TestCase):
+    """R4 backfill, harness side: the SAME rule as the runtime
+    observer (see lifemate_observer._backfill_roster_entry):
+    same id, first successful read missing a field, later
+    successful read carrying it -> fill ONLY the missing
+    field. Never overwrite with an empty value, never
+    overwrite a non-empty value (conflict keeps first),
+    failed reads neither create nor backfill. collect_rosters
+    is called once per read result in the harness, so these
+    tests call it twice into the same ``out`` list, exactly
+    as the history path does."""
+
+    MISSING = [
+        {"id": "c_m1", "name": "Minh", "phone": "0903111222"},
+        {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+         "relation": "đối tác"}]
+    FULL = [
+        {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+         "relation": "khách hàng"},
+        {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+         "relation": "đối tác"}]
+
+    def _two_reads(self, first, second):
+        out = []
+        collect_rosters(first, out)
+        collect_rosters(second, out)
+        return out
+
+    def test_backfills_missing_relation(self):
+        roster = self._two_reads(
+            {"ok": True, "contacts": self.MISSING},
+            {"ok": True, "contacts": self.FULL})
+        self.assertEqual(roster, self.FULL)
+
+    def test_backfill_then_gold_passes_wrong_blocks(self):
+        roster = self._two_reads(
+            {"ok": True, "contacts": self.MISSING},
+            {"ok": True, "contacts": self.FULL})
+        self.assertFalse(decide_for("c_m1", roster).fired)
+        wrong = decide_for("c_m2", roster)
+        self.assertTrue(wrong.fired)
+        self.assertTrue(any(a["mechanism"] == "selection_mismatch"
+                            for a in wrong.adjustments),
+                        wrong.adjustments)
+
+    def test_converse_keeps_relation(self):
+        roster = self._two_reads(
+            {"ok": True, "contacts": self.FULL},
+            {"ok": True, "contacts": self.MISSING})
+        self.assertEqual(roster, self.FULL)
+
+    def test_conflict_keeps_first(self):
+        conflict = [
+            {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "đối tác"},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+             "relation": "đối tác"}]
+        roster = self._two_reads(
+            {"ok": True, "contacts": self.FULL},
+            {"ok": True, "contacts": conflict})
+        self.assertEqual(roster, self.FULL)
+        # Keeping first means c_m1 still passes as khách hàng;
+        # overwriting would make both arms block (duplicate
+        # đối tác).
+        self.assertFalse(decide_for("c_m1", roster).fired)
+
+    def test_failed_read_neither_creates_nor_backfills(self):
+        # Failed later carrying the relation: no backfill.
+        roster = self._two_reads(
+            {"ok": True, "contacts": self.MISSING},
+            {"ok": False, "contacts": self.FULL})
+        self.assertEqual(roster, self.MISSING)
+        # Failed first carrying the relation, then a
+        # successful missing read: nothing created, and the
+        # later successful read is not poisoned by the failure.
+        roster = self._two_reads(
+            {"ok": False, "contacts": self.FULL},
+            {"ok": True, "contacts": self.MISSING})
+        self.assertEqual(roster, self.MISSING)
+        roster = self._two_reads(
+            {"ok": False, "contacts": self.FULL},
+            {"ok": True, "contacts": self.FULL})
+        self.assertEqual(roster, self.FULL)
+
+    def test_merge_helper_is_the_shared_backfill_rule(self):
+        merge = getattr(_HARNESS, "_merge_roster_entry", None)
+        self.assertIsNotNone(merge)
+        out = [{"id": "c_m1", "name": "Minh",
+                "phone": "0903111222"}]
+        merge(out, {"id": "c_m1", "name": "Minh",
+                    "phone": "0903111222",
+                    "relation": "khách hàng"})
+        self.assertEqual(out, [{"id": "c_m1", "name": "Minh",
+                                "phone": "0903111222",
+                                "relation": "khách hàng"}])
+        # Same helper is used by main()'s replay path, so
+        # the replay roster merges by the same rule.
+
+
 if __name__ == "__main__":
     unittest.main()
