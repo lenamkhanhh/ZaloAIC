@@ -12,17 +12,20 @@ không coi branch tip di động là cùng một version.
   train_0004 là correct-pass phụ thuộc evidence.
 - **04_shadow_protocol.md** — Giao thức runtime shadow ON/OFF (PENDING:
   chưa có agent hook ở baseline) + evaluator offline đã chạy được.
+- **06_baseline_vs_candidate_d1090d1d.md** — So sánh baseline
+  `4bd95a5` ↔ candidate `d1090d1d` (2026-10-30): 1 bug cũ đã sửa
+  (IND-ATK-018), 0 regression, 3 lỗi cũ chưa sửa (SEAL-003/004,
+  IND-ATK-019), 8 scope gaps không đổi, 10 case adjudication không đổi;
+  observer runtime: agent không đổi hành vi nhưng observer CHƯA tính
+  được decision ở entry path thực tế (ModuleNotFoundError).
 - `../../analysis/gg_independent_eval/` — challenge suite độc lập
   (41 public + 15 sealed, manifest + sealed_manifest băm muối),
   `shadow_evaluator.py` và kết quả offline baseline.
 
 Sealed cases và SALT chỉ nằm local, không push.
 
-## PENDING PUSH (2026-10-30 ~02:40 +07)
-Branch `independent-eval-gg-2026-10-30` (từ `gg-phone-callback-lifecycle`)
-chưa được tạo: `create_branch` cần approval của user và card đã timeout.
-Mọi file đã sẵn sàng trong `~/workspace/zaic-eval/work/`
-(10 files, không __pycache__, không sealed). Lệnh push khi user duyệt:
-`github call-tool --name create_branch` rồi `github push-files --owner
-lenamkhanhh --repo ZaloAIC --branch independent-eval-gg-2026-10-30
---source-dir ~/workspace/zaic-eval/work --paths-file /tmp/push_paths.nul`.
+## PUSH DONE (2026-10-30 ~07:50 +07)
+- Branch `independent-eval-gg-2026-10-30`, base đúng `4bd95a5`
+  (eval baseline, không phải branch tip di động).
+- Push commit: `6e640c521863b8ec209fb2c158a92793ba031c1f` (đã verify
+  remote: đủ 10 files, không có sealed_cases.py).

@@ -1,0 +1,42 @@
+{
+ "checks": {
+  "import_clean": true,
+  "one_record_no_raise": true,
+  "realistic_no_decisions": true,
+  "realistic_error_is_import": true,
+  "with_hack_computes_decisions": true
+ },
+ "all_checks_hold": true,
+ "realistic": {
+  "mode": "realistic",
+  "n_records": 1,
+  "baseline_decision": null,
+  "candidate_decision": null,
+  "error": "ModuleNotFoundError(\"No module named 'lifemate_gates'\")",
+  "eligibility": null
+ },
+ "with_hack_summary": {
+  "baseline_decision": {
+   "fired": true,
+   "applicable": true,
+   "reason": "unestablished reference(s): phone_number 0903111222"
+  },
+  "candidate_decision": {
+   "fired": false,
+   "applicable": true
+  },
+  "error": null
+ },
+ "raw": {
+  "realistic": {
+   "returncode": 0,
+   "stdout": "{\"mode\": \"realistic\", \"n_records\": 1, \"baseline_decision\": null, \"candidate_decision\": null, \"error\": \"ModuleNotFoundError(\\\"No module named 'lifemate_gates'\\\")\", \"eligibility\": null}",
+   "stderr": ""
+  },
+  "with-hack": {
+   "returncode": 0,
+   "stdout": "{\"mode\": \"with-hack\", \"n_records\": 1, \"baseline_decision\": {\"fired\": true, \"applicable\": true, \"reason\": \"unestablished reference(s): phone_number 0903111222\"}, \"candidate_decision\": {\"fired\": false, \"applicable\": true}, \"error\": null, \"eligibility\": {\"consumer\": \"phone.call\", \"entity_id\": null, \"status\": \"unknown\", \"reason\": \"consumer_not_supported:phone.call\"}}",
+   "stderr": ""
+  }
+ }
+}

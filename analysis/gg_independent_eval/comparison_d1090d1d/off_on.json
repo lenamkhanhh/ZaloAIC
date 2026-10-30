@@ -1,0 +1,48 @@
+{
+ "returncode": 0,
+ "stderr_tail": "",
+ "behavior_identical_off_on": true,
+ "off_submitted": [
+  {
+   "name": "phone.call",
+   "arguments": {
+    "phone_number": "0903111222"
+   }
+  },
+  {
+   "name": "sms.send",
+   "arguments": {
+    "phone_number": "0903333444",
+    "content": "hi"
+   }
+  }
+ ],
+ "on_submitted": [
+  {
+   "name": "phone.call",
+   "arguments": {
+    "phone_number": "0903111222"
+   }
+  },
+  {
+   "name": "sms.send",
+   "arguments": {
+    "phone_number": "0903333444",
+    "content": "hi"
+   }
+  }
+ ],
+ "n_gen_calls_off": 5,
+ "n_gen_calls_on": 5,
+ "observer_enabled_on": true,
+ "n_records_on": 4,
+ "n_records_off": 0,
+ "in_scope_proposals_observed": 2,
+ "in_scope_have_decisions_no_import_error": false,
+ "record_errors": [
+  "ModuleNotFoundError(\"No module named 'lifemate_gates'\")"
+ ],
+ "reset_no_leak_across_samples": true,
+ "observer_exception_path_no_raise": true,
+ "probe_returncode": 0
+}
