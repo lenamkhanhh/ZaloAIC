@@ -341,10 +341,41 @@ def _valid_field_value(field, value):
     NEEDS_ASK does upstream. Only the field families grounding can
     NEEDS_ASK on are gated; every other field passes through
     unchanged, so title/status/content/done behaviour is untouched:
-      - phone / phone_number: norm_phone must be a complete
-        10-digit number starting with 0 (+84 folding included).
-        A raw tail ("duoi 222" -> "222"), a 9-digit missing-zero
-        number, and a spoken form with no digits all fail.
+      - phone / phone_number: R3-P0-PHONE contract (see
+        tests/test_lifecycle_adapter_r2p0.py for the evidence
+        table). This gate is NOT a telecom-validity check and
+        NOT "every valid number is a 10-digit mobile": no
+        prefix whitelist is applied, and uniqueness /
+        membership is decided by the source (a succeeded
+        read/patch result) and by the gates, never here.
+        After norm_phone (digits only, an 11-digit "84..."
+        form folded to a 10-digit 0-number):
+          * phone (a contact record's field, e.g. a
+            contacts.search/get/update result): norm digits
+            must start with 0 and be 10 or 11 digits long.
+            10-digit mobiles are the majority in-tree, and
+            11-digit 0-led forms are attested roster phones
+            (e.g. 09883322117, 09125430868) and the
+            train_0063-like contacts.search value
+            09631116692; the R2-P0 10-only rule discarded
+            those real records as unknown/no_evidence.
+          * phone_number (a dial/log field, e.g. a
+            phone.recent_calls / sms.read_recent result):
+            the same 0-led 10/11-digit rule, PLUS the
+            hotline form 1900 + 4 digits (8 digits total,
+            e.g. 19001234, attested as a phone.call target).
+            A hotline is dialable, not a contact record, so
+            it is accepted here and not under "phone".
+        Both reject a raw tail ("duoi 222" -> "222"), a
+        short string ("0903"), a missing-zero number
+        ("903111222"), a 9-digit 0-led string (no field
+        example attests it; indistinguishable from a
+        truncated 10/11-digit number, so fail-closed), a
+        12-digit string, and a spoken form with no digits.
+        A 12-digit "84..." form is also rejected: the
+        shared norm_phone folds only 11-digit "84..."
+        forms, and no in-tree example attests the 12-digit
+        form -- recorded as a residual, not invented here.
       - date: an ISO date (YYYY-MM-DD, calendar-valid) or
         YYYY-MM, the values grounding passes through unchanged.
       - time / start / end: an ISO datetime (calendar-valid),
@@ -356,7 +387,13 @@ def _valid_field_value(field, value):
     import re as _re
     if field in ("phone", "phone_number"):
         digits = norm_phone(value)
-        return len(digits) == 10 and digits.startswith("0")
+        if digits.startswith("0") and len(digits) in (10, 11):
+            return True
+        # Hotline: dial/log field only, never a contact record.
+        if field == "phone_number" and len(digits) == 8 \
+                and digits.startswith("1900"):
+            return True
+        return False
     if field == "date":
         if not isinstance(value, str):
             return False
