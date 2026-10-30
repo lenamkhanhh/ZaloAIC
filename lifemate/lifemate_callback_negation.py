@@ -3101,14 +3101,31 @@ def analyze_selection_consistency(text, action, target_names=(),
     History (history_texts: prior user-turn texts from the
     adapter's prefix) fills exactly two gaps, and no others:
     a duplicate name the conversation previously QUALIFIED
-    ("Minh khach hang" -- any content token adjacent to the
-    name in a history turn) is not an ambiguity the current
-    text creates, and a BLOCKED current verb (past / question
-    / status: no current request signal) does not cancel a
-    prior turn that positively selected this proposal. Active
-    current vetoes (negated / replaced / cancelled, a
-    different action, a different person) always win over
-    history: the current turn is the latest instruction.
+    for a SPECIFIC entry (see _history_qualified_entries:
+    a history turn naming the person with that entry's phone
+    qualifies that entry alone, and only when the phone is
+    governed by a positive verb of the proposal action or
+    is a standalone identity reference -- a phone governed
+    by another action's positive verb qualifies nothing
+    (including a long appositive governed across clauses,
+    round 4); a noun descriptor adjacent to the name
+    qualifies NOTHING in round 4 (G5 R1 KNOWN-OPEN-FAIL,
+    NOT FOR RUNTIME USE: descriptor-only evidence must
+    not pass all duplicates, and the old pinned "Minh
+    khach hang" pass is therefore intentionally broken
+    until re-pinned) is not an ambiguity the current
+    text creates,
+    and a BLOCKED current verb (past / question / status:
+    no current request signal) does not cancel a prior turn
+    that positively selected this proposal -- but only while
+    that history-positive state is still ACTIVE (a later
+    negated / replaced / cancelled history turn revokes it),
+    and never when the current turn itself directly states
+    the proposal as completed (a past verb directly
+    governing the proposal phone/name). Active current
+    vetoes (negated / replaced / cancelled, a different
+    action, a different person) always win over history:
+    the current turn is the latest instruction.
 
     Checks, in order (first mismatch wins):
     1. delegation -- the whole action is another actor's job
@@ -3116,15 +3133,18 @@ def analyze_selection_consistency(text, action, target_names=(),
     2. duplicate_name -- a positively governed name maps to
        >= 2 roster phones, the proposal phone is one of them,
        no digit run equal to any duplicate phone appears in
-       the text, and no history turn qualifies the name;
+       the text, and history does not qualify the PROPOSAL
+       entry (see _history_qualified_entries);
     3. B decisive vetoes -- negated / replaced / cancelled;
     4. early matched-pass -- the positive selection set
        (including correction re-scoping, below) contains
        the proposal;
     5. B unknown-mismatch mapping -- other_action_verb_only
        -> action_mismatch, blocked_verb_only ->
-       blocked_request (unless history positively selected
-       the proposal), negated_other_object -> negated,
+       blocked_request (unless history-positive is still
+       ACTIVE for the proposal and no current past verb
+       directly governs the proposal), negated_other_object
+       -> negated,
        number_as_content_for_other_recipient ->
        money_or_content_role. positive_verb_not_governing_
        target is DELIBERATELY NOT mapped: when a verb
@@ -3313,19 +3333,141 @@ def analyze_selection_consistency(text, action, target_names=(),
         if before:
             selections.add((before[-1]["action"], recip))
 
-    # History qualification for duplicates: a history turn
-    # that mentions the name with an adjacent CONTENT token
-    # ("Minh khach hang") qualified it there, so the current
-    # text's bare name is not the whole story -- the agent's
-    # resolution may rest on that qualification. Adjacent
-    # prepositions / particles / discourse tokens do NOT
-    # qualify ("cho Minh", "Minh nhe").
+    # History qualification for duplicates (H1 fix,
+    # C3-G3-01): the old boolean _history_qualifies said
+    # only "some history turn qualified the NAME", which
+    # let one entry's evidence pass every duplicate. The
+    # replacement returns the SET of roster entries history
+    # actually qualifies, scanned in order:
+    # (1) PHONE: a history turn that mentions the name AND
+    # contains a digit run equal to exactly one duplicate
+    # phone qualifies that entry ALONE -- "Goi cho Binh so
+    # 0903111222" qualifies A, never B. A later phone turn
+    # for another duplicate replaces the set (a correction
+    # to the newer number wins); a later negated /
+    # replaced / cancelled turn for the qualified phone
+    # revokes it, and phone evidence, once seen, supersedes
+    # descriptor evidence (a descriptor turn never widens
+    # a phone-qualified set back to all duplicates). A turn
+    # matching two duplicate phones qualifies neither: it
+    # does not disambiguate. ACTION-SCOPING (round 3, L5
+    # adjudication, matching the blocked_verb_only branch
+    # and G1 R1): the phone qualifies only when it is
+    # governed by a positive verb of the SAME action as
+    # the proposal, or when it is a standalone identity
+    # reference governed by no positive callback verb at
+    # all. A phone governed by a positive verb of a
+    # DIFFERENT action only ("Nhan tin cho Binh so A" for
+    # a call proposal) qualifies NOTHING -- both arms
+    # block.
+    # GOVERNMENT, ROUND 4 (Run 2, G5 FIX_REQUIRED): the
+    # round-3 test -- phone run inside the verb's
+    # _extract_object span (at most 3 tokens) -- is too
+    # narrow for a LONG APPOSITIVE: in "Nhan tin cho
+    # Binh, <long description>, so A" the phone sits in
+    # a bare fragment clause AFTER the verb's clause, so
+    # round 3 fell back to standalone and wrongly
+    # qualified A for a call proposal. A phone is now
+    # governed by a positive verb when ANY of these hold:
+    # (a) the phone run is inside the verb's object span
+    # (round 3); (b) the phone run is in the SAME clause
+    # as the verb, AFTER the verb, and the verb's object
+    # span contains a mention of the duplicate name (the
+    # verb governs the person, the phone is that
+    # person's number stated later in the clause); (c)
+    # the phone run is in a LATER bare-fragment clause
+    # (no callback verb, no roster-name mention in that
+    # clause, only this phone run in it), an earlier
+    # clause's positive verb governs the duplicate name,
+    # and every clause between them is CLEAN in the
+    # round-5 sense: no roster-name mention (an
+    # intervening person), no ROSTER-PHONE run (other
+    # digit runs -- ages, years, rooms, counts -- are
+    # not phones and do not break), and no truly
+    # governing callback verb (its object span must
+    # contain a roster name or a roster phone; a
+    # verb-like token inside a noun phrase governs
+    # nothing and does not break). A phone whose own
+    # clause
+    # names the person ("So cua Binh la A") is an
+    # identity clause, not a bare fragment, so (c)
+    # never fires on it: it stays standalone. No name,
+    # phone, number or sentence is hardcoded here:
+    # matching is by roster phone equality, name mention
+    # and verb government only.
+    # (2) DESCRIPTOR, ROUND 4 (Run 2, G5 R1
+    # KNOWN-OPEN-FAIL, NOT FOR RUNTIME USE): a noun
+    # descriptor immediately adjacent to the name ("Minh
+    # khach hang") qualifies NOTHING. A descriptor does
+    # not prove which entry it is, so descriptor-only
+    # evidence must not pass all duplicates -- round 3
+    # returned all duplicates here and that was the
+    # false-pass residual. This deliberately changes the
+    # old pinned "Minh khach hang" pass: that repo test
+    # now FAILS until L5/G5 re-pin it, and that failure
+    # is reported, not hidden by editing the test (only
+    # this file may change in round 4).
+    # (3) NOT QUALIFYING: adjacent prepositions / particles
+    # / discourse tokens in _QUALIFIER_STOP ("cho Minh",
+    # "Minh nhe"), any adjacent VERB (the name is the
+    # subject of a declarative clause, not a referring
+    # expression: "Binh an com roi" -- "an" is a verb, so
+    # the turn qualifies nothing), phone introducers
+    # ("so") and name words ("ten") -- none of these is a
+    # noun descriptor. The verb test uses a general list
+    # of frequent Vietnamese verbs, not a per-sentence
+    # list: any other verb in that position is excluded
+    # the same way.
     _QUALIFIER_STOP = {"cho", "toi", "den", "la", "cua", "va",
                        "thi", "ma", "a", "oi", "nhe", "nha", "di",
                        "roi", "nay", "do", "ay", "de", "o", "tu",
                        "voi", "giup"}
+    _GENERAL_VERBS = {
+        "an", "uong", "ngu", "thuc", "day", "di", "den", "ve",
+        "sang", "lam", "noi", "bao", "hoi", "dap", "nghe",
+        "nhin", "doc", "viet", "hoc", "choi", "mua", "ban",
+        "tra", "lay", "dua", "mo", "dong", "bat", "tat",
+        "rua", "nau", "don", "gap", "doi", "song", "o", "co",
+        "can", "muon", "thich", "nho", "quen", "biet",
+        "hieu", "nghi", "tuong", "so", "ghet", "yeu",
+        "cuoi", "khoc", "chay", "nhay", "boi", "hat", "goi",
+        "dien", "nhan", "gui", "tim", "xem", "kiem", "song",
+        "chet", "benh", "kho", "met", "vui", "buon"}
+    # Function words that are never a noun descriptor, even
+    # though they are not in _QUALIFIER_STOP: time words
+    # ("hom qua Lan ..." -- "qua" is the tail of "hom qua",
+    # not a role noun), aspect markers ("Binh da ..."),
+    # and adverbs ("Binh rat ...", "Lan cung ...").
+    _DESCRIPTOR_EXCLUDE = {
+        "hom", "qua", "sang", "trua", "chieu", "dem", "mai",
+        "ngay", "thang", "tuan", "gio", "phut", "giay",
+        "truoc", "sau", "luc", "khi", "hien",
+        "da", "moi", "vua", "dang", "se", "chua",
+        "rat", "kha", "cung", "lai", "con", "thoi", "nua",
+        "van", "chi", "ngay"}
 
-    def _history_qualifies(idxs):
+    def _is_noun_descriptor(tok):
+        if tok is None:
+            return False
+        if tok in _QUALIFIER_STOP or tok in _GENERAL_VERBS \
+                or tok in _VERB_HEADS \
+                or tok in _DESCRIPTOR_EXCLUDE:
+            return False
+        if tok.isdigit() or tok in _DIGIT_WORDS:
+            return False
+        # Phone introducer / name word: not a role noun.
+        if tok in ("so", "ten", "nguoi", "rang"):
+            return False
+        return True
+
+    def _history_qualified_entries(idxs):
+        dup_phones = {}
+        for i in idxs:
+            phone = _norm_phone(roster[i].get("phone") or "")
+            if phone:
+                dup_phones.setdefault(phone, []).append(i)
+        if not dup_phones:
+            return set()
         raw_names = set()
         for i in idxs:
             parts = _nfc(str(roster[i].get("name") or "")).split()
@@ -3334,30 +3476,256 @@ def analyze_selection_consistency(text, action, target_names=(),
                                      or "")))
                 raw_names.add(parts[-1])
         if not raw_names:
-            return False
+            return set()
+        # All roster names (full + last token), for the
+        # round-4 discourse check: a bare-fragment clause
+        # or an intervening clause must mention NO roster
+        # person at all, not just no duplicate, or the
+        # appositive link is broken by another person.
+        all_roster_names = set()
+        all_roster_phones = set()
+        for e in roster:
+            parts = _nfc(str(e.get("name") or "")).split()
+            if parts:
+                all_roster_names.add(_nfc(str(e.get("name")
+                                            or "")))
+                all_roster_names.add(parts[-1])
+            ph = _norm_phone(e.get("phone") or "")
+            if ph:
+                all_roster_phones.add(ph)
+        phone_qualified = None
+        phone_seen = False
+        descriptor_seen = False
         for htext in (history_texts or ()):
             if not isinstance(htext, str) or not htext.strip():
                 continue
-            hraws, hfolds, _hc = _tokenize(
+            hraws, hfolds, hcids = _tokenize(
                 _strip_quoted(_nfc(htext)))
-            for (ns, ne) in _find_name_mentions(
-                    hraws, hfolds, sorted(raw_names)):
+            mentions = _find_name_mentions(
+                hraws, hfolds, sorted(raw_names))
+            if not mentions:
+                continue
+            matched = {_norm_phone(d)
+                       for (_s, _e, d, _k)
+                       in _digit_runs(hraws, hfolds, hcids)
+                       if _norm_phone(d) in dup_phones}
+            if len(matched) == 1:
+                phone = next(iter(matched))
+                # A phone turn is decided by its phone, not
+                # by any descriptor in the same turn -- even
+                # when the phone itself is shared by several
+                # entries and therefore qualifies none.
+                phone_seen = True
+                if len(dup_phones[phone]) == 1:
+                    entry = dup_phones[phone][0]
+                    # Action-scoping (round 3): which
+                    # positive callback verbs govern this
+                    # phone run, in the module's own
+                    # _extract_object sense? Governed by
+                    # another action only -> qualifies
+                    # nothing (S05). Governed by the
+                    # proposal action (alone or also by
+                    # another action) or by no positive
+                    # callback verb (standalone identity
+                    # reference) -> may qualify, subject
+                    # to the veto check below.
+                    hruns = _digit_runs(hraws, hfolds, hcids)
+                    hbounds = _clause_bounds(hcids)
+                    hverbs = _find_verbs(hfolds,
+                                         ("call", "message"))
+                    hwrapped = _wrapped_verb_starts(
+                        hfolds, hcids, hverbs)
+                    hdelegated = _delegated_verb_starts(
+                        hfolds, hcids, hverbs)
+                    hquestioned = {
+                        v["start"] for v in hverbs
+                        if _clause_is_question(
+                            hraws, hfolds,
+                            *hbounds[hcids[v["start"]]])}
+                    phone_spans = [
+                        (rs, re_) for (rs, re_, d, _k)
+                        in hruns
+                        if _norm_phone(d) == phone]
+                    all_mentions = _find_name_mentions(
+                        hraws, hfolds, sorted(all_roster_names))
+                    clause_order = sorted(set(hcids))
+                    gov_actions = set()
+                    for hv in hverbs:
+                        if hv["start"] in hwrapped \
+                                or hv["start"] in hdelegated \
+                                or hv["start"] in hquestioned:
+                            continue
+                        if _verb_polarity(
+                                hv, hraws, hfolds, hcids,
+                                hbounds) != "positive":
+                            continue
+                        hspan = _extract_object(
+                            hv, hraws, hfolds, hcids, hbounds)
+                        hcid = hcids[hv["start"]]
+                        # (a) round 3: phone inside the
+                        # object span.
+                        if any(hspan[0] <= rs
+                               and re_ <= hspan[1]
+                               for (rs, re_) in phone_spans):
+                            gov_actions.add(hv["action"])
+                            continue
+                        span_has_dup_name = any(
+                            hspan[0] <= ns and ne <= hspan[1]
+                            for (ns, ne) in mentions)
+                        if not span_has_dup_name:
+                            continue
+                        # (b) same clause, phone after the
+                        # verb, verb governs the duplicate
+                        # name: the phone is that person's
+                        # number stated later in the
+                        # clause, past the 3-token span.
+                        if any(hcids[rs] == hcid
+                               and rs > hv["start"]
+                               for (rs, _re) in phone_spans):
+                            gov_actions.add(hv["action"])
+                            continue
+                        # (c) discourse fragment: an
+                        # earlier verb governs the
+                        # duplicate name, the phone sits
+                        # in a later bare-fragment clause,
+                        # and no clause between them
+                        # mentions a person, a callback
+                        # verb or another phone run.
+                        for (rs, re_) in phone_spans:
+                            pcid = hcids[rs]
+                            if pcid not in clause_order \
+                                    or clause_order.index(pcid) \
+                                    <= clause_order.index(hcid):
+                                continue
+                            if any(hcids[v2["start"]] == pcid
+                                   for v2 in hverbs):
+                                continue
+                            if any(hcids[ns] == pcid
+                                   for (ns, _ne)
+                                   in all_mentions):
+                                continue
+                            clause_phones = {
+                                _norm_phone(d)
+                                for (s2, _e2, d, _k2)
+                                in hruns
+                                if hcids[s2] == pcid}
+                            if clause_phones != {phone}:
+                                continue
+                            between = clause_order[
+                                clause_order.index(hcid) + 1:
+                                clause_order.index(pcid)]
+                            # ROUND 5 (L5 decision): a
+                            # between-clause breaks the
+                            # chain ONLY when it really
+                            # intervenes on a person or a
+                            # phone, by structure, never
+                            # by phrase list:
+                            # - a roster-name mention
+                            #   still breaks (an
+                            #   intervening person);
+                            # - a digit run breaks ONLY
+                            #   when its normalised value
+                            #   is a roster phone -- an
+                            #   age, year, room or count
+                            #   is not a phone, so it
+                            #   does not break;
+                            # - a callback verb breaks
+                            #   ONLY when it truly
+                            #   governs: its
+                            #   _extract_object span
+                            #   contains a roster-name
+                            #   mention or a roster-phone
+                            #   run. A verb-like token
+                            #   inside a noun phrase
+                            #   governs nothing, so it
+                            #   does not break.
+                            clean = True
+                            for mid in between:
+                                if any(
+                                        hcids[ns] == mid
+                                        for (ns, _ne)
+                                        in all_mentions):
+                                    clean = False
+                                    break
+                                if any(
+                                        hcids[s2] == mid
+                                        and _norm_phone(d2)
+                                        in all_roster_phones
+                                        for (s2, _e2, d2,
+                                         _k2) in hruns):
+                                    clean = False
+                                    break
+                                for v2 in hverbs:
+                                    if hcids[v2["start"]] \
+                                            != mid:
+                                        continue
+                                    vspan = _extract_object(
+                                        v2, hraws, hfolds,
+                                        hcids, hbounds)
+                                    if any(
+                                            vspan[0] <= ns
+                                            and ne <= vspan[1]
+                                            for (ns, ne)
+                                            in all_mentions) \
+                                            or any(
+                                                vspan[0] <= s2
+                                                and e2 <= vspan[1]
+                                                and _norm_phone(d2)
+                                                in all_roster_phones
+                                                for (s2, e2, d2,
+                                                 _k2) in hruns):
+                                        clean = False
+                                        break
+                                if not clean:
+                                    break
+                            if clean:
+                                gov_actions.add(hv["action"])
+                                break
+                    if gov_actions \
+                            and action not in gov_actions:
+                        continue
+                    hsel = analyze_action_selection(
+                        htext, target_names=target_names,
+                        target_phones=(phone,), action=action)
+                    if hsel["selection"] in ("negated",
+                                             "replaced",
+                                             "cancelled"):
+                        if phone_qualified == {entry}:
+                            phone_qualified = None
+                    else:
+                        phone_qualified = {entry}
+                continue
+            for (ns, ne) in mentions:
                 before = hfolds[ns - 1] if ns > 0 else None
-                after = hfolds[ne] if ne < len(hfolds) else None
-                if (before is not None
-                        and before not in _QUALIFIER_STOP) \
-                        or (after is not None
-                            and after not in _QUALIFIER_STOP):
-                    return True
-        return False
+                after = hfolds[ne] if ne < len(hfolds) \
+                    else None
+                if _is_noun_descriptor(before) \
+                        or _is_noun_descriptor(after):
+                    descriptor_seen = True
+                    break
+        if phone_qualified is not None:
+            return set(phone_qualified)
+        if phone_seen:
+            return set()
+        if descriptor_seen:
+            # ROUND 4 (see (2) above): descriptor-only
+            # qualifies NOTHING. Returning all duplicates
+            # here was the round-3 false-pass residual;
+            # descriptor-only evidence must not pass all
+            # duplicates. The old pinned "Minh khach
+            # hang" pass therefore fails until L5/G5
+            # re-pin it -- reported, not hidden.
+            return set()
+        return set()
 
     # 2. Duplicate name (proposal-action verbs only): the
     # name is ambiguous AND the text carries no number at
-    # all to pick between the duplicates AND no history turn
-    # qualifies the name. If a number IS present (the
-    # proposal's, or another duplicate's), check 6 decides
-    # honestly (matched pass / wrong_person) -- check 2 must
-    # not relabel that as ambiguity.
+    # all to pick between the duplicates AND history does
+    # not qualify the PROPOSAL entry. If a number IS
+    # present (the proposal's, or another duplicate's),
+    # check 6 decides honestly (matched pass /
+    # wrong_person) -- check 2 must not relabel that as
+    # ambiguity.
     for fold in governed_names:
         idxs = _entries_for_name(fold)
         phones = {_norm_phone(roster[i].get("phone") or "")
@@ -3370,15 +3738,21 @@ def analyze_selection_consistency(text, action, target_names=(),
             or any(t in phones for t in targets_norm))
         if not proposal_is_duplicate:
             continue
-        if _history_qualifies(idxs):
+        qualified = _history_qualified_entries(idxs)
+        proposal_qualified = any(
+            proposal_key == ("entry", i)
+            or _norm_phone(roster[i].get("phone") or "")
+            in targets_norm
+            for i in qualified)
+        if proposal_qualified:
             continue
         if not any(_norm_phone(d) in phones
                    for (_rs, _re, d, _k) in all_runs):
             return _mismatch(
                 "duplicate_name",
                 "name %r maps to %d roster phones and "
-                "neither the text nor history disambiguates "
-                "with any number or qualifier"
+                "neither the text nor history qualifies "
+                "this proposal with any number or qualifier"
                 % (fold, len(phones)))
 
     # 3. B decisive vetoes (active cancellations override
@@ -3431,11 +3805,106 @@ def analyze_selection_consistency(text, action, target_names=(),
         if not explicit and any(_selection_compatible(p)
                                 for p in same_action):
             return {"consistent": True}
+    # H2 helper (C3-G3-01, narrowed round 3 per L5
+    # adjudication): True iff the CURRENT turn directly
+    # states this proposal as completed -- a past verb
+    # ("da" / "moi" / "vua" before the verb, the past
+    # markers of _verb_polarity) of the proposal action
+    # whose object span contains the proposal phone or a
+    # name of the proposal person (target names, plus
+    # roster names of entries carrying a proposal phone).
+    # "Directly" is structural, not a sentence list. The
+    # ONLY exception is a past verb inside the content
+    # clause of a NOTE-TAKING verb in the same clause:
+    # the clause's content introducer ("la" / "rang")
+    # must be governed by ghi / ghi chu / ghi chep / chep
+    # / luu / luu tru -- i.e. the note verb's span ends
+    # at the introducer (allowing a trailing "lai": "ghi
+    # lai la ..."). "Ghi chu thi cu ghi la da goi ..."
+    # is excepted (its "da goi" is note content, which is
+    # what keeps the pinned train_0672 shape passing).
+    # Copular "la nguoi da goi" has no verb governing its
+    # "la" at all, and reporting "noi la da goi" is
+    # governed by "noi", not a note verb -- neither is
+    # excepted, so both are direct completions and block.
+    # Question / "chua" / wrapper blocked verbs are not
+    # past completions and are deliberately excluded: a
+    # "chua goi" (not yet called) or a question about a
+    # call leaves a history request pending, not done.
+    _NOTE_PATTERNS = [["ghi", "chu"], ["ghi", "chep"],
+                      ["luu", "tru"], ["ghi"], ["chep"],
+                      ["luu"]]
+
+    def _in_note_content_clause(first, verb_start):
+        for k in range(first, verb_start):
+            if folds[k] not in ("la", "rang"):
+                continue
+            i = first
+            while i < k:
+                matched = None
+                for pat in _NOTE_PATTERNS:
+                    if folds[i:i + len(pat)] == pat \
+                            and i + len(pat) <= k:
+                        matched = len(pat)
+                        break
+                if matched is not None:
+                    if i + matched == k or all(
+                            folds[t] == "lai"
+                            for t in range(i + matched, k)):
+                        return True
+                    i += matched
+                else:
+                    i += 1
+        return False
+
+    def _current_past_governs_proposal():
+        gov_names = set(target_names or ())
+        for e in roster:
+            if _norm_phone(e.get("phone") or "") in targets_norm:
+                parts = _nfc(str(e.get("name") or "")).split()
+                if parts:
+                    gov_names.add(_nfc(str(e.get("name")
+                                         or "")))
+                    gov_names.add(parts[-1])
+        for v in verbs:
+            if v["action"] != action:
+                continue
+            if _verb_polarity(v, raws, folds, clause_ids,
+                              bounds) != "blocked":
+                continue
+            cid = clause_ids[v["start"]]
+            first, _last = bounds[cid]
+            prev = v["start"] - 1
+            if prev < first or folds[prev] not in ("da",
+                                                   "moi",
+                                                   "vua"):
+                continue
+            if folds[prev] == "vua" and sum(
+                    1 for k in range(first, _last + 1)
+                    if folds[k] == "vua") >= 2:
+                continue
+            if _in_note_content_clause(first, v["start"]):
+                continue
+            span = _extract_object(v, raws, folds, clause_ids,
+                                   bounds)
+            if any(span[0] <= ns and ne <= span[1]
+                   for (ns, ne) in _find_name_mentions(
+                       raws, folds, sorted(gov_names))):
+                return True
+            if any(span[0] <= rs and re_ <= span[1]
+                   and _norm_phone(d) in targets_norm
+                   for (rs, re_, d, _k) in all_runs):
+                return True
+        return False
+
     # 5. B unknown-mismatch mapping. Blocked is "no current
     # signal", not a cancellation: a history turn that
     # positively selected this proposal stands (the B pin
     # for prior-instruction bindings, extended to the passed
-    # path for blocked verdicts only).
+    # path for blocked verdicts only) -- but only while
+    # that history-positive state is ACTIVE, and never
+    # when the current turn directly states the proposal
+    # as completed (H2 fix, C3-G3-01).
     if sel["selection"] == "unknown":
         mapping = {
             "other_action_verb_only": "action_mismatch",
@@ -3445,6 +3914,19 @@ def analyze_selection_consistency(text, action, target_names=(),
                 "money_or_content_role",
         }
         if sel["reason"] == "blocked_verb_only":
+            if _current_past_governs_proposal():
+                return _mismatch(
+                    "blocked_request",
+                    "B: blocked_verb_only; current past verb "
+                    "directly governs the proposal "
+                    "(completed), history cannot revive it")
+            # ACTIVE history scan, in order: a positive
+            # turn sets active, a later negated / replaced
+            # / cancelled turn clears it; unknown turns
+            # leave the state alone. Only a finally-active
+            # state falls through -- an old request revoked
+            # by a later cancellation does not revive.
+            history_active = False
             for htext in (history_texts or ()):
                 if not isinstance(htext, str):
                     continue
@@ -3452,16 +3934,21 @@ def analyze_selection_consistency(text, action, target_names=(),
                     htext, target_names=target_names,
                     target_phones=target_phones, action=action)
                 if hsel["selection"] == "positive":
-                    break
-            else:
+                    history_active = True
+                elif hsel["selection"] in ("negated",
+                                           "replaced",
+                                           "cancelled"):
+                    history_active = False
+            if not history_active:
                 return _mismatch("blocked_request",
                                  "B: blocked_verb_only")
         elif sel["reason"] in mapping:
             return _mismatch(mapping[sel["reason"]],
                              "B: %s" % sel["reason"])
         # Abstain reasons (no_callback_verb,
-        # quoted_mention_only) and a history-positive
-        # blocked verdict fall through.
+        # quoted_mention_only) and an ACTIVE history-positive
+        # blocked verdict with no direct current completion
+        # fall through.
 
     # 6. Positive-selection-set mismatch.
     if selections:
