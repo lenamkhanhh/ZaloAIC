@@ -328,5 +328,38 @@ class TestScoreRefusalAndSeparation(unittest.TestCase):
         self.assertTrue(result["passed"], result)
 
 
+class TestAsrCacheBeforeLlm(unittest.TestCase):
+    def test_cache_coverage_requires_nonempty_transcripts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            wav = root / "sample.wav"
+            wav.write_bytes(b"synthetic wav bytes")
+            cache = R.AsrCache(root / "cache.json", "asr", "", "transformers", 1, "vi")
+            self.assertEqual(R.missing_cached_wavs(cache, [wav]), [str(wav)])
+            cache.put(R.sha256_file(wav), "", str(wav), 0.0)
+            self.assertEqual(R.missing_cached_wavs(cache, [wav]), [str(wav)])
+            cache.put(R.sha256_file(wav), "xin chào", str(wav), 0.0)
+            self.assertEqual(R.missing_cached_wavs(cache, [wav]), [])
+            self.assertEqual(R.missing_cached_wavs(cache, [root / "absent.wav"]),
+                             [str(root / "absent.wav")])
+
+    def test_lazy_asr_only_loads_on_cache_miss(self):
+        builds = []
+
+        class FakeAsr:
+            def transcribe(self, wav):
+                return "transcript"
+
+        def factory():
+            builds.append(True)
+            return FakeAsr()
+
+        asr = R.LazyASR(factory)
+        self.assertEqual(builds, [])
+        self.assertEqual(asr.transcribe("one.wav"), "transcript")
+        self.assertEqual(asr.transcribe("two.wav"), "transcript")
+        self.assertEqual(len(builds), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

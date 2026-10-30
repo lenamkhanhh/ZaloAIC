@@ -127,6 +127,7 @@ defaults):
 from __future__ import annotations
 
 import argparse
+import shutil
 import ast
 import hashlib
 import json
@@ -831,6 +832,20 @@ class AsrCache:
         self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
 
 
+def missing_cached_wavs(cache: AsrCache, wavs) -> list[str]:
+    """Reject an incomplete ASR cache before loading the LLM on GPU."""
+    missing = []
+    for wav in wavs:
+        if not wav.exists():
+            missing.append(str(wav))
+            continue
+        entry = cache.get(sha256_file(wav))
+        if not entry or not isinstance(entry.get("transcript"), str) \
+                or not entry["transcript"].strip():
+            missing.append(str(wav))
+    return missing
+
+
 class TransformersASR:
     """Phase-1 fallback ASR: same PhoWhisper checkpoint via transformers.
 
@@ -907,6 +922,19 @@ def build_asr(backend: str, checkpoint: str, model_dir: str | None, source_tree:
     from lifemate.asr import FasterWhisperASR
     return FasterWhisperASR(model_dir or checkpoint, device="cuda",
                             compute_type="float16")
+
+
+class LazyASR:
+    """Keep ASR weights off GPU when every required wav is already cached."""
+
+    def __init__(self, factory):
+        self.factory = factory
+        self.instance = None
+
+    def transcribe(self, wav_path):
+        if self.instance is None:
+            self.instance = self.factory()
+        return self.instance.transcribe(wav_path)
 
 
 def input_hash_for_sample(sample_id: str, mode: str, wav_sha: str,
@@ -1193,14 +1221,30 @@ def cmd_run(args) -> int:
         kept.append(sid)
     (out / "excluded.json").write_text(
         json.dumps(excluded, indent=2, ensure_ascii=False), encoding="utf-8")
-    asr = build_asr(asr_backend, cfg.asr_checkpoint, asr_model_dir, source)
+    asr = LazyASR(lambda: build_asr(asr_backend, cfg.asr_checkpoint,
+                                   asr_model_dir, source))
     cache = AsrCache(out / "asr_cache_baseline.json", cfg.asr_checkpoint, "",
                      asr_backend, 1, "vi", model_dir=asr_model_dir)
+    required_wavs = []
+    for sid in kept:
+        sample = samples[sid]
+        required_wavs.append(data_root / "train" / sample.audio)
+        required_wavs.extend(data_root / "train" / turn.audio
+                             for turn in sample.history
+                             if turn.role == "user" and turn.audio_text is None
+                             and turn.audio)
+    missing_cache = missing_cached_wavs(cache, required_wavs)
+    if missing_cache:
+        print(f"BLOCKED: ASR cache has {len(missing_cache)} missing or empty "
+              f"transcripts; run asr-cache first. First: {missing_cache[:5]}",
+              file=sys.stderr)
+        return 2
     t0 = time.time()
     llm = VLLMGenerator(cfg.llm_checkpoint, cfg.llm_revision, seed=cfg.llm_seed)
     load_log = {"llm_seconds": time.time() - t0,
                 "asr_backend_actual": asr_backend,
-                "asr_model_dir_actual": asr_model_dir}
+                "asr_model_dir_actual": asr_model_dir,
+                "asr_gpu_loaded_during_run": False}
     (out / "model_load.json").write_text(json.dumps(load_log, indent=2), encoding="utf-8")
     # Precompute FIXED history + current transcripts and input hashes
     # per mode, BEFORE any AgentLoop run, so resume can compare them.
@@ -1375,6 +1419,12 @@ def cmd_check_off_on(args) -> int:
     results = {}
     for flag, sub in (("off", "off"), ("on", "on")):
         sub_out = base_out / sub
+        # Reuse the independently transcribed cache for both fresh model runs.
+        # Without it, each arm loads ASR beside the LLM and may exhaust VRAM.
+        shared_cache = base_out.parent / "asr_cache_baseline.json"
+        if shared_cache.exists():
+            sub_out.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(shared_cache, sub_out / shared_cache.name)
         ns = argparse.Namespace(
             source_tree=args.source_tree, benchmark=args.benchmark,
             out=str(sub_out), data=args.data, mode="B0", pilot=True,
