@@ -3146,10 +3146,13 @@ def analyze_selection_consistency(text, action, target_names=(),
     1. delegation -- the whole action is another actor's job
        (turn_fully_delegated);
     2. duplicate_name -- a positively governed name maps to
-       >= 2 roster phones, the proposal phone is one of them,
-       no digit run equal to any duplicate phone appears in
-       the text, and history does not qualify the PROPOSAL
-       entry (see _history_qualified_entries);
+       >= 2 roster entries (R4-PHONE-GUARD: entries, not
+       distinct known phones, so an UNKNOWN/empty phone
+       does not collapse the guard), the proposal is to
+       one of them, no digit run equal to any duplicate
+       phone appears in the text, and history does not
+       qualify the PROPOSAL entry (see
+       _history_qualified_entries);
     3. B decisive vetoes -- negated / replaced / cancelled;
     4. early matched-pass -- the positive selection set
        (including correction re-scoping, below) contains
@@ -3917,19 +3920,55 @@ def analyze_selection_consistency(text, action, target_names=(),
     # check 6 decides honestly (matched pass /
     # wrong_person) -- check 2 must not relabel that as
     # ambiguity.
+    # R4-PHONE-GUARD (F-0): the guard counts duplicate
+    # ENTRIES by name, not distinct non-empty phones. The
+    # old phone count let one entry's phone dropping to
+    # "" (barrier contradiction / intra-read conflict, or
+    # a naturally missing phone) collapse the guard: with
+    # only one known phone left, an unqualified proposal
+    # fell through to a pass for BOTH duplicates. An entry
+    # whose phone is UNKNOWN is still a duplicate member:
+    # it cannot be used to choose a person via that phone,
+    # and it must not silently remove the ambiguity for
+    # the other entry. The phone set below is still used
+    # for the two phone tests (proposal-is-duplicate and
+    # the digit-run test); only the guard threshold moves
+    # from phones to entries.
     for fold in governed_names:
         idxs = _entries_for_name(fold)
         phones = {_norm_phone(roster[i].get("phone") or "")
                   for i in idxs}
         phones.discard("")
-        if len(phones) < 2:
-            continue
-        proposal_is_duplicate = (
-            proposal_key in [("entry", i) for i in idxs]
-            or any(t in phones for t in targets_norm))
-        if not proposal_is_duplicate:
+        if len(idxs) < 2:
             continue
         qualified = _history_qualified_entries(idxs)
+        # Name-key proposals: an id proposal to an entry
+        # whose phone is "" reaches this function with no
+        # phone target, so its key is the bare name, not
+        # the entry -- the entry test above would miss it
+        # entirely (R3-h1). Such a proposal is a duplicate
+        # proposal when its name key maps to exactly this
+        # duplicate set AND history qualifies nobody: with
+        # no qualified entry there is no referent the bare
+        # name could be presumed to mean. When history
+        # qualifies exactly one entry, the name-key
+        # proposal still passes (the R1 correct arm is
+        # itself a name-key proposal to the qualified
+        # entry, and at this layer a phone-less id cannot
+        # be distinguished from that entry) -- the
+        # asymmetry is inherent to the name/phone-only
+        # signature here, and the entry-key arms still
+        # block the wrong person in that case.
+        proposal_is_name_dup = (
+            proposal_key[0] == "name" and not qualified
+            and set(_entries_for_name(proposal_key[1]))
+            == set(idxs))
+        proposal_is_duplicate = (
+            proposal_key in [("entry", i) for i in idxs]
+            or any(t in phones for t in targets_norm)
+            or proposal_is_name_dup)
+        if not proposal_is_duplicate:
+            continue
         proposal_qualified = any(
             proposal_key == ("entry", i)
             or _norm_phone(roster[i].get("phone") or "")
@@ -3941,10 +3980,11 @@ def analyze_selection_consistency(text, action, target_names=(),
                    for (_rs, _re, d, _k) in all_runs):
             return _mismatch(
                 "duplicate_name",
-                "name %r maps to %d roster phones and "
+                "name %r maps to %d roster entries "
+                "(%d known phones) and "
                 "neither the text nor history qualifies "
                 "this proposal with any number or qualifier"
-                % (fold, len(phones)))
+                % (fold, len(idxs), len(phones)))
 
     # 3. B decisive vetoes (active cancellations override
     # history and selections alike).

@@ -44,6 +44,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lifemate.agent import AgentLoop
 from lifemate.config import PipelineConfig
+from lifemate.lifemate_gates_adapter import decide
+
+KINDS = {"phone.call": "write", "sms.send": "write"}
 
 TOOLS = {
     "contacts.search": {"kind": "read", "parameters": {"required": ["query"]},
@@ -273,6 +276,30 @@ class TestRosterBackfill(unittest.TestCase):
         self.assertTrue(any(
             c["reason"] == "last_wins" and c["field"] == "phone"
             for c in loop.roster_conflicts))
+        # F-1 counterproof (decision, not just roster value):
+        # the loop's OWN c1 entry, plus a second Lan, decided
+        # through the adapter. The NEW phone selects c1; the
+        # OLD phone no longer does. If the loop still kept
+        # the first phone, these two calls invert (the new
+        # phone fires, the old phone passes), so flipping
+        # the roster assertion above alone cannot make
+        # this test pass while decision behaviour is unchanged.
+        roster = list(loop._roster) + [
+            {"id": "c2", "name": "Lan", "phone": "0903777888",
+             "relation": "hàng xóm"}]
+        for phone, want_fired in (("0902222222", False),
+                                  ("0901111111", True)):
+            dec = decide(
+                {"name": "phone.call",
+                 "arguments": {"phone_number": phone}},
+                [{"kind": "user_turn",
+                  "text": "Tìm số của Lan %s dùm tôi" % phone,
+                  "position": 0}],
+                roster, "Gọi cho Lan", KINDS, proposal_position=1)
+            if want_fired:
+                self.assertTrue(dec.fired, dec)
+            else:
+                self.assertFalse(dec.fired, dec)
 
     def test_backfill_never_overwrites_with_empty(self):
         loop, out = self._roster_after(
