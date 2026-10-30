@@ -2833,5 +2833,170 @@ class TestSelectionRoundAdapter(unittest.TestCase):
         self.assert_fired_via(d, "selection_mismatch")
 
 
+class TestR4VerbCollisionAdapter(unittest.TestCase):
+    """Run 4 verb-collision fix (R3 item 8), adapter level.
+
+    Shape (exactly the R3 probe shape): a history user turn
+    names a duplicate with a post-name descriptor, then the
+    current turn names the person bare ("Nhắn tin cho <name>").
+    The descriptor qualifies an entry ONLY through the
+    unchanged D1 rule: it must match a structured roster
+    attribute of exactly one duplicate. No name, relation
+    word or sentence is whitelisted in the fix: the test
+    names/relations below are fixtures, and the unseen
+    variants in test_r4_postname_unseen_variants_same_rule
+    exercise the same structural rule with different
+    names/relations (including a second verb-colliding
+    first token, "đối tác").
+    """
+
+    def _dec(self, contact_id, prefix, roster, current):
+        return decide({"name": "sms.send",
+                       "arguments": {"contact_id": contact_id}},
+                      prefix, roster, current, KINDS,
+                      proposal_position=1)
+
+    def _assert_fired_via(self, dec, mechanism):
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(a["mechanism"] == mechanism
+                            for a in dec.adjustments),
+                        dec.adjustments)
+
+    def _dup(self, name, rel1, rel2):
+        return [{"id": "c_1", "name": name,
+                 "phone": "0901111111", "relation": rel1},
+                {"id": "c_2", "name": name,
+                 "phone": "0902222222", "relation": rel2}]
+
+    def test_r4_postname_dong_nghiep_correct_passes_wrong_blocks(self):
+        # R3 item 8, the reported case: post-name
+        # "Lan đồng nghiệp" whose first folded token
+        # collides with a general verb.
+        roster = [{"id": "c_l1", "name": "Lan",
+                   "phone": "0912345678",
+                   "relation": "đồng nghiệp"},
+                  {"id": "c_l2", "name": "Lan",
+                   "phone": "0987654321",
+                   "relation": "hàng xóm"}]
+        prefix = [user_turn(
+            "Tìm số của Lan đồng nghiệp dùm tôi", 0)]
+        d = self._dec("c_l1", prefix, roster,
+                      "Nhắn tin cho Lan")
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+        d = self._dec("c_l2", prefix, roster,
+                      "Nhắn tin cho Lan")
+        self.assertFalse(d.baseline_fired)
+        self._assert_fired_via(d, "selection_mismatch")
+
+    def test_r4_prename_dong_nghiep_still_passes(self):
+        # Pre-name shape already passed before R4; the
+        # rescue must not change it.
+        roster = [{"id": "c_l1", "name": "Lan",
+                   "phone": "0912345678",
+                   "relation": "đồng nghiệp"},
+                  {"id": "c_l2", "name": "Lan",
+                   "phone": "0987654321",
+                   "relation": "hàng xóm"}]
+        prefix = [user_turn(
+            "Tìm số đồng nghiệp Lan dùm tôi", 0)]
+        d = self._dec("c_l1", prefix, roster,
+                      "Nhắn tin cho Lan")
+        self.assertFalse(d.fired)
+        d = self._dec("c_l2", prefix, roster,
+                      "Nhắn tin cho Lan")
+        self._assert_fired_via(d, "selection_mismatch")
+
+    def test_r4_postname_unseen_variants_same_rule(self):
+        # Unseen names/relations, same rule: first relation
+        # is the history descriptor, second is the other
+        # duplicate. "đối tác" is a second verb-colliding
+        # case (first folded token in the general-verb
+        # list); the others are non-colliding controls.
+        cases = [
+            ("Thu", "giáo viên", "khách hàng"),
+            ("Hải", "đối tác", "hàng xóm"),
+            ("An", "khách hàng", "giáo viên"),
+            ("Vy", "hàng xóm", "đối tác"),
+        ]
+        for name, rel, other in cases:
+            with self.subTest(name=name, relation=rel):
+                roster = self._dup(name, rel, other)
+                prefix = [user_turn(
+                    "Tìm số của %s %s dùm tôi" % (name, rel),
+                    0)]
+                d = self._dec("c_1", prefix, roster,
+                              "Nhắn tin cho %s" % name)
+                self.assertFalse(d.baseline_fired)
+                self.assertFalse(d.fired)
+                d = self._dec("c_2", prefix, roster,
+                              "Nhắn tin cho %s" % name)
+                self.assertFalse(d.baseline_fired)
+                self._assert_fired_via(d, "selection_mismatch")
+
+    def test_r4_postname_verb_clause_still_blocks_both(self):
+        # A genuine verb clause after the name is NOT a
+        # descriptor: its token run is not a roster
+        # attribute, so both arms still block (safe).
+        roster = [{"id": "c_l1", "name": "Lan",
+                   "phone": "0912345678",
+                   "relation": "đồng nghiệp"},
+                  {"id": "c_l2", "name": "Lan",
+                   "phone": "0987654321",
+                   "relation": "hàng xóm"}]
+        for hist in ("Lan đóng cửa rồi",
+                     "Lan đóng cửa hàng"):
+            with self.subTest(history=hist):
+                prefix = [user_turn(hist, 0)]
+                for cid in ("c_l1", "c_l2"):
+                    d = self._dec(cid, prefix, roster,
+                                  "Nhắn tin cho Lan")
+                    self.assertFalse(d.baseline_fired)
+                    self._assert_fired_via(
+                        d, "selection_mismatch")
+
+    def test_r4_d1_missing_duplicate_mismatched_still_block(self):
+        # D1 unchanged: missing / duplicated / mismatched
+        # structured attribute still blocks both arms,
+        # even for the verb-colliding descriptor.
+        cases = [
+            ("missing", [{"id": "c_1", "name": "Lan",
+                          "phone": "0901111111"},
+                         {"id": "c_2", "name": "Lan",
+                          "phone": "0902222222",
+                          "relation": "hàng xóm"}]),
+            ("duplicate", self._dup("Lan", "đồng nghiệp",
+                                    "đồng nghiệp")),
+            ("mismatched", self._dup("Lan", "hàng xóm",
+                                     "đối tác")),
+        ]
+        for label, roster in cases:
+            with self.subTest(case=label):
+                prefix = [user_turn(
+                    "Tìm số của Lan đồng nghiệp dùm tôi", 0)]
+                for cid in ("c_1", "c_2"):
+                    d = self._dec(cid, prefix, roster,
+                                  "Nhắn tin cho Lan")
+                    self.assertFalse(d.baseline_fired)
+                    self._assert_fired_via(
+                        d, "selection_mismatch")
+
+    def test_r4_minh_pin_still_blocks_both(self):
+        # Minh pin regression (check-P1 re-pin): roster
+        # with id/name/phone only, descriptor with no
+        # structured attribute, still blocks both arms.
+        roster = [{"id": "c_m1", "name": "Minh",
+                   "phone": "0903111222"},
+                  {"id": "c_m2", "name": "Minh",
+                   "phone": "0903777888"}]
+        prefix = [user_turn(
+            "Tìm số của Minh khách hàng dùm tôi", 0)]
+        for cid in ("c_m1", "c_m2"):
+            d = self._dec(cid, prefix, roster,
+                          "Nhắn tin cho Minh")
+            self.assertFalse(d.baseline_fired)
+            self._assert_fired_via(d, "selection_mismatch")
+
+
 if __name__ == "__main__":
     unittest.main()

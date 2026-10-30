@@ -3461,6 +3461,19 @@ def analyze_selection_consistency(text, action, target_names=(),
     # now FAILS until L5/G5 re-pin it, and that failure
     # is reported, not hidden by editing the test (only
     # this file may change in round 4).
+    # R4 VERB-COLLISION (Run 4, this branch): the D1
+    # unique-structured-match rule below is unchanged,
+    # but a post-name descriptor whose FIRST folded token
+    # is in _GENERAL_VERBS no longer loses its phrase
+    # entirely: when the ordinary scan collects nothing
+    # after the name, a same-clause run of >= 2 tokens
+    # that EXACTLY equals a duplicate's structured
+    # attribute is collected as the descriptor phrase
+    # (see the rescue in the mention loop). A verb
+    # clause still collects nothing, because its run is
+    # not an attribute and a single verb token is never
+    # accepted. No word, name or sentence is whitelisted:
+    # the only vocabulary is the roster's own attributes.
     # (3) NOT QUALIFYING: adjacent prepositions / particles
     # / discourse tokens in _QUALIFIER_STOP ("cho Minh",
     # "Minh nhe"), any adjacent VERB (the name is the
@@ -3550,6 +3563,25 @@ def analyze_selection_consistency(text, action, target_names=(),
         phone_qualified = None
         phone_seen = False
         descriptor_phrases = []
+        # R4 verb-collision anchor: the structured attribute
+        # token sequences of the duplicate entries only
+        # (every roster field other than id/name/phone,
+        # folded the same way as the D1 check below).
+        # These sequences -- never a name, word or sentence
+        # list -- are the ONLY vocabulary the post-name
+        # rescue below may use, so a rescue can fire only
+        # for an attribute the roster itself carries.
+        dup_attr_seqs = []
+        for _i in idxs:
+            for _key, _val in (roster[_i] or {}).items():
+                if _key in ("id", "name", "phone"):
+                    continue
+                if not isinstance(_val, str) or not _val.strip():
+                    continue
+                _seq = [_fold(_t) for _t in
+                        re.findall(r"[^\W_]+", _nfc(_val))]
+                if _seq:
+                    dup_attr_seqs.append(_seq)
         for htext in (history_texts or ()):
             if not isinstance(htext, str) or not htext.strip():
                 continue
@@ -3765,6 +3797,52 @@ def analyze_selection_consistency(text, action, target_names=(),
                     j += 1
                 if after_seq:
                     descriptor_phrases.append(after_seq)
+                elif dup_attr_seqs and ne < len(hfolds):
+                    # R4 VERB-COLLISION RESCUE (post-name
+                    # only): the ordinary scan above stops
+                    # at the FIRST token it rejects, so a
+                    # descriptor whose first folded token
+                    # collides with a general verb (the
+                    # reported case: a relation word
+                    # folding to a verb form) collects
+                    # NOTHING, even though the full phrase
+                    # after the name is a noun phrase, not
+                    # a verb phrase. Do NOT drop the verb
+                    # list, and do NOT whitelist any word:
+                    # instead, read the contiguous run
+                    # immediately after the name, in the
+                    # SAME clause, and accept a prefix of
+                    # it ONLY when that prefix, whole,
+                    # EXACTLY equals a structured
+                    # attribute sequence of a duplicate
+                    # entry. Length >= 2 is required: a
+                    # single verb-fold token alone is
+                    # never a noun phrase, so a genuine
+                    # verb clause ("name + verb + object")
+                    # cannot rescue -- its run is not an
+                    # attribute, and a truncated single
+                    # token is not an attribute either.
+                    # If no prefix matches, nothing is
+                    # appended: the turn still qualifies
+                    # nothing, exactly as before. The
+                    # appended phrase then goes through
+                    # the unchanged D1 rule below, which
+                    # qualifies an entry ONLY when exactly
+                    # one duplicate carries the match --
+                    # a missing, duplicated or mismatched
+                    # attribute still blocks both arms.
+                    _name_cid = hcids[ne - 1]
+                    _run = []
+                    _j = ne
+                    while _j < len(hfolds) \
+                            and len(_run) < 4 \
+                            and hcids[_j] == _name_cid:
+                        _run.append(hfolds[_j])
+                        _j += 1
+                    for _ln in range(2, len(_run) + 1):
+                        _cand = _run[:_ln]
+                        if _cand in dup_attr_seqs:
+                            descriptor_phrases.append(_cand)
                 before_seq = []
                 j = ns - 1
                 while j >= 0 and len(before_seq) < 4 \
