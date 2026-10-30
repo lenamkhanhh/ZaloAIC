@@ -328,8 +328,76 @@ def _resolve_roster_name(roster, name):
     return matches[0] if len(matches) == 1 else None
 
 
+def _valid_field_value(field, value):
+    """Well-formedness gate for a field value before it may become
+    an active field_value record (R2-P0, validity layer).
+
+    This is a SHAPE gate, never a completion: it never guesses a
+    value, never fills one in from the roster, context, or system
+    clock, and never normalizes the stored value. A value that
+    fails is simply not established (the query then reads
+    invalidated if a mutation killed an older value, unknown if
+    there was none) -- the caller must ask, exactly as grounding
+    NEEDS_ASK does upstream. Only the field families grounding can
+    NEEDS_ASK on are gated; every other field passes through
+    unchanged, so title/status/content/done behaviour is untouched:
+      - phone / phone_number: norm_phone must be a complete
+        10-digit number starting with 0 (+84 folding included).
+        A raw tail ("duoi 222" -> "222"), a 9-digit missing-zero
+        number, and a spoken form with no digits all fail.
+      - date: an ISO date (YYYY-MM-DD, calendar-valid) or
+        YYYY-MM, the values grounding passes through unchanged.
+      - time / start / end: an ISO datetime (calendar-valid),
+        an ISO date, or HH:MM(:SS) with hour <= 23, minute/second
+        <= 59 -- the values grounding passes through unchanged.
+        A relative expression with no hour ("ngay mai luc tam
+        gio") fails here, as it does in grounding (NEEDS_ASK).
+    """
+    import re as _re
+    if field in ("phone", "phone_number"):
+        digits = norm_phone(value)
+        return len(digits) == 10 and digits.startswith("0")
+    if field == "date":
+        if not isinstance(value, str):
+            return False
+        if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            try:
+                from datetime import date as _date
+                _date.fromisoformat(value)
+                return True
+            except ValueError:
+                return False
+        m = _re.fullmatch(r"(\d{4})-(\d{2})", value)
+        return m is not None and 1 <= int(m.group(2)) <= 12
+    if field in ("time", "start", "end"):
+        if not isinstance(value, str):
+            return False
+        if _re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?"
+                r"([+-]\d{2}:?\d{2}|Z)?", value):
+            try:
+                from datetime import datetime as _dt
+                _dt.fromisoformat(value.replace("Z", "+00:00"))
+                return True
+            except ValueError:
+                return False
+        if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            try:
+                from datetime import date as _date
+                _date.fromisoformat(value)
+                return True
+            except ValueError:
+                return False
+        m = _re.fullmatch(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", value)
+        if m is not None:
+            return int(m.group(1)) <= 23 and int(m.group(2)) <= 59 \
+                and (m.group(3) is None or int(m.group(3)) <= 59)
+        return False
+    return True
+
+
 def _field_value_events(obj, path, tool, is_read, ref_values, pos,
-                        events):
+                        events, call_args=None):
     """Append counterpart field_value records for item dicts in a
     succeeded result (R5 coordinator wiring for B's eligibility and
     prover-validity APIs).
@@ -353,14 +421,37 @@ def _field_value_events(obj, path, tool, is_read, ref_values, pos,
     These records are a NEW claim type: existing adapter consumption
     queries claim == "existence" only, so emitting them cannot change
     fired by itself.
+
+    R2-P0, two guards on this path (both fail-closed, neither
+    guesses a value):
+    1. Patch-id equality (L-N3): for a patch-verified tool, a
+       primary record is the patched entity's post-mutation state
+       ONLY when its id equals the call's patch id-arg -- the
+       same equality the existence branch already enforced, now
+       threaded through via call_args. On mismatch, no field of
+       that record is emitted at all (not even via a
+       PRODUCER_REGISTRY mapping: contacts.update returning a
+       different contact's record is the same over-establishment
+       as the calendar fallback case). A missing id-arg is a
+       mismatch, not a pass.
+    2. Value validity (NEEDS_ASK bypass): every emitted field
+       value must pass _valid_field_value. A raw tail, an
+       incomplete phone, or an hour-less relative time fed past
+       a NEEDS_ASK gate is not established as an active field;
+       it is dropped here, never completed from roster/context/
+       clock and never stored as the field's value.
     """
     if isinstance(obj, dict):
         ent = obj.get("id")
         if isinstance(ent, str):
             reg = registry_for_entry(tool, "id", path)
-            if reg is None and tool in PATCH_VERIFIED \
-                    and path in (None, "", "item"):
-                reg = PATCH_VERIFIED[tool][0]
+            patch = PATCH_VERIFIED.get(tool)
+            if patch is not None and path in (None, "", "item"):
+                patch_id = (call_args or {}).get(patch[1])
+                if patch_id != ent:
+                    reg = None
+                elif reg is None:
+                    reg = patch[0]
             if reg is not None:
                 for fk, fv in obj.items():
                     if fk == "id":
@@ -370,17 +461,19 @@ def _field_value_events(obj, path, tool, is_read, ref_values, pos,
                     if not is_read and isinstance(fv, str) \
                             and nfc_lower(fv) in ref_values:
                         continue
+                    if not _valid_field_value(fk, fv):
+                        continue
                     events.append(field_value_record(
                         reg, ent, fk, fv, pos, tool,
                         source="read_result" if is_read
                         else "write_result"))
         for k, v in obj.items():
             _field_value_events(v, k, tool, is_read, ref_values, pos,
-                                 events)
+                                 events, call_args)
     elif isinstance(obj, list):
         for v in obj:
             _field_value_events(v, path, tool, is_read, ref_values,
-                                 pos, events)
+                                 pos, events, call_args)
 
 
 def build_ledger(prefix, roster, kinds):
@@ -458,7 +551,8 @@ def build_ledger(prefix, roster, kinds):
             # R5: counterpart field_value records for entity-linked
             # field checks and observation expiry (see helper).
             _field_value_events(result, None, tool, is_read,
-                                 ref_values, pos, events)
+                                 ref_values, pos, events,
+                                 entry.get("args") or {})
         # --- mutation events from writes (any outcome; the ledger
         # ignores non-succeeded ones itself) ---
         if _entry_is_read(entry, kinds):
