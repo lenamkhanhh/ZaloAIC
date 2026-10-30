@@ -139,6 +139,7 @@ from .lifemate_phone_callback_evidence import (
 from .lifemate_callback_negation import (
     analyze_action_selection,
     analyze_instruction_selection,
+    analyze_selection_consistency,
     analyze_topic_selection,
     binding_action_class,
     instruction_action,
@@ -2269,6 +2270,67 @@ def decide(call, prefix, roster, current_text, kinds,
                     "mechanism": "lifecycle_suppression",
                     "basis": None, "question_b": None,
                     "question_b_reason": reason, "sources": []})
+    # --- selection-consistency check (selection round) ---
+    # PIN BOUNDARY: this runs ONLY when the baseline gate
+    # passed AND no earlier adjustment fired (not
+    # baseline.fired, not fired). When the baseline fired, an
+    # un-fire rests on a specific A+B+layer-C binding the
+    # current text does not cancel (the pinned veto-only
+    # contract, incl. gold 1319 and the
+    # positive_action_no_target_veto pin); re-vetoing there
+    # would break pinned bindings. The passed path had NO
+    # selection check at all -- a confirmed number / ID was
+    # waved through before anyone checked the right person,
+    # the right action, or the right role for that number
+    # (chat2 ATK-001/007/009/014/015). This check fires ONLY
+    # on an explicit contradiction reported by
+    # analyze_selection_consistency; UNKNOWN abstains (the
+    # baseline pass stands). It is a shadow adjustment like
+    # the lifecycle one: same adjustment record shape,
+    # mechanism "selection_mismatch".
+    if not baseline.fired and not fired \
+            and proposal_action is not None \
+            and isinstance(current_text, str) \
+            and current_text.strip():
+        sel_names, sel_phones = set(), set()
+        for kind, value in refs:
+            names, phones = _selection_targets(
+                kind, value, phone_prefix, roster)
+            sel_names.update(names)
+            sel_phones.update(phones)
+        if sel_names or sel_phones:
+            # Prior user-turn texts: the check consults
+            # them ONLY for duplicate-name qualification
+            # and for blocked-verb history-positive
+            # abstention (see its docstring). Session tool
+            # entries carry no user text and are skipped.
+            history_texts = [
+                e.get("text") for e in (prefix or [])
+                if isinstance(e, dict)
+                and e.get("kind") == "user_turn"
+                and isinstance(e.get("text"), str)]
+            try:
+                consistency = analyze_selection_consistency(
+                    current_text, proposal_action,
+                    target_names=sorted(sel_names),
+                    target_phones=sorted(sel_phones),
+                    roster=roster, history_texts=history_texts)
+            except Exception as exc:  # never break deciding
+                notes["adapter_gaps"].append(
+                    "selection_consistency_error:%r" % (exc,))
+                consistency = {"consistent": True}
+            if not consistency["consistent"]:
+                fired = True
+                ref_label = ("%s %s" % refs[0]) if refs \
+                    else (call.get("name") or "proposal")
+                adjustments.append({
+                    "reference": ref_label, "old": "passed",
+                    "new": "fired", "mechanism": "selection_mismatch",
+                    "basis": None, "question_b": None,
+                    "question_b_reason": "%s: %s" % (
+                        consistency["mismatch"],
+                        consistency["detail"]),
+                    "sources": []})
     # --- R5 eligibility report (shadow only; NEVER changes fired) ---
     if eligibility:
         tool_name = (call or {}).get("name")

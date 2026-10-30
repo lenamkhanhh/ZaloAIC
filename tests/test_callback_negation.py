@@ -745,10 +745,18 @@ class TestInstructionActionRound3(unittest.TestCase):
 
     def test_unknown_actions(self):
         # F5: verbs outside every inventory stay unknown.
-        for text in ["Chuyển số 0902345678 cho Vy giúp tôi",
-                     "Báo số 0902345678 cho Vy giúp tôi"]:
-            self.assertEqual(instruction_action(text), "unknown",
-                             text)
+        self.assertEqual(instruction_action(
+            "Báo số 0902345678 cho Vy giúp tôi"), "unknown")
+        # CONTRACT CHANGE (selection round, ATK-019): bare
+        # "chuyển" is no longer outside every inventory -- it
+        # is a recognised forward/transfer verb (see the
+        # round-4 S3 precedent for "gửi tiền" below), so it
+        # is "other", not "unknown". Both labels veto
+        # call/message proposals in layer C; the new label
+        # records that the action IS recognised, just not a
+        # callback.
+        self.assertEqual(instruction_action(
+            "Chuyển số 0902345678 cho Vy giúp tôi"), "other")
         # Bare "gửi" (no "tin nhắn"/"sms") is not a message verb.
         # CONTRACT CHANGE (round-4 fix S3): "gửi tiền" is no
         # longer "unknown" -- it is a recognised foreign action
@@ -1871,6 +1879,85 @@ class TestR5Fallback0676PathProof(unittest.TestCase):
         self.assertNotIn(
             "generic_callback_positive_substring_excluded",
             dec_reasons(d))
+
+
+class TestSelectionRoundB(unittest.TestCase):
+    """Selection round, thread-B level: emphatic negation,
+    echo-questions, toneless 'nhi', and bare-'chuyen' forward.
+
+    Scope: these prove analyze_action_selection's verdict for
+    the current text alone. They do NOT prove the adapter's
+    passed-path wiring (see TestSelectionRoundAdapter in
+    test_gates_adapter.py).
+    """
+
+    def test_emphatic_negation_co_ma(self):
+        sel = analyze_action_selection(
+            "Đừng có mà gọi số 0903111444 đấy",
+            target_phones=["0903111444"], action="call")
+        self.assertEqual(sel["selection"], "negated")
+
+    def test_emphatic_negation_bare_ma(self):
+        sel = analyze_action_selection(
+            "Đừng mà gọi số 0903111444",
+            target_phones=["0903111444"], action="call")
+        self.assertEqual(sel["selection"], "negated")
+
+    def test_ma_without_dung_stays_positive(self):
+        # "mà" alone is not a negation marker: the particle
+        # bridge only extends a real "đừng" backward search.
+        sel = analyze_action_selection(
+            "Nhưng mà gọi số 0903111444",
+            target_phones=["0903111444"], action="call")
+        self.assertEqual(sel["selection"], "positive")
+
+    def test_ma_nho_stays_positive(self):
+        sel = analyze_action_selection(
+            "Mà nhớ gọi số 0903111444",
+            target_phones=["0903111444"], action="call")
+        self.assertEqual(sel["selection"], "positive")
+
+    def test_echo_question_nhi_blocked(self):
+        # A wh-echo with the "nhỉ" particle is a question
+        # clause, not a request: the verb is blocked.
+        sel = analyze_action_selection(
+            "Lúc nãy em bảo gọi số 0903111444 nhỉ?",
+            target_phones=["0903111444"], action="call")
+        self.assertEqual(sel["selection"], "unknown")
+        self.assertEqual(sel["reason"], "blocked_verb_only")
+
+    def test_verb_question_phai_khong_blocked(self):
+        sel = analyze_action_selection(
+            "Gọi cho Bình phải không?",
+            target_names=["Bình"], action="call")
+        self.assertEqual(sel["selection"], "unknown")
+        self.assertEqual(sel["reason"], "blocked_verb_only")
+
+    def test_toneless_nhi_name_stays_request(self):
+        # Toneless "Nhi" with no digit in the clause is a
+        # person's name (the call target), not the particle.
+        sel = analyze_action_selection(
+            "Gọi cho Nhi", target_names=["Nhi"], action="call")
+        self.assertEqual(sel["selection"], "positive")
+
+    def test_toneless_nhi_with_digit_is_question(self):
+        sel = analyze_action_selection(
+            "Gọi số 0903111444 nhi",
+            target_phones=["0903111444"], action="call")
+        self.assertEqual(sel["selection"], "unknown")
+        self.assertEqual(sel["reason"], "blocked_verb_only")
+
+    def test_bare_chuyen_forward_vetoes(self):
+        # Bare "chuyển" + recipient + following bare "gọi"
+        # is a forward: the number is content for Lan, not a
+        # call selection (veto reason is the content rule,
+        # which fires before the blocked-verb fallback).
+        sel = analyze_action_selection(
+            "Chuyển số 0903111222 cho Lan, gọi đi",
+            target_phones=["0903111222"], action="call")
+        self.assertEqual(sel["selection"], "unknown")
+        self.assertEqual(
+            sel["reason"], "number_as_content_for_other_recipient")
 
 
 if __name__ == "__main__":

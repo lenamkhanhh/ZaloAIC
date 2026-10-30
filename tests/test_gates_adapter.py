@@ -2537,5 +2537,290 @@ class TestR5EligibilityReport(unittest.TestCase):
         self.assertTrue(reason)
 
 
+class TestSelectionRoundAdapter(unittest.TestCase):
+    """Selection round, adapter level: the 10 target cases
+    plus positive controls, through decide().
+
+    Scope: synthetic only (no gold, no sample ids). The
+    fired-path cases (SEAL-003/004, ATK-019) must fire via
+    the veto mechanism; the passed-path cases (ATK-001/007/
+    009/014/015) must fire via the new selection_mismatch
+    mechanism -- the mechanism pins which path fired. The
+    positive controls must stay passed; a control that
+    starts firing means the check over-fires.
+    """
+
+    A = "0903111222"
+    B = "0903333444"
+    C = "0903555666"
+    D = "0903777888"
+    S = "0903111444"
+    BASE = [{"id": "c_binh", "name": "Bình", "phone": A},
+            {"id": "c_lan", "name": "Lan", "phone": B}]
+    DUP = [{"id": "c_binh", "name": "Bình", "phone": A},
+           {"id": "c_binh2", "name": "Bình", "phone": D}]
+    FAMILY = [{"id": "c_binh", "name": "Bình", "phone": A},
+              {"id": "c_lan", "name": "Lan", "phone": B},
+              {"id": "c_me", "name": "Mẹ", "phone": C}]
+
+    def dec(self, text, number, roster, prefix=None, pos=0):
+        return decide({"name": "phone.call",
+                       "arguments": {"phone_number": number}},
+                      prefix or [], roster, text, KINDS,
+                      proposal_position=pos)
+
+    def assert_fired_via(self, dec, mechanism):
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(a["mechanism"] == mechanism
+                            for a in dec.adjustments),
+                        dec.adjustments)
+
+    def test_seal003a_emphatic_negation(self):
+        d = self.dec("Đừng có mà gọi số %s đấy" % self.S,
+                     self.S, [])
+        self.assertTrue(d.baseline_fired)
+        self.assert_fired_via(d, "callback_selection_veto")
+
+    def test_seal003b_emphatic_negation(self):
+        d = self.dec("Đừng mà gọi số %s" % self.S, self.S, [])
+        self.assertTrue(d.baseline_fired)
+        self.assert_fired_via(d, "callback_selection_veto")
+
+    def test_seal004_echo_question(self):
+        prefix = [user_turn("Gọi số %s giúp tôi" % self.S, 0)]
+        d = self.dec("Lúc nãy em bảo gọi số %s nhỉ?" % self.S,
+                     self.S, [], prefix=prefix, pos=1)
+        self.assertTrue(d.baseline_fired)
+        self.assert_fired_via(d, "callback_selection_veto")
+
+    def test_wh_user_echo_question(self):
+        prefix = [user_turn("Gọi số %s giúp tôi" % self.S, 0)]
+        d = self.dec("Lúc nãy gọi số nào nhỉ?", self.S, [],
+                     prefix=prefix, pos=1)
+        self.assertTrue(d.baseline_fired)
+        self.assert_fired_via(d, "callback_selection_veto")
+
+    def test_atk019_bare_chuyen_forward(self):
+        d = self.dec("Chuyển số %s cho Lan, gọi đi" % self.A,
+                     self.A, [])
+        self.assertTrue(d.baseline_fired)
+        self.assert_fired_via(d, "callback_selection_veto")
+
+    def test_atk001_wrong_person(self):
+        d = self.dec("Gọi cho Bình", self.B, self.BASE)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_atk007_action_mismatch(self):
+        d = self.dec("Nhắn tin cho Bình", self.A, self.BASE)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_atk009_duplicate_name(self):
+        d = self.dec("Gọi cho Bình", self.A, self.DUP)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_atk014_delegation(self):
+        d = self.dec("Nhờ Bình gọi số %s giúp tôi" % self.A,
+                     self.A, self.BASE)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_atk015_money_role(self):
+        d = self.dec("Chuyển tiền %s đồng cho Lan" % self.A,
+                     self.A, self.BASE)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_passed_path_negation_fires(self):
+        # A passed proposal whose text negates the call must
+        # fire via the selection check, not stay passed.
+        d = self.dec("Đừng gọi cho Bình", self.A, self.BASE)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_passed_path_verb_question_fires(self):
+        d = self.dec("Gọi cho Bình phải không?", self.A,
+                     self.BASE)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_positive_multi_person_call_passes(self):
+        d = self.dec("Gọi cho Bình và Lan", self.A, self.BASE)
+        self.assertFalse(d.fired)
+
+    def test_positive_cross_action_passes(self):
+        d = self.dec("Nhắn cho Bình, gọi cho Lan", self.B,
+                     self.BASE)
+        self.assertFalse(d.fired)
+
+    def test_positive_bare_verb_passes(self):
+        d = self.dec("Gọi đi", self.A, self.BASE)
+        self.assertFalse(d.fired)
+
+    def test_positive_number_disambiguates_duplicate(self):
+        d = self.dec("Gọi cho Bình số %s" % self.A, self.A,
+                     self.DUP)
+        self.assertFalse(d.fired)
+
+    def test_positive_delegatee_is_agent_passes(self):
+        d = self.dec("Nhờ em gọi số %s" % self.A, self.A,
+                     self.BASE)
+        self.assertFalse(d.fired)
+
+    def test_positive_money_distractor_passes(self):
+        d = self.dec(
+            "Chuyển 500000 đồng cho Lan, gọi số %s đi" % self.A,
+            self.A, self.BASE)
+        self.assertFalse(d.fired)
+
+    def test_positive_callback_passes(self):
+        d = self.dec("Gọi lại cho Bình", self.A, self.BASE)
+        self.assertFalse(d.fired)
+
+    def test_duplicate_qualified_in_history_passes(self):
+        # Paired-gold shape (train_0063/0225): the history
+        # turn qualified the name ("Minh khach hang"), so
+        # the current text's bare name is not an ambiguity
+        # the current text creates -- the check abstains.
+        dup = [{"id": "c_m1", "name": "Minh",
+                "phone": "0903111222"},
+               {"id": "c_m2", "name": "Minh",
+                "phone": "0903777888"}]
+        prefix = [user_turn(
+            "Tìm số của Minh khách hàng dùm tôi", 0)]
+        d = decide({"name": "sms.send",
+                    "arguments": {"contact_id": "c_m1"}},
+                   prefix, dup, "Nhắn tin cho Minh", KINDS,
+                   proposal_position=1)
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+
+    def test_duplicate_unqualified_in_history_fires(self):
+        # Same duplicate, but the history turn never
+        # qualified the name ("Goi cho Minh" has only the
+        # preposition adjacent) -- the ambiguity stands.
+        dup = [{"id": "c_m1", "name": "Minh",
+                "phone": "0903111222"},
+               {"id": "c_m2", "name": "Minh",
+                "phone": "0903777888"}]
+        prefix = [user_turn("Gọi cho Minh", 0)]
+        d = decide({"name": "sms.send",
+                    "arguments": {"contact_id": "c_m1"}},
+                   prefix, dup, "Nhắn tin cho Minh", KINDS,
+                   proposal_position=1)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+    def test_blocked_with_history_request_passes(self):
+        # Paired-gold shape (train_0672): the current text
+        # only recounts a past call ("da goi"), but the
+        # history turn explicitly requested this call -- a
+        # blocked current verb is "no current signal", not
+        # a cancellation, so the history request stands.
+        roster = [{"id": "c_an", "name": "An",
+                   "phone": "09883322117"}]
+        prefix = [user_turn(
+            "Gọi cho An hỏi lịch tái khám giúp anh", 0)]
+        d = decide({"name": "phone.call",
+                    "arguments": {"contact_id": "c_an"}},
+                   prefix, roster,
+                   "Ghi chú thì cứ ghi là đã gọi bác sĩ An "
+                   "hỏi lịch tái khám là được", KINDS,
+                   proposal_position=1)
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+
+    def test_recipient_correction_passes(self):
+        # Paired-gold shape (train_1162): "nhan ti so cho
+        # ong Ba, a khong, cho Tuan" -- the bare recipient
+        # clause after the correction rebinds the message
+        # to Tuan; it does not leave the recipient
+        # ungoverned.
+        roster = [{"id": "c_ba", "name": "Ba",
+                   "phone": "0903111222"},
+                  {"id": "c_tuan", "name": "Tuấn",
+                   "phone": "0903333444"}]
+        d = decide({"name": "sms.send",
+                    "arguments": {"contact_id": "c_tuan"}},
+                   [], roster,
+                   "Nhắn tỉ số cho ông Ba, à không, cho Tuấn",
+                   KINDS, proposal_position=0)
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+
+    def test_bare_message_verb_discourse_recipient_passes(self):
+        # Paired-gold shape (train_1481): the call was
+        # cancelled ("a thoi") and the bare message verb's
+        # recipient is the discourse person just named --
+        # an implicit selection, not an action mismatch.
+        roster = [{"id": "c_peter", "name": "Peter Hansen",
+                   "phone": "0903111222"}]
+        d = decide({"name": "sms.send",
+                    "arguments": {"contact_id": "c_peter"}},
+                   [], roster,
+                   "Gọi thầy Peter Hansen giúp tớ, à thôi, "
+                   "thầy đang dạy, nhắn tin xin lùi buổi gặp "
+                   "mai sang bốn rưỡi chiều nha",
+                   KINDS, proposal_position=0)
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+
+    def test_pronoun_governed_call_passes(self):
+        # Paired-gold shape (train_0509): "goi ... cho anh
+        # ay" after searching Quan -- a pronoun object is
+        # anaphora, not a wrong selection; B's
+        # non-governing verdict abstains on the passed path.
+        roster = [{"id": "c_quan", "name": "Quân",
+                   "phone": "0903111222"}]
+        d = decide({"name": "phone.call",
+                    "arguments": {"contact_id": "c_quan"}},
+                   [], roster,
+                   "Mở giúp mình liên hệ anh Quân bên kho "
+                   "với, rồi gọi điện thoại luôn cho anh ấy "
+                   "nha", KINDS, proposal_position=0)
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+
+    def test_callback_back_to_missed_number_passes(self):
+        # Paired-gold shape (train_1662): bare "goi lai"
+        # with no number in the text -- the target is the
+        # log-grounded missed call, not a text selection;
+        # a bare verb is not a contradiction.
+        roster = [{"id": "c_kh", "name": "Anh Tuấn",
+                   "phone": "09125430868"}]
+        d = decide({"name": "phone.call",
+                    "arguments": {
+                        "phone_number": "09125430868"}},
+                   [], roster,
+                   "Số đuôi tám sáu tám gọi nhỡ anh mấy giờ "
+                   "thế? Gọi nhỡ hai lần rồi thì gọi lại "
+                   "luôn nhé, chắc khách vụ demo",
+                   KINDS, proposal_position=0)
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+
+    def test_new_number_qualifier_stays_in_span(self):
+        # Red-team RT-07: "so moi X" is one phone mention --
+        # the qualifier must not push X past the object-span
+        # cap, or the explicitly given number stops being
+        # governed and a correct call fires wrong_person.
+        d = self.dec("Gọi cho Bình số mới %s" % self.B,
+                     self.B, self.BASE)
+        self.assertFalse(d.baseline_fired)
+        self.assertFalse(d.fired)
+
+    def test_explicit_number_beats_ambiguous_name(self):
+        # "Goi cho Binh so D" + call(A): the explicit number
+        # D contradicts A even though the ambiguous name
+        # "Binh" is compatible with A -- the explicit
+        # selection wins, so this still fires.
+        d = self.dec("Gọi cho Bình số %s" % self.D, self.A,
+                     self.DUP)
+        self.assertFalse(d.baseline_fired)
+        self.assert_fired_via(d, "selection_mismatch")
+
+
 if __name__ == "__main__":
     unittest.main()
