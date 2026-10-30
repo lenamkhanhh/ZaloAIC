@@ -6,14 +6,13 @@
 
 | Mục | Giá trị |
 |---|---|
-| Source đối chứng đã kiểm chứng | `ddbe0a0b18a6fb9f6e7d261628a51e7a2c6c10c6` |
-| Nhánh nguồn | `muse/chat3/r7-antecedent` |
-| Nhánh tổ chức tài liệu | `codex/repo-organization`, từ source trên |
-| Remote main lúc kiểm tra | `1caa885ac35f2719f85ef553db457b984e6d2131` |
+| Source CPU đã kiểm chứng | `ddbe0a0b18a6fb9f6e7d261628a51e7a2c6c10c6` |
+| Commit nhập source và tài liệu vào main | `6ce0af9dde433036b0501da7e572c5da8921f2e2` |
+| Main trước khi nhập | `1caa885ac35f2719f85ef553db457b984e6d2131` |
 | G&G | Shadow-only: tính quyết định và ghi log, không chặn env.call |
 | pending_ask_stop | Mặc định False; khi True, ask thành công kết thúc lượt |
 
-Không dùng main như thể đã có mọi fix Run 7. Chưa merge main trong đợt này.
+`main` hiện chứa source Run 7 và bộ tài liệu điều hướng. Bản ghi này là snapshot ngày 30/10/2026; fetch `main` để lấy tip mới nhất.
 
 ## Đã kiểm chứng độc lập
 
