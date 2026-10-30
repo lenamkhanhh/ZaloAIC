@@ -3103,11 +3103,15 @@ def analyze_selection_consistency(text, action, target_names=(),
     a duplicate name the conversation previously QUALIFIED
     for a SPECIFIC entry (see _history_qualified_entries:
     a history turn naming the person with that entry's phone
-    qualifies that entry alone; a noun descriptor adjacent
-    to the name qualifies the name in discourse but proves
-    no entry -- the descriptor fallback below is a documented
-    residual, kept only for the pinned "Minh khach hang"
-    shape) is not an ambiguity the current text creates,
+    qualifies that entry alone, and only when the phone is
+    governed by a positive verb of the proposal action or
+    is a standalone identity reference -- a phone governed
+    by another action's positive verb qualifies nothing; a
+    noun descriptor adjacent to the name qualifies the name
+    in discourse but proves no entry -- the descriptor
+    fallback below is a documented residual, kept only for
+    the pinned "Minh khach hang" shape) is not an ambiguity
+    the current text creates,
     and a BLOCKED current verb (past / question / status:
     no current request signal) does not cancel a prior turn
     that positively selected this proposal -- but only while
@@ -3343,9 +3347,20 @@ def analyze_selection_consistency(text, action, target_names=(),
     # descriptor evidence (a descriptor turn never widens
     # a phone-qualified set back to all duplicates). A turn
     # matching two duplicate phones qualifies neither: it
-    # does not disambiguate. No name, phone, number or
-    # sentence is hardcoded here: matching is by roster
-    # phone equality and name mention only.
+    # does not disambiguate. ACTION-SCOPING (round 3, L5
+    # adjudication, matching the blocked_verb_only branch
+    # and G1 R1): the phone qualifies only when it is
+    # governed by a positive verb of the SAME action as
+    # the proposal, or when it is a standalone identity
+    # reference governed by no positive callback verb at
+    # all. A phone governed by a positive verb of a
+    # DIFFERENT action only ("Nhan tin cho Binh so A" for
+    # a call proposal) qualifies NOTHING -- both arms
+    # block. Government is the module's own notion: the
+    # phone run inside the verb's _extract_object span.
+    # No name, phone, number or sentence is hardcoded
+    # here: matching is by roster phone equality, name
+    # mention and verb government only.
     # (2) DESCRIPTOR (residual, read this before relying on
     # it): if no phone turn qualifies any entry, a noun
     # descriptor immediately adjacent to the name ("Minh
@@ -3451,6 +3466,53 @@ def analyze_selection_consistency(text, action, target_names=(),
                 phone_seen = True
                 if len(dup_phones[phone]) == 1:
                     entry = dup_phones[phone][0]
+                    # Action-scoping (round 3): which
+                    # positive callback verbs govern this
+                    # phone run, in the module's own
+                    # _extract_object sense? Governed by
+                    # another action only -> qualifies
+                    # nothing (S05). Governed by the
+                    # proposal action (alone or also by
+                    # another action) or by no positive
+                    # callback verb (standalone identity
+                    # reference) -> may qualify, subject
+                    # to the veto check below.
+                    hruns = _digit_runs(hraws, hfolds, hcids)
+                    hbounds = _clause_bounds(hcids)
+                    hverbs = _find_verbs(hfolds,
+                                         ("call", "message"))
+                    hwrapped = _wrapped_verb_starts(
+                        hfolds, hcids, hverbs)
+                    hdelegated = _delegated_verb_starts(
+                        hfolds, hcids, hverbs)
+                    hquestioned = {
+                        v["start"] for v in hverbs
+                        if _clause_is_question(
+                            hraws, hfolds,
+                            *hbounds[hcids[v["start"]]])}
+                    phone_spans = [
+                        (rs, re_) for (rs, re_, d, _k)
+                        in hruns
+                        if _norm_phone(d) == phone]
+                    gov_actions = set()
+                    for hv in hverbs:
+                        if hv["start"] in hwrapped \
+                                or hv["start"] in hdelegated \
+                                or hv["start"] in hquestioned:
+                            continue
+                        if _verb_polarity(
+                                hv, hraws, hfolds, hcids,
+                                hbounds) != "positive":
+                            continue
+                        hspan = _extract_object(
+                            hv, hraws, hfolds, hcids, hbounds)
+                        if any(hspan[0] <= rs
+                               and re_ <= hspan[1]
+                               for (rs, re_) in phone_spans):
+                            gov_actions.add(hv["action"])
+                    if gov_actions \
+                            and action not in gov_actions:
+                        continue
                     hsel = analyze_action_selection(
                         htext, target_names=target_names,
                         target_phones=(phone,), action=action)
@@ -3569,28 +3631,58 @@ def analyze_selection_consistency(text, action, target_names=(),
         if not explicit and any(_selection_compatible(p)
                                 for p in same_action):
             return {"consistent": True}
-    # H2 helper (C3-G3-01): True iff the CURRENT turn
-    # directly states this proposal as completed -- a past
-    # verb ("da" / "moi" / "vua" before the verb, the past
+    # H2 helper (C3-G3-01, narrowed round 3 per L5
+    # adjudication): True iff the CURRENT turn directly
+    # states this proposal as completed -- a past verb
+    # ("da" / "moi" / "vua" before the verb, the past
     # markers of _verb_polarity) of the proposal action
     # whose object span contains the proposal phone or a
     # name of the proposal person (target names, plus
     # roster names of entries carrying a proposal phone).
-    # "Directly" is structural, not a sentence list: a past
-    # verb introduced in its clause by a content marker
-    # ("la" / "rang" -- "ghi la da goi ...", "noi la da
-    # goi ...") states REPORTED / note content, not the
-    # speaker's own direct completion claim, so it does NOT
-    # count here. That distinction is also what keeps the
-    # pinned train_0672 shape passing (its "da goi" sits
-    # inside "ghi la ..."): if L5 adjudicates that such a
-    # content clause IS a direct completion, drop the
-    # content-marker exception and train_0672 must be
-    # re-pinned -- do not silently keep both readings.
+    # "Directly" is structural, not a sentence list. The
+    # ONLY exception is a past verb inside the content
+    # clause of a NOTE-TAKING verb in the same clause:
+    # the clause's content introducer ("la" / "rang")
+    # must be governed by ghi / ghi chu / ghi chep / chep
+    # / luu / luu tru -- i.e. the note verb's span ends
+    # at the introducer (allowing a trailing "lai": "ghi
+    # lai la ..."). "Ghi chu thi cu ghi la da goi ..."
+    # is excepted (its "da goi" is note content, which is
+    # what keeps the pinned train_0672 shape passing).
+    # Copular "la nguoi da goi" has no verb governing its
+    # "la" at all, and reporting "noi la da goi" is
+    # governed by "noi", not a note verb -- neither is
+    # excepted, so both are direct completions and block.
     # Question / "chua" / wrapper blocked verbs are not
     # past completions and are deliberately excluded: a
     # "chua goi" (not yet called) or a question about a
     # call leaves a history request pending, not done.
+    _NOTE_PATTERNS = [["ghi", "chu"], ["ghi", "chep"],
+                      ["luu", "tru"], ["ghi"], ["chep"],
+                      ["luu"]]
+
+    def _in_note_content_clause(first, verb_start):
+        for k in range(first, verb_start):
+            if folds[k] not in ("la", "rang"):
+                continue
+            i = first
+            while i < k:
+                matched = None
+                for pat in _NOTE_PATTERNS:
+                    if folds[i:i + len(pat)] == pat \
+                            and i + len(pat) <= k:
+                        matched = len(pat)
+                        break
+                if matched is not None:
+                    if i + matched == k or all(
+                            folds[t] == "lai"
+                            for t in range(i + matched, k)):
+                        return True
+                    i += matched
+                else:
+                    i += 1
+        return False
+
     def _current_past_governs_proposal():
         gov_names = set(target_names or ())
         for e in roster:
@@ -3617,8 +3709,7 @@ def analyze_selection_consistency(text, action, target_names=(),
                     1 for k in range(first, _last + 1)
                     if folds[k] == "vua") >= 2:
                 continue
-            if any(folds[k] in ("la", "rang")
-                   for k in range(first, v["start"])):
+            if _in_note_content_clause(first, v["start"]):
                 continue
             span = _extract_object(v, raws, folds, clause_ids,
                                    bounds)
