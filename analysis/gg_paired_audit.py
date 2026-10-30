@@ -22,7 +22,13 @@ Candidate prefix (raw events, proposal excluded):
   history events (origin "history", positions 0..H-1 in turn order)
   + replay events before pos (origin "session", positions H+idx)
   + history user-turn texts as {"kind": "user_turn"} entries.
-Roster = hist_rosters + replay rosters with position < pos.
+Roster = hist_rosters + replay rosters with position < pos,
+merged by id with backfill for missing fields only (see
+_backfill_roster_entry -- the same rule as the runtime
+observer): a later successful read fills a field the first
+successful read lacked, never overwrites a non-empty value,
+never overwrites with an empty value, and a failed read
+neither creates nor backfills an entry.
 Roster entries carry only id/name/phone plus a non-empty
 string ``relation`` (the one structured attribute D1 needs
 for train_0063/0225), taken only from successful reads;
@@ -105,7 +111,63 @@ def _harness_roster_entry(entry):
     return roster_entry
 
 
+def _backfill_roster_entry(existing, new):
+    """Fill ONLY fields that are missing in ``existing`` from ``new``.
+
+    This is the SAME rule as the runtime observer's
+    ``lifemate_observer._backfill_roster_entry`` (the two
+    modules cannot import each other, so the rule is stated
+    in full in both places and must stay identical):
+
+    - Keyed by contact id only; ``id`` itself is never changed.
+    - A field is "missing" when it is absent, None, or "".
+    - A missing field is filled ONLY from a non-empty string
+      value in the later entry. A later empty/missing value
+      never overwrites anything (converse case: a later
+      incomplete read cannot erase a relation the first read
+      supplied).
+    - A field that already holds a non-empty value is NEVER
+      overwritten, even by a different non-empty value: on a
+      non-empty conflict the FIRST successful value is kept,
+      not silently replaced. This follows the lifecycle
+      patch/state rule that a state which does not match is
+      not attached to a different entity: a later read that
+      disagrees with the first successful read does not get
+      to rewrite the first read's evidence.
+    - Only whitelisted fields ever reach this function
+      (``_harness_roster_entry`` drops every other field
+      first), so backfill can never promote a stray string
+      into structured evidence.
+    - Order is preserved: backfilling an existing entry does
+      not move it.
+    """
+    for key, value in new.items():
+        if key == "id":
+            continue
+        old = existing.get(key)
+        if old is None or old == "":
+            if isinstance(value, str) and value.strip():
+                existing[key] = value
+        # else: old is non-empty -- keep first, whatever the
+        # later value is (equal, empty, or conflicting).
+
+
+def _merge_roster_entry(out, roster_entry):
+    """Append ``roster_entry`` to ``out`` or backfill its
+    existing entry for the same id, per _backfill_roster_entry."""
+    for existing in out:
+        if existing["id"] == roster_entry["id"]:
+            _backfill_roster_entry(existing, roster_entry)
+            return
+    out.append(roster_entry)
+
+
 def collect_rosters(results, out):
+    """Collect roster entries from ``results`` into ``out``,
+    merging by id with backfill for missing fields only
+    (see _backfill_roster_entry). A failed read (explicit
+    ok=False) contributes nothing: it neither creates nor
+    backfills an entry."""
     if isinstance(results, dict):
         # A failed read is not roster evidence: an explicit
         # ok=False result contributes nothing, even if its
@@ -120,7 +182,7 @@ def collect_rosters(results, out):
             for entry in contacts:
                 roster_entry = _harness_roster_entry(entry)
                 if roster_entry is not None:
-                    out.append(roster_entry)
+                    _merge_roster_entry(out, roster_entry)
         for key, value in results.items():
             if key != "phone":
                 collect_rosters(value, out)
@@ -280,8 +342,19 @@ def main():
             name = call.get("name", "")
             if is_read(name, kinds) or name == "sys.ask_missing_info":
                 continue
-            rosters = list(hist_rosters) + [e for p, e in replay_rosters
-                                            if p < pos]
+            # Merged roster for this position: history rosters
+            # (already merged by collect_rosters) plus replay
+            # rosters before pos, merged by id with backfill
+            # for missing fields only -- the same rule as the
+            # observer, applied to the replay path too, so a
+            # session search that supplies a relation the
+            # history search lacked backfills it here as well.
+            # Fresh dict copies per position: merging must not
+            # mutate hist_rosters / replay_rosters across pos.
+            rosters = [dict(e) for e in hist_rosters]
+            for p, e in replay_rosters:
+                if p < pos:
+                    _merge_roster_entry(rosters, dict(e))
             priors = list(hist_priors) + [pc for p, pc in replay_priors
                                           if p < pos]
             # Raw prefix: history events (positions as assigned)

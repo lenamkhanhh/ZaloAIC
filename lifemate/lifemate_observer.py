@@ -60,6 +60,23 @@ Record schema (exactly these keys, all JSON-serialisable):
   + 1). This is NOT a unique sequence number: two failed attempts at
   the same evidence position share it, because neither entered the
   prefix. Record order (list order) is the observation order.
+- ``selection_decision``: PRESENT ONLY on a decided record
+  whose adapter notes carry a ``selection_decision`` dict, and
+  then it is a whole copy of that dict (``decision``,
+  ``unknown_kind`` when present, ``active_status``,
+  ``blocked_subtype``, ``mismatch`` when present,
+  ``last_event`` when present -- whatever fields the adapter
+  set, copied verbatim, never normalised or synthesised).
+  Records without a selection_decision in the adapter notes
+  carry NO such key, so their shape is exactly the old 9-key
+  shape: this is the compatible form of the additive copy.
+  Adding the key unconditionally would change every record's
+  schema and break the strict 9-key validator in
+  ``lifemate/shadow_export.py`` (a file owned elsewhere, not
+  edited here); a consumer that wants to accept the new field
+  must update that validator. The field is report-only, like
+  ``eligibility``: it never changes fired/applicable, and the
+  observer stays shadow-only.
 
 Import safety: this module imports ONLY the standard library at
 module level. The coordinator-owned adapter is imported LAZILY
@@ -159,6 +176,57 @@ def _collect_rosters(value, out):
             _collect_rosters(item, out)
 
 
+def _backfill_roster_entry(existing, new):
+    """Fill ONLY fields that are missing in ``existing`` from ``new``.
+
+    Shared backfill rule (same rule as the paired harness, see
+    ``analysis/gg_paired_audit.py:_backfill_roster_entry``):
+
+    - Keyed by contact id only; ``id`` itself is never changed.
+    - A field is "missing" when it is absent, None, or "".
+    - A missing field is filled ONLY from a non-empty string
+      value in the later entry. A later empty/missing value
+      never overwrites anything (converse case: a later
+      incomplete read cannot erase a relation the first read
+      supplied).
+    - A field that already holds a non-empty value is NEVER
+      overwritten, even by a different non-empty value: on a
+      non-empty conflict the FIRST successful value is kept,
+      not silently replaced. This follows the lifecycle
+      patch/state rule that a state which does not match is
+      not attached to a different entity: a later read that
+      disagrees with the first successful read does not get
+      to rewrite the first read's evidence, and the conflict
+      is visible as "first value kept" rather than hidden by
+      an overwrite.
+    - Only whitelisted fields ever reach this function (the
+      collectors drop every other field first), so backfill
+      can never promote a stray string (note, company, ...)
+      into structured evidence.
+    - Order is preserved: backfilling an existing entry does
+      not move it.
+    """
+    for key, value in new.items():
+        if key == "id":
+            continue
+        old = existing.get(key)
+        if old is None or old == "":
+            if isinstance(value, str) and value.strip():
+                existing[key] = value
+        # else: old is non-empty -- keep first, whatever the
+        # later value is (equal, empty, or conflicting).
+
+
+def _merge_roster_entry(out, contact):
+    """Append ``contact`` to ``out`` or backfill its existing
+    entry for the same id, per _backfill_roster_entry."""
+    for existing in out:
+        if existing["id"] == contact["id"]:
+            _backfill_roster_entry(existing, contact)
+            return
+    out.append(contact)
+
+
 def collect_rosters_from_prefix(prefix):
     """Roster evidence from observed contacts.search results in the
     prefix (history + session), in prefix order, deduped by id.
@@ -173,12 +241,17 @@ def collect_rosters_from_prefix(prefix):
     not False). A failed read (ok False / schema_rejected),
     a noop, or a result with no ok True never becomes
     successful evidence, even if it carries a "contacts"
-    list -- a failed result's payload is not a roster.
-    Dedup is first-successful-wins per id: a later
-    successful result for the same id does not backfill
-    attributes the first successful entry lacked."""
+    list -- a failed result's payload is not a roster, and a
+    failed read neither creates nor backfills an entry, so a
+    failed first read does not poison a later successful one
+    and a failed later read cannot erase or rewrite one.
+    Dedup is first-successful-wins per id, WITH backfill for
+    missing fields only (see _backfill_roster_entry): a later
+    successful result for the same id fills a field the first
+    successful entry lacked (in practice ``relation``), but
+    never overwrites a non-empty value and never overwrites
+    with an empty one."""
     out = []
-    seen = set()
     for entry in prefix or []:
         if not isinstance(entry, dict):
             continue
@@ -194,9 +267,7 @@ def collect_rosters_from_prefix(prefix):
         found = []
         _collect_rosters(result, found)
         for contact in found:
-            if contact["id"] not in seen:
-                seen.add(contact["id"])
-                out.append(contact)
+            _merge_roster_entry(out, contact)
     return out
 
 
@@ -406,7 +477,7 @@ class ShadowObserver:
                     "position": position,
                 })
                 return
-            self._append({
+            record = {
                 "proposal_raw": _safe(raw),
                 "proposal_grounded": _safe(grounded),
                 "validation_outcome": "ok",
@@ -424,7 +495,17 @@ class ShadowObserver:
                     (decision.notes or {}).get("eligibility")),
                 "error": None,
                 "position": position,
-            })
+            }
+            # Additive, whole-dict copy of the structured
+            # selection decision, present only when the
+            # adapter actually set one. No old field is
+            # changed, and fired/applicable are untouched:
+            # this is a log field, not a gate input.
+            selection = (decision.notes or {}).get(
+                "selection_decision")
+            if isinstance(selection, dict):
+                record["selection_decision"] = _safe(selection)
+            self._append(record)
         except Exception as exc:  # last-resort guard: never raise
             try:
                 self._append({

@@ -711,8 +711,318 @@ class TestObserverRosterRelationD1(unittest.TestCase):
             {"id": "c_m2", "name": "Minh", "phone": "0903777888",
              "relation": "đối tác"}])
 
+    # ---- R4 backfill (Run 4, this branch) ----
+    # Rule (same in observer and harness): same contact_id,
+    # first successful read missing a field, later successful
+    # read carrying it -> fill ONLY the missing field. Never
+    # overwrite with an empty value, never overwrite a
+    # non-empty value (conflict keeps first), failed reads
+    # neither create nor backfill an entry.
+    def test_collector_backfills_missing_relation(self):
+        missing = [{"id": "c_m1", "name": "Minh",
+                    "phone": "0903111222"},
+                   {"id": "c_m2", "name": "Minh",
+                    "phone": "0903777888",
+                    "relation": "đối tác"}]
+        prefix = [
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": missing},
+             "outcome": "succeeded", "position": 0,
+             "origin": "session"},
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": self.BASE},
+             "outcome": "succeeded", "position": 1,
+             "origin": "session"}]
+        roster = collect_rosters_from_prefix(prefix)
+        # One entry per id, first-seen order kept, and the
+        # missing relation is now present on c_m1.
+        self.assertEqual(roster, [
+            {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "khách hàng"},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+             "relation": "đối tác"}])
+
+    def test_collector_backfill_converse_keeps_relation(self):
+        missing = [{"id": "c_m1", "name": "Minh",
+                    "phone": "0903111222"},
+                   {"id": "c_m2", "name": "Minh",
+                    "phone": "0903777888"}]
+        prefix = [
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": self.BASE},
+             "outcome": "succeeded", "position": 0,
+             "origin": "session"},
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": missing},
+             "outcome": "succeeded", "position": 1,
+             "origin": "session"}]
+        self.assertEqual(collect_rosters_from_prefix(prefix), [
+            {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "khách hàng"},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+             "relation": "đối tác"}])
+
+    def test_collector_backfill_never_overwrites_empty_or_conflict(self):
+        # Later empty / blank relation: no overwrite.
+        for later in ([{"id": "c_m1", "name": "Minh",
+                        "phone": "0903111222", "relation": "   "}],
+                      [{"id": "c_m1", "name": "Minh",
+                        "phone": "0903111222"}]):
+            prefix = [
+                {"tool": "contacts.search", "args": {},
+                 "result": {"ok": True, "contacts": self.BASE},
+                 "outcome": "succeeded", "position": 0,
+                 "origin": "session"},
+                {"tool": "contacts.search", "args": {},
+                 "result": {"ok": True, "contacts": later},
+                 "outcome": "succeeded", "position": 1,
+                 "origin": "session"}]
+            self.assertEqual(
+                collect_rosters_from_prefix(prefix)[0]["relation"],
+                "khách hàng")
+        # Later conflicting non-empty relation: keep first.
+        conflict = [{"id": "c_m1", "name": "Minh",
+                     "phone": "0903111222", "relation": "đối tác"},
+                    {"id": "c_m2", "name": "Minh",
+                     "phone": "0903777888",
+                     "relation": "đối tác"}]
+        prefix = [
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": self.BASE},
+             "outcome": "succeeded", "position": 0,
+             "origin": "session"},
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": conflict},
+             "outcome": "succeeded", "position": 1,
+             "origin": "session"}]
+        self.assertEqual(collect_rosters_from_prefix(prefix), [
+            {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "khách hàng"},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+             "relation": "đối tác"}])
+
+    def test_collector_failed_read_neither_creates_nor_backfills(self):
+        missing = [{"id": "c_m1", "name": "Minh",
+                    "phone": "0903111222"},
+                   {"id": "c_m2", "name": "Minh",
+                    "phone": "0903777888"}]
+        # Failed later read carrying the relation: no backfill.
+        prefix = [
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": missing},
+             "outcome": "succeeded", "position": 0,
+             "origin": "session"},
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": False, "contacts": self.BASE},
+             "outcome": "schema_rejected", "position": 1,
+             "origin": "session"}]
+        self.assertEqual(collect_rosters_from_prefix(prefix), missing)
+        # Failed first read carrying the relation, then a
+        # successful missing read: the failed read created
+        # nothing, so the roster stays missing-relation.
+        prefix = [
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": False, "contacts": self.BASE},
+             "outcome": "schema_rejected", "position": 0,
+             "origin": "session"},
+            {"tool": "contacts.search", "args": {},
+             "result": {"ok": True, "contacts": missing},
+             "outcome": "succeeded", "position": 1,
+             "origin": "session"}]
+        self.assertEqual(collect_rosters_from_prefix(prefix), missing)
+
+    def _run_two_searches_sms(self, searches, contact_id):
+        records, _loop, _env = self._run(
+            searches,
+            outputs=[self.SEARCH, self.SEARCH,
+                     self._sms(contact_id), self.STOP])
+        sms_records = [r for r in records
+                       if isinstance(r["proposal_grounded"], dict)
+                       and r["proposal_grounded"].get("name")
+                       == "sms.send"]
+        self.assertEqual(len(sms_records), 1)
+        return sms_records[0]
+
+    def test_runtime_backfill_first_missing_later_with_relation(self):
+        # Exact R3 final-review item 2 repro: on 99779d8 this
+        # blocked via selection_mismatch even after the
+        # complete second read. With backfill it must pass
+        # for the correct person and still block the wrong one.
+        missing = [{"id": "c_m1", "name": "Minh",
+                    "phone": "0903111222"},
+                   {"id": "c_m2", "name": "Minh",
+                    "phone": "0903777888",
+                    "relation": "đối tác"}]
+        passed = self._run_two_searches_sms(
+            [(missing, True), (self.BASE, True)], "c_m1")
+        self._assert_passed(passed)
+        blocked = self._run_two_searches_sms(
+            [(missing, True), (self.BASE, True)], "c_m2")
+        self._assert_blocked_via_selection(blocked)
+
+    def test_runtime_backfill_converse_and_failed_paths(self):
+        missing = [{"id": "c_m1", "name": "Minh",
+                    "phone": "0903111222"},
+                   {"id": "c_m2", "name": "Minh",
+                    "phone": "0903777888"}]
+        # Converse: full first, missing later -> still passes.
+        rec = self._run_two_searches_sms(
+            [(self.BASE, True), (missing, True)], "c_m1")
+        self._assert_passed(rec)
+        # Failed first does not poison a later successful full read.
+        rec = self._run_two_searches_sms(
+            [(self.BASE, False), (self.BASE, True)], "c_m1")
+        self._assert_passed(rec)
+        # Failed later does not backfill: missing first, failed
+        # full later -> still blocks both (no relation evidence).
+        rec = self._run_two_searches_sms(
+            [(missing, True), (self.BASE, False)], "c_m1")
+        self._assert_blocked_via_selection(rec)
+
+    def test_runtime_backfill_conflict_keeps_first(self):
+        conflict = [{"id": "c_m1", "name": "Minh",
+                     "phone": "0903111222", "relation": "đối tác"},
+                    {"id": "c_m2", "name": "Minh",
+                     "phone": "0903777888",
+                     "relation": "đối tác"}]
+        # If the later conflicting relation overwrote the first,
+        # c_m1 would block (duplicate đối tác). Keeping first
+        # means c_m1 still passes as khách hàng.
+        rec = self._run_two_searches_sms(
+            [(self.BASE, True), (conflict, True)], "c_m1")
+        self._assert_passed(rec)
+
 
 _SENTINEL = object()
+
+
+class TestObserverSelectionDecisionR4(unittest.TestCase):
+    """R4: whole notes.selection_decision dict copied into the
+    observer record, additively, shadow-only.
+
+    The Vy scenario is the R3 final-review item 8 H2-S11 path
+    (history positive turn, then a search supplying the roster,
+    then a phone.call proposal under a question / completion
+    current text), run on a REAL AgentLoop. No old field is
+    changed: fired/applicable, adjustments and eligibility are
+    asserted alongside the new field, and OFF vs ON behaviour
+    (submitted calls, state hash) must be identical."""
+
+    POSITIVE = "Gọi số 0903111222 giúp tôi"
+    QUESTION = "Tôi đã gọi số 0903111222 chưa?"
+    COMPLETED = "Tôi đã gọi số 0903111222 rồi"
+
+    def _run_vy(self, current, shadow=True):
+        class VyEnv:
+            def __init__(self):
+                self.calls = []
+
+            def validate(self, name, args):
+                return {"ok": True}
+
+            def call(self, name, args):
+                self.calls.append({"name": name,
+                                   "arguments": dict(args)})
+                if name == "contacts.search":
+                    return {"ok": True, "contacts": [
+                        {"id": "c_vy", "name": "Vy",
+                         "phone": "0903111222"}]}
+                return {"ok": True}
+
+            def submission_line(self):
+                blob = json.dumps(self.calls, sort_keys=True,
+                                  ensure_ascii=False)
+                return {"tool_calls": [dict(c) for c in self.calls],
+                        "state_hash": hashlib.sha256(
+                            blob.encode()).hexdigest()}
+
+        cfg = PipelineConfig(shadow_observer=shadow)
+        loop = AgentLoop(cfg, TOOLS)
+        env = VyEnv()
+        sub = loop.run(
+            FakeSample(history=[FakeTurn(
+                "user", audio_text=self.POSITIVE)]),
+            current, env, FakeGenerator([
+                {"name": "contacts.search",
+                 "arguments": {"query": "Vy"}},
+                {"name": "phone.call",
+                 "arguments": {"contact_id": "c_vy"}},
+                STOP]))
+        records = [dict(r) for r in loop.observer.records]
+        if not shadow:
+            # Flag OFF: the loop skips every observer call,
+            # so there are no records at all by design.
+            self.assertEqual(records, [])
+            return None, sub, env
+        call_records = [r for r in records
+                        if isinstance(r["proposal_grounded"], dict)
+                        and r["proposal_grounded"].get("name")
+                        == "phone.call"]
+        self.assertEqual(len(call_records), 1)
+        return call_records[0], sub, env
+
+    def test_unknown_pending_selection_decision_copied_whole(self):
+        rec, _sub, _env = self._run_vy(self.QUESTION)
+        self.assertIsNone(rec["error"])
+        self.assertTrue(rec["candidate_decision"]["fired"])
+        self.assertTrue(any(
+            a.get("mechanism") == "unknown_pending"
+            for a in rec["adjustments"]), rec["adjustments"])
+        sel = rec.get("selection_decision")
+        self.assertIsInstance(sel, dict)
+        # Whole dict, verbatim -- not just fired/applicable,
+        # and not normalised: unknown_kind and last_event are
+        # the fields the old record lost.
+        self.assertEqual(sel["decision"], "unknown_pending")
+        self.assertEqual(sel["unknown_kind"], "question_after_positive")
+        self.assertEqual(sel["active_status"], "pending_unproven")
+        self.assertEqual(sel["blocked_subtype"], "question")
+        self.assertEqual(sel["mismatch"], "unknown_pending")
+        self.assertEqual(sel["last_event"],
+                         {"kind": "positive_request",
+                          "turn_position": 0,
+                          "evidence": "history_text"})
+        # JSON round-trip: the field survives serialisation
+        # exactly, as an export would re-read it.
+        reread = json.loads(json.dumps(rec, ensure_ascii=False))
+        self.assertEqual(reread, rec)
+        self.assertEqual(reread["selection_decision"], sel)
+
+    def test_mismatch_selection_decision_copied_without_synthesis(self):
+        rec, _sub, _env = self._run_vy(self.COMPLETED)
+        self.assertTrue(rec["candidate_decision"]["fired"])
+        sel = rec.get("selection_decision")
+        self.assertIsInstance(sel, dict)
+        self.assertEqual(sel["decision"], "mismatch")
+        self.assertEqual(sel["active_status"], "discharged")
+        self.assertEqual(sel["blocked_subtype"], "completion")
+        self.assertEqual(sel["mismatch"], "blocked_request")
+        self.assertEqual(sel["last_event"],
+                         {"kind": "positive_request",
+                          "turn_position": 0,
+                          "evidence": "history_text"})
+        # The adapter's mismatch dict has NO unknown_kind;
+        # the copy must not invent one.
+        self.assertNotIn("unknown_kind", sel)
+
+    def test_records_without_selection_decision_keep_old_shape(self):
+        on = run_case([SEARCH, CALL_X, STOP], shadow=True)
+        for rec in on["records"]:
+            self.assertNotIn("selection_decision", rec)
+            self.assertEqual(set(rec.keys()), SCHEMA_KEYS)
+
+    def test_selection_decision_does_not_change_behaviour(self):
+        on_rec, on_sub, on_env = self._run_vy(self.QUESTION, shadow=True)
+        off_rec, off_sub, off_env = self._run_vy(self.QUESTION,
+                                                  shadow=False)
+        # Shadow ON vs OFF: same submitted calls, same state
+        # hash, same env calls. The new log field changes
+        # nothing the agent does.
+        self.assertEqual(on_sub["tool_calls"], off_sub["tool_calls"])
+        self.assertEqual(on_sub["state_hash"], off_sub["state_hash"])
+        self.assertEqual([dict(c) for c in on_env.calls],
+                         [dict(c) for c in off_env.calls])
+        self.assertIn("selection_decision", on_rec)
 
 
 # ---------------------------------------------------------------------------
