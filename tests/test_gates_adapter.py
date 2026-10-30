@@ -2679,23 +2679,34 @@ class TestSelectionRoundAdapter(unittest.TestCase):
         d = self.dec("Gọi lại cho Bình", self.A, self.BASE)
         self.assertFalse(d.fired)
 
-    def test_duplicate_qualified_in_history_passes(self):
-        # Paired-gold shape (train_0063/0225): the history
-        # turn qualified the name ("Minh khach hang"), so
-        # the current text's bare name is not an ambiguity
-        # the current text creates -- the check abstains.
+    def test_duplicate_descriptor_only_in_history_blocks_both_arms(self):
+        # PIN_CHANGED (check-P1 re-pin on round 5; the old name
+        # test_duplicate_qualified_in_history_passes is retired
+        # because it misled: it never asserted a proven entry,
+        # only "not fired", and under path (A) even "not fired"
+        # is false). Contract: C3-G1 RUN2 addendum §2.3 and the
+        # L5/G5 joint adjudication (Q1/Q2): descriptor-only =>
+        # AMBIGUOUS, qualifies NOTHING, blocks both arms. The
+        # roster here has only id/name/phone (no "khach hang"
+        # role field), and the history turn carries no phone,
+        # no D2 explicit binding, no D3 succeeded call and no
+        # D4 confirmation, so no D1-D4 evidence upgrades the
+        # descriptor. The paired-gold shape (train_0063/0225)
+        # is therefore not a pass proof under the round-4/5
+        # rule; it is a duplicate ambiguity that must fire.
         dup = [{"id": "c_m1", "name": "Minh",
                 "phone": "0903111222"},
                {"id": "c_m2", "name": "Minh",
                 "phone": "0903777888"}]
         prefix = [user_turn(
             "Tìm số của Minh khách hàng dùm tôi", 0)]
-        d = decide({"name": "sms.send",
-                    "arguments": {"contact_id": "c_m1"}},
-                   prefix, dup, "Nhắn tin cho Minh", KINDS,
-                   proposal_position=1)
-        self.assertFalse(d.baseline_fired)
-        self.assertFalse(d.fired)
+        for contact_id in ("c_m1", "c_m2"):
+            d = decide({"name": "sms.send",
+                        "arguments": {"contact_id": contact_id}},
+                       prefix, dup, "Nhắn tin cho Minh", KINDS,
+                       proposal_position=1)
+            self.assertFalse(d.baseline_fired)
+            self.assert_fired_via(d, "selection_mismatch")
 
     def test_duplicate_unqualified_in_history_fires(self):
         # Same duplicate, but the history turn never
