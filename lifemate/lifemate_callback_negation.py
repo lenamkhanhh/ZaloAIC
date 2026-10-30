@@ -3549,7 +3549,7 @@ def analyze_selection_consistency(text, action, target_names=(),
                 all_roster_phones.add(ph)
         phone_qualified = None
         phone_seen = False
-        descriptor_seen = False
+        descriptor_phrases = []
         for htext in (history_texts or ()):
             if not isinstance(htext, str) or not htext.strip():
                 continue
@@ -3750,25 +3750,84 @@ def analyze_selection_consistency(text, action, target_names=(),
                         phone_qualified = {entry}
                 continue
             for (ns, ne) in mentions:
-                before = hfolds[ns - 1] if ns > 0 else None
-                after = hfolds[ne] if ne < len(hfolds) \
-                    else None
-                if _is_noun_descriptor(before) \
-                        or _is_noun_descriptor(after):
-                    descriptor_seen = True
-                    break
+                # Collect the noun-descriptor phrase adjacent
+                # to this name mention (before and after),
+                # for the D1 structured-attribute check at
+                # the end. Tokens are folded, contiguous,
+                # capped at 4 so a following clause cannot
+                # bleed into the phrase.
+                after_seq = []
+                j = ne
+                while j < len(hfolds) \
+                        and len(after_seq) < 4 \
+                        and _is_noun_descriptor(hfolds[j]):
+                    after_seq.append(hfolds[j])
+                    j += 1
+                if after_seq:
+                    descriptor_phrases.append(after_seq)
+                before_seq = []
+                j = ns - 1
+                while j >= 0 and len(before_seq) < 4 \
+                        and _is_noun_descriptor(hfolds[j]):
+                    before_seq.insert(0, hfolds[j])
+                    j -= 1
+                if before_seq:
+                    descriptor_phrases.append(before_seq)
         if phone_qualified is not None:
             return set(phone_qualified)
         if phone_seen:
             return set()
-        if descriptor_seen:
-            # ROUND 4 (see (2) above): descriptor-only
-            # qualifies NOTHING. Returning all duplicates
-            # here was the round-3 false-pass residual;
-            # descriptor-only evidence must not pass all
-            # duplicates. The old pinned "Minh khach
-            # hang" pass therefore fails until L5/G5
-            # re-pin it -- reported, not hidden.
+        if descriptor_phrases:
+            # D1 (paired-dev regressions train_0063 /
+            # train_0225): a descriptor qualifies an entry
+            # ONLY when it matches a STRUCTURED roster
+            # attribute of exactly one duplicate. The
+            # qualifier phrase is matched against every
+            # roster field other than id/name/phone
+            # (e.g. relation), folded, as a contiguous
+            # subsequence in either direction -- so
+            # "khach hang" matches a relation "khach
+            # hang" and also a longer relation containing
+            # it, but a trailing politeness word cannot
+            # create a match by itself. If the attribute
+            # is missing for all duplicates, matches
+            # several duplicates, or matches none, the
+            # descriptor qualifies NOTHING (round-4 rule
+            # preserved; the re-pinned Minh fixture has
+            # no structured attribute and still blocks
+            # both arms). This never restores the old
+            # shortcut "descriptor => all duplicates
+            # pass": at most one entry is qualified, and
+            # only by an explicit structured match.
+            def _is_subseq(short, long_):
+                if not short or len(short) > len(long_):
+                    return False
+                return any(
+                    long_[k:k + len(short)] == short
+                    for k in range(len(long_) - len(short) + 1))
+
+            matched_entries = set()
+            for i in idxs:
+                attr_seqs = []
+                for key, val in (roster[i] or {}).items():
+                    if key in ("id", "name", "phone"):
+                        continue
+                    if not isinstance(val, str) or not val.strip():
+                        continue
+                    seq = [_fold(t) for t in
+                           re.findall(r"[^\W_]+", _nfc(val))]
+                    if seq:
+                        attr_seqs.append(seq)
+                for phrase in descriptor_phrases:
+                    if any(_is_subseq(phrase, seq)
+                           or _is_subseq(seq, phrase)
+                           for seq in attr_seqs):
+                        matched_entries.add(i)
+                        break
+            if len(matched_entries) == 1:
+                return set(matched_entries)
+            # ROUND 4 fallback: descriptor-only with no
+            # unique structured match qualifies NOTHING.
             return set()
         return set()
 
