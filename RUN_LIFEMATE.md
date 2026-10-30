@@ -1,3 +1,5 @@
+> **Mốc tài liệu:** Nội dung dưới đây thuộc các vòng trước và giữ lại để tái lập. Trước khi chạy hoặc chọn cấu hình, đọc [trạng thái hiện tại](docs/STATUS.md); không dùng số cũ làm kết quả của commit mới.
+
 # RUN_LIFEMATE — Baseline LifeMate chạy được (Zalo AI Challenge 2026)
 
 > Tài liệu tự chứa. Đọc file này là đủ để chạy lại toàn bộ pipeline từ

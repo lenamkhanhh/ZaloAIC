@@ -65,8 +65,10 @@ __all__ = [
     "GroundingResult",
     "MoneyResult",
     "NumberMoneyParser",
+    "PhoneResult",
     "RelativeDateResolver",
     "ground_tool_call",
+    "normalize_phone",
     "tone_digit",
     "tone_sequence",
     "validate_submission",
@@ -148,11 +150,20 @@ def _unit_value(tok: str, variant: bool = False) -> int | None:
 def _parse_small(toks: list[str]) -> Decimal | None:
     """Parse a <10000 group without big units (trăm/mươi/mười/linh/lẻ).
 
+    A single digit token is a valid group coefficient ("3" in
+    "3 triệu", "500" in "500 nghìn"); it also feeds the existing
+    trăm/mươi/rưỡi recursion, so "3 trăm" parses as 300. Any other
+    digit-containing sequence returns None (fail-closed, never fused
+    into a guessed value -- in particular a decimal split such as
+    ["1", "5"] from "1,5" is not a small group).
+
     Returns None for unstructured token sequences (caller treats that as
     "not a number expression", never as zero).
     """
     if not toks:
         return Decimal(0)
+    if len(toks) == 1 and toks[0].isdigit():
+        return Decimal(int(toks[0]))
     if toks[0] in ("linh", "lẻ"):
         return _parse_small(toks[1:])
     if toks == ["rưỡi"] or toks == ["nửa"] or toks == ["một", "nửa"]:
@@ -209,8 +220,9 @@ class MoneyResult:
 class NumberMoneyParser:
     """Group-based Vietnamese number/money parsing (stdlib + Decimal).
 
-    ``parse_number_words`` handles word-only spans ("mot tram nam muoi
-    nghin" -> 150000). ``parse_money`` additionally handles digit amounts
+    ``parse_number_words`` handles word and digit+word spans ("mot tram
+    nam muoi nghin" -> 150000; "3 trieu 500 nghin" -> 3500000).
+    ``parse_money`` additionally handles digit amounts
     ("50 nghin", "1.234.567,89", "1,5 trieu") with the round-4 separator
     rules. Both return None / ambiguous instead of guessing on unstructured
     input.
@@ -219,10 +231,15 @@ class NumberMoneyParser:
     def extract_number_span(self, text: str) -> list[str] | None:
         """Longest contiguous span of number-related tokens, or None.
 
-        Guards (same exclusions as the E-asr-1 audit): a number token right
-        after "thang" is a month name ("thang mot" = January); right after
-        "thu" it is a weekday ("thu hai" = Monday); "nam" before
-        "nay"/"sau"/"truoc" is the word "year", not five.
+        A span token is a number word or a digit token: digit
+        coefficients must stay inside the span, otherwise
+        "3 triệu 500 nghìn" collapses to the bare ["triệu"] span and
+        parses as 1,000,000. Digit tokens get the same guards as words
+        (same exclusions as the E-asr-1 audit): a number token right
+        after "thang" is a month name ("thang mot" = January, and
+        likewise "thang 1"); right after "thu" it is a weekday
+        ("thu hai" = Monday); "nam" before "nay"/"sau"/"truoc" is the
+        word "year", not five.
         """
         toks = _tokens(text)
         best: list[str] = []
@@ -234,7 +251,7 @@ class NumberMoneyParser:
                 tok = ""  # year reading, not the number five
             if prev in ("tháng", "thứ"):
                 tok = ""
-            if tok and tok in _NUMBER_TOKENS:
+            if tok and (tok in _NUMBER_TOKENS or tok.isdigit()):
                 cur.append(tok)
             else:
                 if len(cur) > len(best):
@@ -393,6 +410,106 @@ class NumberMoneyParser:
 
 
 # --------------------------------------------------------------------------
+# 1b. Phone numbers: spoken / grouped digits, never guessed from a roster
+# --------------------------------------------------------------------------
+
+@dataclass
+class PhoneResult:
+    value: str | None       # normalized 10-digit number, only when full
+    digits: str = ""        # folded digit string found (may be incomplete)
+    kind: str = ""          # full | incomplete | invalid | none
+    reason: str = ""
+
+
+# Single-digit words as spoken in a phone number. Variant words
+# (mot/tu/lam) are only read as digits inside a contiguous digit
+# sequence here; they are NOT added to the general number parser.
+_PHONE_DIGIT_WORDS = {
+    **_DIGIT_WORDS,
+    "mốt": 1, "tư": 4, "lăm": 5,
+}
+
+
+def _parse_number_token_list(toks: list[str]) -> int | None:
+    """Parse a small number from digit or word tokens, or None.
+
+    A single digit token ("8", "30") parses directly; word tokens
+    ("tám", "mười hai", "hai mươi lăm") go through _parse_small.
+    Mixed digit/word lists and unstructured lists return None.
+    """
+    if not toks:
+        return None
+    if len(toks) == 1 and toks[0].isdigit():
+        return int(toks[0])
+    if all(t in _NUMBER_TOKENS for t in toks):
+        val = _parse_small(toks)
+        if val is not None and val == val.to_integral_value():
+            return int(val)
+    return None
+
+
+def normalize_phone(text: str) -> PhoneResult:
+    """Normalize a phone slot value, without ever guessing a full number.
+
+    Accepts digit strings with space / hyphen / dot separators
+    ("0903 111 222", "0903-111-222"), spoken digit words
+    ("không chín không ba một một một hai hai hai"), and the +84
+    country prefix folded exactly as the gates' _norm_phone does
+    (11 digits starting with 84 -> 0 + rest). The longest contiguous
+    digit sequence in the input wins; callers should pass the phone
+    span, not a whole transcript with several numbers, because
+    recognizing a number is NOT proof the user meant that number --
+    that decision belongs to Group 1/3, never to this function.
+
+    Incomplete numbers are the point, not a corner: a tail
+    ("đuôi 222"), a short group, or a 9-digit string without the
+    leading zero returns kind="incomplete" with value=None, so the
+    caller must ask instead of completing the number from a roster
+    or by padding. A 10-digit string not starting with 0, or a string
+    longer than 10 digits after folding, is "invalid", also with
+    value=None.
+    """
+    s = _nfc_lower(text)
+    if not s:
+        return PhoneResult(None, kind="none", reason="empty")
+    toks = _tokens(s)
+    best = ""
+    cur = ""
+    for tok in toks:
+        if tok.isdigit():
+            cur += tok
+        elif tok in _PHONE_DIGIT_WORDS:
+            cur += str(_PHONE_DIGIT_WORDS[tok])
+        else:
+            if len(cur) > len(best):
+                best = cur
+            cur = ""
+    if len(cur) > len(best):
+        best = cur
+    # A lone digit (e.g. "không" as negation in "không có số") is not
+    # a phone sequence at all; only sequences of 2+ digits count.
+    if len(best) < 2:
+        best = ""
+    digits = best
+    folded = False
+    if digits.startswith("84") and len(digits) == 11:
+        digits = "0" + digits[2:]
+        folded = True
+    if not digits:
+        return PhoneResult(None, kind="none", reason="no_digits")
+    if len(digits) == 10 and digits[0] == "0":
+        return PhoneResult(digits, digits=digits, kind="full",
+                           reason="country_prefix_folded" if folded
+                           else "full_number")
+    if len(digits) < 10:
+        reason = "tail_incomplete" if "đuôi" in s else "incomplete_number"
+        return PhoneResult(None, digits=digits, kind="incomplete",
+                           reason=reason)
+    reason = "too_long" if len(digits) > 10 else "not_starting_zero"
+    return PhoneResult(None, digits=digits, kind="invalid", reason=reason)
+
+
+# --------------------------------------------------------------------------
 # 2. Relative dates anchored to context_time (never wall-clock)
 # --------------------------------------------------------------------------
 
@@ -493,6 +610,27 @@ class RelativeDateResolver:
             delta = n if m.group(2) == "nữa" else -n
             return DateResolution(self.anchor_date + timedelta(days=delta),
                                   kind="day_offset", raw=m.group(0))
+        # Word offsets: "hai ngay nua", "muoi hai ngay truoc",
+        # "hai muoi lam ngay nua". Same mechanism as the digit case,
+        # with the number read as words; a word number is not a
+        # different kind of date, so it must not fall through to none.
+        for i, tok in enumerate(toks):
+            if tok != "ngày" or i + 1 >= len(toks):
+                continue
+            if toks[i + 1] not in ("nữa", "trước"):
+                continue
+            j = i - 1
+            num_toks: list[str] = []
+            while j >= 0 and toks[j] in _NUMBER_TOKENS:
+                num_toks.insert(0, toks[j])
+                j -= 1
+            n = _parse_number_token_list(num_toks)
+            if n is not None and 1 <= n <= 365:
+                delta = n if toks[i + 1] == "nữa" else -n
+                return DateResolution(
+                    self.anchor_date + timedelta(days=delta),
+                    kind="day_offset",
+                    raw=" ".join(num_toks + ["ngày", toks[i + 1]]))
         # Weekday phrases (longest first): "thu hai tuan sau" beats "thu hai".
         # "X tuan sau" = the weekday of NEXT week: Monday of the anchor's
         # week + 7 days + weekday offset (NOT next-occurrence + 7, which
@@ -685,6 +823,7 @@ def validate_submission(calls: list[dict], read_tool_names: set[str]) -> list[st
 # and never invents a missing hour, id, or amount.
 
 _MONEY_KEYS = {"amount"}
+_PHONE_KEYS = {"phone_number", "phone"}
 _DATE_KEYS = {"date"}
 _DATETIME_KEYS = {"time", "start", "end"}
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
@@ -722,16 +861,57 @@ def _extract_hour(text: str) -> tuple[int, int] | None:
 
     Only ever reads the hour FROM THE STRING (evidence), never from
     context_time or the machine clock. "8 gio" -> (8, 0); "8 gio 30" ->
-    (8, 30); "19:00" -> (19, 0).
+    (8, 30); "19:00" -> (19, 0); "tam gio" -> (8, 0);
+    "tam gio ruoi" and "8 gio ruoi" -> (8, 30);
+    "chin gio kem muoi" -> (8, 50). A string with no hour at all
+    (e.g. "ngay mai", "sang mai") returns None, so the caller asks
+    for the hour instead of filling it from context.
     """
-    m = _HOUR_RE.search(text or "")
-    if not m:
+    s = text or ""
+    m = _HOUR_RE.search(s)
+    if m:
+        if m.group(1) is not None:
+            h, mi = int(m.group(1)), int(m.group(2) or 0)
+            # "8 gio ruoi" is 8:30, not 8:00: the digit regex alone
+            # would drop the half-hour marker.
+            tail = s[m.end():]
+            if mi == 0 and re.match(r"\s*rưỡi\b", _nfc_lower(tail)):
+                mi = 30
+        else:
+            h, mi = int(m.group(3)), int(m.group(4))
+        if h > 23 or mi > 59:
+            return None
+        return (h, mi)
+    # Word hours: find "giờ", read the number before it as the hour
+    # and the number (or "rưỡi"/"kém") after it as the minute.
+    toks = _tokens(s)
+    if "giờ" not in toks:
         return None
-    if m.group(1) is not None:
-        h, mi = int(m.group(1)), int(m.group(2) or 0)
-    else:
-        h, mi = int(m.group(3)), int(m.group(4))
-    if h > 23 or mi > 59:
+    i = toks.index("giờ")
+    j = i - 1
+    hour_toks: list[str] = []
+    while j >= 0 and toks[j] in _NUMBER_TOKENS:
+        hour_toks.insert(0, toks[j])
+        j -= 1
+    h = _parse_number_token_list(hour_toks)
+    if h is None or h > 23:
+        return None
+    rest = toks[i + 1:]
+    if not rest:
+        return (h, 0)
+    if rest[0] == "rưỡi":
+        return (h, 30)
+    if rest[0] == "kém":
+        num = _parse_number_token_list(
+            [t for t in rest[1:] if t != "phút"][:3])
+        if num is None or not 1 <= num <= 59 or h == 0:
+            return None
+        return (h - 1, 60 - num)
+    min_toks = [t for t in rest if t != "phút"][:3]
+    mi = _parse_number_token_list(min_toks)
+    if mi is None:
+        return (h, 0) if rest == ["phút"] else None
+    if mi > 59:
         return None
     return (h, mi)
 
@@ -756,6 +936,11 @@ def ground_tool_call(call: dict, sample_context: dict | None = None,
       replaced by int when integral (gold amounts are 146/146 int), float
       otherwise. Unparseable strings -> NEEDS_ASK (never submit a bad
       amount); numbers pass through.
+    - Phones ("phone_number"/"phone"): grouped, hyphenated, spaced
+      or spoken digit values are normalized to a 10-digit number
+      (see normalize_phone); incomplete, tail or invalid values ->
+      NEEDS_ASK, never completed from a roster. Normalizing a value
+      does NOT authorize the action -- that is Group 1/3's decision.
     - Dates ("date"): relative expressions resolve to ISO dates via the
       sample's current_time. Week/month-only references and unresolvable
       strings -> NEEDS_ASK.
@@ -804,6 +989,27 @@ def ground_tool_call(call: dict, sample_context: dict | None = None,
             else:
                 needs.append(key)
                 notes.append(f"{key}: unparseable {v!r}, needs clarification")
+
+    # Phones ("phone_number"/"phone"): normalize the VALUE only.
+    # Normalizing a number never authorizes calling it -- whether
+    # the user actually requested that action is Group 1/3's
+    # decision, and this adapter never looks at a roster to fill
+    # an incomplete number. A full number is written back in
+    # normalized form; anything else is NEEDS_ASK.
+    for key in _PHONE_KEYS:
+        if key not in args or not isinstance(args[key], str):
+            continue
+        v = args[key]
+        r = normalize_phone(v)
+        if r.kind == "full":
+            if r.value != v:
+                args[key] = r.value
+                changed = True
+                notes.append(f"{key}: {v!r} -> {r.value}")
+        else:
+            needs.append(f"{key}:{r.kind}")
+            notes.append(f"{key}: {r.kind} ({r.reason}) for {v!r}; "
+                         f"ask for the full number, do not guess")
 
     ctx_time = (sample_context or {}).get("current_time")
     for key in _DATE_KEYS | _DATETIME_KEYS:

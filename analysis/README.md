@@ -1,3 +1,5 @@
+> **Mốc tài liệu:** Nội dung dưới đây thuộc các vòng trước và giữ lại để tái lập. Trước khi chạy hoặc chọn cấu hình, đọc [trạng thái hiện tại](../docs/STATUS.md); không dùng số cũ làm kết quả của commit mới.
+
 # analysis/ — Tài liệu chẩn đoán LifeMate (chỉ đọc, không phải code)
 
 Mục riêng cho việc đối chiếu giữa bên phân tích và bên code (Codex).

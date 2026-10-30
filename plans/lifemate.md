@@ -1,3 +1,5 @@
+> **Mốc tài liệu:** Nội dung dưới đây thuộc các vòng trước và giữ lại để tái lập. Trước khi chạy hoặc chọn cấu hình, đọc [trạng thái hiện tại](../docs/STATUS.md); không dùng số cũ làm kết quả của commit mới.
+
 # Kế hoạch thi đấu — LifeMate
 
 > Mọi nâng cấp chỉ giữ lại nếu cải thiện **điểm chính thức**

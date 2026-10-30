@@ -10,11 +10,13 @@ import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_provenance import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_provenance import (  # noqa: E402
     parse_number_words, find_number_spans, parse_relative_datetime,
     find_datetime_spans, split_correction_segments, Evidence, Verdict,
     prove_argument, prove_call)
+from lifemate.lifemate_evidence_lifecycle import (  # noqa: E402
+    EvidenceLedger, field_value_record, make_prover_validity)
 
 ANCHOR = datetime(2026, 11, 18, 21, 0,
                   tzinfo=timezone(timedelta(hours=7)))
@@ -85,6 +87,11 @@ class TestNumberWords(unittest.TestCase):
         # ISO dates must not be mistaken for numbers.
         spans = find_number_spans("ngày 2026-11-14")
         self.assertEqual([v for _, v in spans], [])
+        # Fix round: phone numbers and identifier digits are not amounts.
+        spans = find_number_spans("gọi cho Minh số 0914061230 nhé")
+        self.assertNotIn(914061230, [v for _, v in spans])
+        spans = find_number_spans("mã đơn c_9526 giao rồi")
+        self.assertNotIn(9526, [v for _, v in spans])
 
 
 class TestRelativeDate(unittest.TestCase):
@@ -208,19 +215,59 @@ class TestProver(unittest.TestCase):
 
     def test_observation_same_app_vs_cross_app(self):
         # Same-app observation proves; cross-app is UNPROVEN (flagged).
+        # Observations are (tool, field, value, entity) quadruples.
         ev = Evidence(
             current_text="dời lịch",
-            history_observations=[("calendar.list_events",
-                                   "2026-11-10T15:00:00+07:00")],
+            turn_observations=[("calendar.list_events", "start",
+                                "2026-11-10T15:00:00+07:00", "evt_02")],
             anchor=ANCHOR)
         v = prove_argument("start", "2026-11-10T15:00:00+07:00",
-                           "calendar.update_event", ev)
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_02"})
         self.assertEqual(v.status, "PROVEN")
         self.assertEqual(v.rule, "observation")
         v = prove_argument("time", "2026-11-10T15:00:00+07:00",
                            "alarm.create", ev)
         self.assertEqual(v.status, "UNPROVEN")
         self.assertEqual(v.rule, "observation_cross_app")
+
+    def test_observation_field_must_match_slot(self):
+        # Fix round D: a balance field never proves an amount.
+        ev = Evidence(
+            current_text="chuyển tiền cho Minh",
+            turn_observations=[("banking.get_balance", "balance",
+                                500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+        ev2 = Evidence(
+            current_text="chuyển tiền cho Minh",
+            turn_observations=[("banking.get_balance", "amount",
+                                500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2)
+        self.assertEqual(v.status, "PROVEN")
+
+    def test_observation_untyped_entries_never_prove(self):
+        # Legacy (tool, scalar) pairs and plain scalars carry no field
+        # (and plain scalars no app): UNKNOWN source, never PROVEN.
+        ev = Evidence(
+            current_text="dời lịch",
+            turn_observations=[("calendar.list_events",
+                                "2026-11-10T15:00:00+07:00")],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-10T15:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_02"})
+        self.assertEqual(v.status, "UNPROVEN")
+        ev2 = Evidence(
+            current_text="dời lịch",
+            turn_observations=["2026-11-10T15:00:00+07:00"],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-10T15:00:00+07:00",
+                           "calendar.update_event", ev2,
+                           call_args={"event_id": "evt_02"})
+        self.assertEqual(v.status, "UNPROVEN")
 
     def test_offset_and_duration(self):
         # "dời muộn hơn nửa tiếng": obs event 15:00-16:00 -> 15:30-16:30.
@@ -249,8 +296,10 @@ class TestProver(unittest.TestCase):
         v = prove_argument("start", "2026-11-10T15:30:00+07:00",
                            "calendar.update_event", ev2, call_args={})
         self.assertEqual(v.status, "UNPROVEN")
-        ev = Evidence(current_text="xóa cái sớm nhất giúp tôi",
-                      history_observations=["2026-11-14T06:15:00+07:00"],
+        ev = Evidence(current_text="xóa cái sớm nhất của Minh giúp tôi",
+                      turn_observations=[("alarm.list_alarms", "time",
+                                          "2026-11-14T06:15:00+07:00",
+                                          None)],
                       rosters=[{"id": "c_05", "name": "Minh"}],
                       anchor=ANCHOR)
         v = prove_argument("time", "2026-11-14T06:15:00+07:00",
@@ -262,33 +311,92 @@ class TestProver(unittest.TestCase):
         self.assertEqual(v.rule, "roster")
         v = prove_argument("contact_id", "c_99", "sms.send", ev)
         self.assertEqual(v.status, "UNPROVEN")
+        # Roster without an exclusive mention proves existence only.
+        ev2 = Evidence(current_text="xóa cái sớm nhất giúp tôi",
+                       rosters=[{"id": "c_05", "name": "Minh"}],
+                       anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_05", "sms.send", ev2)
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertEqual(v.rule, "roster_no_intent")
 
     def test_history_reference_unique_vs_ambiguous(self):
+        # Succeeded history calls only: legacy 2-tuples (unknown
+        # outcome) do not prove.
         ev = Evidence(
             current_text="chuyển số tiền cũ cho Minh",
-            history_call_args=[("banking.transfer", {"amount": 500000})],
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True)],
             anchor=ANCHOR)
         v = prove_argument("amount", 500000, "banking.transfer", ev)
         self.assertEqual(v.status, "PROVEN")
         self.assertEqual(v.rule, "history_reference")
+        # Contract change (reviewer finding 6-HR, round 3):
+        # AMBIGUOUS now requires >= 2 MATCHING candidates. A single
+        # match among several candidates does NOT uniquely resolve
+        # the reference ("số tiền cũ" could mean the other amount),
+        # so it falls through to UNPROVEN -- the guard action is
+        # unchanged (both verdicts block), only the label is now
+        # strict: AMBIGUOUS means ">= 2 supporters, can't choose",
+        # never "no supporter at all".
         ev2 = Evidence(
             current_text="chuyển số tiền cũ cho Minh",
-            history_call_args=[("banking.transfer", {"amount": 500000}),
-                               ("banking.transfer", {"amount": 700000})],
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True),
+                               ("banking.transfer", {"amount": 700000},
+                                True)],
             anchor=ANCHOR)
         v = prove_argument("amount", 500000, "banking.transfer", ev2)
+        self.assertEqual(v.status, "UNPROVEN")
+        # Two candidates both matching the value -> AMBIGUOUS.
+        # (For time values the matcher compares HH:MM, so two full
+        # datetimes with the same clock time but different dates
+        # both match a time-only value.)
+        ev2b = Evidence(
+            current_text="dời sang giờ cũ nhé",
+            history_call_args=[("calendar.update_event",
+                                {"start": "2026-11-19T10:00:00+07:00"},
+                                True),
+                               ("calendar.update_event",
+                                {"start": "2026-11-18T10:00:00+07:00"},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("start", "10:00", "calendar.update_event",
+                           ev2b)
         self.assertEqual(v.status, "AMBIGUOUS")
+        # No candidate matches -> UNPROVEN, not AMBIGUOUS.
+        ev2c = Evidence(
+            current_text="chuyển số tiền cũ cho Minh",
+            history_call_args=[("banking.transfer", {"amount": 700000},
+                                True),
+                               ("banking.transfer", {"amount": 900000},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2c)
+        self.assertEqual(v.status, "UNPROVEN")
+        ev3 = Evidence(
+            current_text="chuyển số tiền cũ cho Minh",
+            history_call_args=[("banking.transfer", {"amount": 500000})],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev3)
+        self.assertEqual(v.status, "UNPROVEN")
 
     def test_datetime_assembly(self):
-        # Date comes from a history turn, time from the current turn:
-        # neither span alone equals the gold datetime, but together they do.
-        ev = Evidence(current_text="hẹn lại lúc 9 giờ",
-                      history_user_texts=["hôm qua tôi họp với Lan"],
+        # Same current text, exactly one date span + one time span.
+        ev = Evidence(current_text="hẹn bốn giờ chiều mai đi",
                       anchor=ANCHOR)
-        v = prove_argument("time", "2026-11-17T09:00:00+07:00",
-                           "calendar.create_event", ev)
+        v = prove_argument("time", "2026-11-19T16:00:00+07:00",
+                           "reminders.create", ev)
         self.assertEqual(v.status, "PROVEN")
         self.assertEqual(v.rule, "datetime_assembly")
+        # Fix round C: a bare "lại" no longer pairs a current date word
+        # with an unrelated history time.
+        ev = Evidence(
+            current_text="nhắc tôi lại ngày mai nhé",
+            history_user_texts=["đi công viên lúc 15 giờ hôm qua"],
+            anchor=ANCHOR)
+        v = prove_argument("time", "2026-11-19T15:00:00+07:00",
+                           "reminders.create", ev)
+        self.assertEqual(v.status, "UNPROVEN")
 
     def test_default_only_when_declared(self):
         ev = Evidence(current_text="nhắc tôi uống thuốc", anchor=ANCHOR,
@@ -323,6 +431,587 @@ class TestProver(unittest.TestCase):
         self.assertEqual(base.status, "UNPROVEN")
         full = prove_argument("amount", 2000000, "banking.transfer", ev)
         self.assertEqual(full.status, "PROVEN")
+
+
+class TestFixRoundRegressions(unittest.TestCase):
+    """Codex counterexamples A-H: each must stay UNPROVEN/SUPERSEDED."""
+
+    def test_a_substring_number(self):
+        ev = Evidence(current_text="chuyển 1500000 cho Minh",
+                      anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_a2_phone_number(self):
+        ev = Evidence(current_text="gọi cho Minh số 0914061230 nhé",
+                      anchor=ANCHOR)
+        v = prove_argument("amount", 914061230, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_a3_identifier_digits(self):
+        ev = Evidence(current_text="mã đơn c_9526 giao rồi",
+                      anchor=ANCHOR)
+        v = prove_argument("amount", 9526, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_a4_substring_id(self):
+        ev = Evidence(
+            current_text="nhắn cho c_100 nhé",
+            rosters=[{"id": "c_10", "name": "Minh"}],
+            anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_10", "sms.send", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_b_date_only_never_midnight(self):
+        ev = Evidence(current_text="Nhắc tôi sáng mai uống thuốc",
+                      anchor=ANCHOR)
+        v = prove_argument("time", "2026-11-19T00:00:00+07:00",
+                           "reminders.create", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_d_balance_field(self):
+        ev = Evidence(
+            current_text="chuyển tiền cho Minh",
+            turn_observations=[("banking.get_balance", "balance",
+                                500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_e_unrelated_prior_call_offset(self):
+        ev = Evidence(
+            current_text="dời lịch họp mai muộn hơn nửa tiếng nhé",
+            prior_call_args=[("alarm.create",
+                              {"time": "2026-11-18T10:00:00+07:00"},
+                              True)],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-18T10:30:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_99"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_h4_cancel_blocks_history(self):
+        ev = Evidence(
+            current_text="thôi khỏi chuyển số tiền cũ",
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_h5_corrected_history_reference(self):
+        ev = Evidence(
+            current_text="chuyển số tiền cũ à không 700000",
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev)
+        self.assertEqual(v.status, "SUPERSEDED")
+
+    def test_h9_duration_needs_proven_start(self):
+        event = {"id": "evt_02", "start": "2026-11-10T15:00:00+07:00",
+                 "end": "2026-11-10T16:00:00+07:00"}
+        ev = Evidence(
+            current_text="dời lịch đi",
+            observation_events=[("calendar.list_events", event)],
+            anchor=ANCHOR)
+        v = prove_argument("end", "2026-11-10T16:30:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_02",
+                                      "start": "2026-11-10T15:30:00+07:00"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_h10_other_entity_time(self):
+        ev = Evidence(
+            current_text="dời lịch đi",
+            turn_observations=[("calendar.list_events", "start",
+                                "2026-11-10T16:00:00+07:00", "evt_02")],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-10T16:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_01"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_roster_duplicate_name_ambiguous(self):
+        ev = Evidence(
+            current_text="nhắn cho Minh nhé",
+            rosters=[{"id": "c_05", "name": "Minh"},
+                     {"id": "c_09", "name": "Minh"}],
+            anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_05", "sms.send", ev)
+        self.assertEqual(v.status, "AMBIGUOUS")
+
+    def test_proposal_contact_name_is_not_intent(self):
+        # Fix round 2: a model-invented contact_name must not prove
+        # the user chose that person. Intent comes from user text only.
+        ev = Evidence(
+            current_text="nhắn cho anh ấy nhé",
+            rosters=[{"id": "c_05", "name": "Minh"}],
+            anchor=ANCHOR)
+        v = prove_argument("contact_id", "c_05", "sms.send", ev,
+                           call_args={"contact_name": "Minh"})
+        self.assertEqual(v.status, "UNPROVEN")
+class TestRound3ProverFixes(unittest.TestCase):
+    """Main-thread round-3 prover fixes: spaced-phone spans (2-P),
+    boundary amounts, offset direction proximity (2-O),
+    None-entity observations (2-N)."""
+
+    def test_spaced_phone_groups_are_not_amounts(self):
+        self.assertEqual(
+            find_number_spans("gọi cho Minh số 0914 061 230 nhé"), [])
+        self.assertEqual(
+            find_number_spans("gọi 0914-061-230 nhé"), [])
+        ev = Evidence(
+            current_text="gọi cho Minh số 0914 061 230 nhé",
+            anchor=ANCHOR)
+        for amount in (914, 61, 230):
+            v = prove_argument("amount", amount, "banking.transfer", ev,
+                               call_args={"contact_id": "c_01",
+                                          "amount": amount})
+            self.assertEqual(v.status, "UNPROVEN")
+        # A real amount in the same text still proves.
+        ev2 = Evidence(
+            current_text="gọi 0914 061 230 chuyển 500000 nhé",
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2,
+                           call_args={"contact_id": "c_01",
+                                      "amount": 500000})
+        self.assertEqual(v.status, "PROVEN")
+
+    def test_amount_at_text_boundaries_proves(self):
+        # Adjacent-fix found during 2-P: "" in "-:" is True, so the
+        # old date/time filter dropped amounts at start/end of
+        # text (verified against frozen 3838d99f).
+        self.assertEqual(find_number_spans("chuyển 500000"),
+                         [("500000", 500000)])
+        self.assertEqual(find_number_spans("500000 là số tiền"),
+                         [("500000", 500000)])
+
+    def test_offset_direction_bound_by_proximity(self):
+        # Reviewer 2-O repro: stray "muộn" far from the duration
+        # must not prove the +1 direction; only the nearby "sớm"
+        # proves -1.
+        ev = Evidence(
+            current_text="đừng để muộn nhé, dời lịch họp mai "
+                         "sớm hơn một tiếng nhé",
+            observation_events=[("calendar.list_events",
+                                 {"id": "evt_01",
+                                  "start": "2026-11-19T10:00:00+07:00",
+                                  "end": "2026-11-19T11:00:00+07:00"})],
+            anchor=ANCHOR)
+        v = prove_argument("start", "2026-11-19T09:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_01",
+                                      "start": "2026-11-19T09:00:00+07:00"})
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "offset")
+        v = prove_argument("start", "2026-11-19T11:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args={"event_id": "evt_01",
+                                      "start": "2026-11-19T11:00:00+07:00"})
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_none_entity_observation_does_not_prove_id_linked(self):
+        # Reviewer 2-N: a history observation with no entity must
+        # not prove an id-linked write, even when unique.
+        ev = Evidence(
+            current_text="chuyển tiền cho Minh",
+            history_observations=[("banking.get_balance", "amount",
+                                   500000, None)],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev,
+                           call_args={"contact_id": "c_01",
+                                      "amount": 500000})
+        self.assertEqual(v.status, "UNPROVEN")
+        # Control: the same value WITH the entity link proves.
+        ev2 = Evidence(
+            current_text="chuyển tiền cho Minh",
+            history_observations=[("banking.get_balance", "amount",
+                                   500000, "c_01")],
+            anchor=ANCHOR)
+        v = prove_argument("amount", 500000, "banking.transfer", ev2,
+                           call_args={"contact_id": "c_01",
+                                      "amount": 500000})
+        self.assertEqual(v.status, "PROVEN")
+
+
+class TestR5ProverValidity(unittest.TestCase):
+    """Lifecycle expiry wired into the prover (R5 worker B).
+
+    Ledgers are synthetic: a field_value record (counterpart
+    convention) + mutation events, adapted via make_prover_validity.
+    Registry mapping: read tools resolve through the passed
+    registry_for_tool (the prover never sees the ledger).
+    """
+
+    def _alarm_ledger(self, *events):
+        led = EvidenceLedger()
+        led.apply_prefix(list(events))
+        return led
+
+    def _alarm_validity(self, ledger, position):
+        return make_prover_validity(
+            ledger, position,
+            registry_for_tool=lambda t: "alarm.alarms")
+
+    def _obs_evidence(self, entity="al_01"):
+        return Evidence(
+            current_text="xóa cái báo thức này giúp tôi",
+            turn_observations=[("alarm.list_alarms", "time",
+                                "2026-11-14T06:15:00+07:00", entity)],
+            anchor=ANCHOR)
+
+    def test_observation_stays_proven_when_validity_active(self):
+        led = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"))
+        ev = self._obs_evidence()
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"},
+                           validity=self._alarm_validity(led, 2))
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "observation")
+
+    def test_read_update_old_value_not_proven(self):
+        # Read -> update -> use the OLD value: must not stay PROVEN.
+        led = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"),
+            {"tool": "alarm.update", "args": {}, "result": {"ok": True},
+             "position": 2, "registry": "alarm.alarms",
+             "entity_value": "al_01", "mutation_kind": "update",
+             "fields": ["time"], "effective": True})
+        ev = self._obs_evidence()
+        # Old behavior preserved with validity=None.
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"})
+        self.assertEqual(v.status, "PROVEN")
+        # Gated: the observation died with the update.
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"},
+                           validity=self._alarm_validity(led, 3))
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertEqual(v.rule, "observation_expired")
+        self.assertIn("observation_evidence_not_active", v.detail)
+
+    def test_vetoed_observation_falls_through_to_assembly(self):
+        # Same-text date + time assembly proves AFTER the vetoed
+        # observation: fall-through, not a blanket UNPROVEN.
+        led = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-19T16:00:00+07:00", 1,
+                               "alarm.list_alarms"),
+            {"tool": "alarm.update", "args": {}, "result": {"ok": True},
+             "position": 2, "registry": "alarm.alarms",
+             "entity_value": "al_01", "mutation_kind": "update",
+             "fields": ["time"], "effective": True})
+        ev = Evidence(
+            current_text="hẹn bốn giờ chiều mai đi",
+            turn_observations=[("alarm.list_alarms", "time",
+                                "2026-11-19T16:00:00+07:00", "al_01")],
+            anchor=ANCHOR)
+        v = prove_argument("time", "2026-11-19T16:00:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"},
+                           validity=self._alarm_validity(led, 3))
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "datetime_assembly")
+
+    def test_ambiguous_resolved_by_veto(self):
+        # Two entities match -> AMBIGUOUS; killing one leaves a
+        # unique survivor -> PROVEN (validity filters BEFORE
+        # uniqueness).
+        led = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"),
+            field_value_record("alarm.alarms", "al_02", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"),
+            {"tool": "alarm.update", "args": {}, "result": {"ok": True},
+             "position": 2, "registry": "alarm.alarms",
+             "entity_value": "al_02", "mutation_kind": "update",
+             "fields": ["time"], "effective": True})
+        ev = Evidence(
+            current_text="xóa cái báo thức này giúp tôi",
+            turn_observations=[
+                ("alarm.list_alarms", "time",
+                 "2026-11-14T06:15:00+07:00", "al_01"),
+                ("alarm.list_alarms", "time",
+                 "2026-11-14T06:15:00+07:00", "al_02")],
+            anchor=ANCHOR)
+        call_args = {"alarm_id": "al_01", "ref_id": "al_02"}
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev, call_args=call_args)
+        self.assertEqual(v.status, "AMBIGUOUS")
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev, call_args=call_args,
+                           validity=self._alarm_validity(led, 3))
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "observation")
+
+    def test_entity_less_observation_never_proves_under_gating(self):
+        # The pre-existing fixture: entity-less turn observation
+        # proves a create without validity...
+        ev = Evidence(current_text="xóa cái sớm nhất của Minh giúp tôi",
+                      turn_observations=[("alarm.list_alarms", "time",
+                                          "2026-11-14T06:15:00+07:00",
+                                          None)],
+                      anchor=ANCHOR)
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev)
+        self.assertEqual(v.status, "PROVEN")
+        # ...but under gating it cannot be linked, so it never proves.
+        led = self._alarm_ledger()
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           validity=self._alarm_validity(led, 2))
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertEqual(v.rule, "observation_expired")
+        self.assertIn("entity_unknown_for_observation", v.detail)
+
+    def test_unknown_record_and_changed_value(self):
+        # No ledger record at all -> unknown -> veto.
+        led = self._alarm_ledger()
+        ev = self._obs_evidence(entity="al_09")
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_09"},
+                           validity=self._alarm_validity(led, 2))
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertEqual(v.rule, "observation_expired")
+        # Re-read with a CHANGED value: the old value is stale
+        # (invalidated), not merely unknown.
+        led2 = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"),
+            {"tool": "alarm.update", "args": {}, "result": {"ok": True},
+             "position": 2, "registry": "alarm.alarms",
+             "entity_value": "al_01", "mutation_kind": "update",
+             "fields": ["time"], "effective": True},
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T07:00:00+07:00", 3,
+                               "alarm.list_alarms"))
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", self._obs_evidence(),
+                           call_args={"alarm_id": "al_01"},
+                           validity=self._alarm_validity(led2, 4))
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertIn("field_value_changed", v.detail)
+
+    def test_delete_kills_observation_proof(self):
+        led = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"),
+            {"tool": "alarm.delete", "args": {}, "result": {"ok": True},
+             "position": 2, "registry": "alarm.alarms",
+             "entity_value": "al_01", "mutation_kind": "delete",
+             "effective": True})
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", self._obs_evidence(),
+                           call_args={"alarm_id": "al_01"},
+                           validity=self._alarm_validity(led, 3))
+        self.assertEqual(v.status, "UNPROVEN")
+        self.assertEqual(v.rule, "observation_expired")
+
+    def test_failed_mutation_keeps_proof(self):
+        # Noop / schema-rejected mutations revoke nothing.
+        for result in ({"ok": True, "done": False}, {"ok": False}):
+            led = self._alarm_ledger(
+                field_value_record("alarm.alarms", "al_01", "time",
+                                   "2026-11-14T06:15:00+07:00", 1,
+                                   "alarm.list_alarms"),
+                {"tool": "alarm.update", "args": {}, "result": result,
+                 "position": 2, "registry": "alarm.alarms",
+                 "entity_value": "al_01", "mutation_kind": "update",
+                 "fields": ["time"], "effective": True})
+            v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                               "alarm.delete", self._obs_evidence(),
+                               call_args={"alarm_id": "al_01"},
+                               validity=self._alarm_validity(led, 3))
+            self.assertEqual(v.status, "PROVEN", result)
+
+    def test_future_mutation_invisible_to_earlier_proposal(self):
+        led = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"),
+            {"tool": "alarm.update", "args": {}, "result": {"ok": True},
+             "position": 10, "registry": "alarm.alarms",
+             "entity_value": "al_01", "mutation_kind": "update",
+             "fields": ["time"], "effective": True})
+        ev = self._obs_evidence()
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"},
+                           validity=self._alarm_validity(led, 5))
+        self.assertEqual(v.status, "PROVEN")
+        v = prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"},
+                           validity=self._alarm_validity(led, 10))
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_assembly_event_base_vetoed(self):
+        # Text date + id-linked event time -> assembly; killing the
+        # event's start kills the assembly.
+        led = self._alarm_ledger(
+            field_value_record("calendar.events", "evt_09", "start",
+                               "2026-11-10T15:00:00+07:00", 1,
+                               "calendar.list_events"),
+            {"tool": "calendar.update_event", "args": {},
+             "result": {"ok": True}, "position": 2,
+             "registry": "calendar.events", "entity_value": "evt_09",
+             "mutation_kind": "update", "fields": ["start"],
+             "effective": True})
+        ev = Evidence(
+            current_text="dời sang ngày mai đi",
+            observation_events=[("calendar.list_events",
+                                 {"id": "evt_09",
+                                  "start": "2026-11-10T15:00:00+07:00"})],
+            anchor=ANCHOR)
+        call_args = {"event_id": "evt_09"}
+        validity = make_prover_validity(
+            led, 3, registry_for_tool=lambda t: "calendar.events")
+        v = prove_argument("time", "2026-11-19T15:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args=call_args)
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "datetime_assembly")
+        v = prove_argument("time", "2026-11-19T15:00:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args=call_args, validity=validity)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_offset_event_base_vetoed(self):
+        event = {"id": "evt_02", "start": "2026-11-10T15:00:00+07:00",
+                 "end": "2026-11-10T16:00:00+07:00"}
+        led = self._alarm_ledger(
+            field_value_record("calendar.events", "evt_02", "start",
+                               "2026-11-10T15:00:00+07:00", 1,
+                               "calendar.list_events"),
+            {"tool": "calendar.update_event", "args": {},
+             "result": {"ok": True}, "position": 2,
+             "registry": "calendar.events", "entity_value": "evt_02",
+             "mutation_kind": "update", "fields": ["start"],
+             "effective": True})
+        ev = Evidence(
+            current_text="dời lịch cà phê mai muộn hơn nửa tiếng nhé",
+            observation_events=[("calendar.list_events", event)],
+            anchor=ANCHOR)
+        call_args = {"event_id": "evt_02",
+                     "start": "2026-11-10T15:30:00+07:00",
+                     "end": "2026-11-10T16:30:00+07:00"}
+        validity = make_prover_validity(
+            led, 3, registry_for_tool=lambda t: "calendar.events")
+        v = prove_argument("start", "2026-11-10T15:30:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args=call_args, validity=validity)
+        self.assertEqual(v.status, "UNPROVEN")
+
+    def test_duration_event_end_vetoed(self):
+        # Start proves via verbatim (ISO string in text); end proves
+        # via duration from the event. Killing the event's END kills
+        # the duration (and the offset end base too).
+        event = {"id": "evt_02", "start": "2026-11-10T15:00:00+07:00",
+                 "end": "2026-11-10T16:00:00+07:00"}
+        led = self._alarm_ledger(
+            field_value_record("calendar.events", "evt_02", "start",
+                               "2026-11-10T15:00:00+07:00", 1,
+                               "calendar.list_events"),
+            field_value_record("calendar.events", "evt_02", "end",
+                               "2026-11-10T16:00:00+07:00", 1,
+                               "calendar.list_events"),
+            {"tool": "calendar.update_event", "args": {},
+             "result": {"ok": True}, "position": 2,
+             "registry": "calendar.events", "entity_value": "evt_02",
+             "mutation_kind": "update", "fields": ["end"],
+             "effective": True})
+        ev = Evidence(
+            current_text="dời lịch sang 2026-11-10T15:30:00+07:00 nhé",
+            observation_events=[("calendar.list_events", event)],
+            anchor=ANCHOR)
+        call_args = {"event_id": "evt_02",
+                     "start": "2026-11-10T15:30:00+07:00",
+                     "end": "2026-11-10T16:30:00+07:00"}
+        validity = make_prover_validity(
+            led, 3, registry_for_tool=lambda t: "calendar.events")
+        v = prove_argument("end", "2026-11-10T16:30:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args=call_args, validity=validity)
+        self.assertEqual(v.status, "UNPROVEN")
+        # With the event alive, duration proves.
+        led2 = self._alarm_ledger(
+            field_value_record("calendar.events", "evt_02", "start",
+                               "2026-11-10T15:00:00+07:00", 1,
+                               "calendar.list_events"),
+            field_value_record("calendar.events", "evt_02", "end",
+                               "2026-11-10T16:00:00+07:00", 1,
+                               "calendar.list_events"))
+        validity2 = make_prover_validity(
+            led2, 3, registry_for_tool=lambda t: "calendar.events")
+        v = prove_argument("end", "2026-11-10T16:30:00+07:00",
+                           "calendar.update_event", ev,
+                           call_args=call_args, validity=validity2)
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "duration")
+
+    def test_prove_call_threads_validity(self):
+        led = self._alarm_ledger(
+            field_value_record("alarm.alarms", "al_01", "time",
+                               "2026-11-14T06:15:00+07:00", 1,
+                               "alarm.list_alarms"),
+            {"tool": "alarm.update", "args": {}, "result": {"ok": True},
+             "position": 2, "registry": "alarm.alarms",
+             "entity_value": "al_01", "mutation_kind": "update",
+             "fields": ["time"], "effective": True})
+        ev = self._obs_evidence()
+        out = prove_call({"name": "alarm.delete",
+                          "arguments": {"alarm_id": "al_01",
+                                        "time": "2026-11-14T06:15:00+07:00"}},
+                         ev, validity=self._alarm_validity(led, 3))
+        self.assertEqual(out["time"].status, "UNPROVEN")
+        self.assertEqual(out["time"].rule, "observation_expired")
+        out = prove_call({"name": "alarm.delete",
+                          "arguments": {"alarm_id": "al_01",
+                                        "time": "2026-11-14T06:15:00+07:00"}},
+                         ev)
+        self.assertEqual(out["time"].status, "PROVEN")
+
+    def test_history_reference_not_gated_boundary(self):
+        # Documented boundary: history candidates carry no entity
+        # linkage, so no validity function can veto them. A veto-all
+        # validity must NOT change a history_reference PROVEN.
+        ev = Evidence(
+            current_text="chuyển số tiền cũ cho Minh",
+            history_call_args=[("banking.transfer", {"amount": 500000},
+                                True)],
+            anchor=ANCHOR)
+        veto_all = lambda *a: ("invalidated", "veto-all")
+        v = prove_argument("amount", 500000, "banking.transfer", ev,
+                           validity=veto_all)
+        self.assertEqual(v.status, "PROVEN")
+        self.assertEqual(v.rule, "history_reference")
+
+    def test_validity_malformed_raises(self):
+        ev = self._obs_evidence()
+        with self.assertRaises(ValueError):
+            prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"},
+                           validity=lambda *a: ("bogus", "x"))
+        with self.assertRaises(ValueError):
+            prove_argument("time", "2026-11-14T06:15:00+07:00",
+                           "alarm.delete", ev,
+                           call_args={"alarm_id": "al_01"},
+                           validity=lambda *a: "active")
 
 
 if __name__ == "__main__":
