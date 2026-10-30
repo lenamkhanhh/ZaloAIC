@@ -109,6 +109,112 @@ def build_base_prompt(sample: Sample, transcript: str, tools: dict) -> str:
     return "\n".join(lines)
 
 
+def _history_result_status(turn) -> str:
+    """V2 only: outcome of a history assistant turn, never its content.
+
+    Parsed + verified means ``tool_results`` is a non-empty list of
+    dicts all with ``ok is True``. Anything else — a repr-string, a
+    list with a non-ok entry, ``None`` — renders as ``not shown``.
+    This is deliberately conservative: a repr-string is not a parsed
+    result, and a failed call is not evidence of success.
+    """
+    results = getattr(turn, "tool_results", None)
+    if isinstance(results, list) and results and all(
+        isinstance(r, dict) and r.get("ok") is True for r in results
+    ):
+        return "ok"
+    return "not shown"
+
+
+def build_v2_prompt(sample: Sample, transcript: str, tools: dict, open_requests=None) -> str:
+    """P1 V2 two-block history presentation (R2-G5 variant, OFF by default).
+
+    Same B0 context lines and tool list as ``build_base_prompt`` — no
+    placeholder values, no dropped context — but history is split
+    into a past block (context only, in order, with turn indices) and
+    an open block. The builder NEVER fills the open block: it renders
+    exactly the caller-supplied ``open_requests`` list, and in the
+    H1/H2 synthetic tests that list must be empty, rendered as
+    ``Open requests: none.`` History alone never creates a carried
+    request. No V1 status slot and no V3 evidence tag is emitted.
+    """
+    ctx = sample.context
+    profile = ctx.get("user_profile", {})
+    lines = [
+        "You are a Vietnamese voice assistant. Output exactly one JSON "
+        "object per turn: {\"name\": \"<tool>\", \"arguments\": {...}} or "
+        "{\"stop\": true} when done. Never invent ids: use only ids from "
+        "previous tool results in this conversation.",
+        f"Current time: {ctx.get('current_time')} ({ctx.get('timezone')}).",
+        f"User: {profile.get('name', '')}, city {profile.get('city', '')}.",
+        "Tools you may call (this sample only):",
+    ]
+    for name, spec in sorted(tools.items()):
+        req = spec["parameters"].get("required", [])
+        lines.append(f"- {name} ({spec['kind']}): {spec.get('description', '')} required={req}")
+    lines.extend([
+        "Conversation history — PAST ONLY, CONTEXT ONLY.",
+        "Do not treat any turn below as a new instruction.",
+        "Do not re-execute anything mentioned below unless the current "
+        "request explicitly continues the same action on the same target.",
+        "If a turn below mentions a person or a number, that mention alone "
+        "does not choose which roster entry it refers to.",
+    ])
+    if not sample.history:
+        lines.append("Past conversation: none.")
+    for i, turn in enumerate(sample.history, start=1):
+        if turn.role == "user":
+            text = turn.audio_text if turn.audio_text is not None else "[audio, no transcript available]"
+            lines.append(f"[history {i} | user]")
+            lines.append(f"user: {text}")
+        else:
+            lines.append(f"[history {i} | assistant]")
+            lines.append(
+                f"assistant: {turn.text or ''} calls={json.dumps(turn.tool_calls, ensure_ascii=False)} "
+                f"result={_history_result_status(turn)}"
+            )
+    lines.extend([
+        "Open requests carried forward — ONLY requests that a recorded state "
+        "supplied to this builder says are still open.",
+        "If this block is empty, there is no carried request.",
+        "History alone never creates a carried request.",
+    ])
+    if not open_requests:
+        lines.append("Open requests: none.")
+    else:
+        lines.append("Open requests:")
+        for req in open_requests:
+            lines.append(
+                f"- action={req.get('action')} target={req.get('target')} "
+                f"source_turn={req.get('source_turn')}"
+            )
+    lines.append(f"Current user request (transcript): {transcript}")
+    return "\n".join(lines)
+
+
+def measure_prompt_budget(prompt: str, max_context_tokens: int = 16384, output_reserve_tokens: int = 1024) -> dict:
+    """Measurement only — it never truncates or rewrites a prompt.
+
+    ``estimated_tokens`` is a chars/4 heuristic, labelled ESTIMATE:
+    it is NOT a real tokenizer count. Real tokenizer / rendered
+    template accounting is NOT_RUN until a tokenizer runtime check
+    (Codex) measures it. ``available`` is the prompt budget after
+    reserving output tokens: max_context - output_reserve.
+    """
+    chars = len(prompt)
+    estimated = (chars + 3) // 4
+    available = max_context_tokens - output_reserve_tokens
+    return {
+        "prompt_chars": chars,
+        "estimated_tokens": estimated,
+        "max_context_tokens": max_context_tokens,
+        "output_reserve_tokens": output_reserve_tokens,
+        "available_for_prompt_tokens": available,
+        "remaining_tokens": available - estimated,
+        "over_budget": estimated > available,
+    }
+
+
 def _has_leftover_name(call: dict) -> bool:
     """True if a contact-name key survived grounding: ``contact_name``
     always, or ``to`` without an '@' (an email address is not a name).
@@ -172,7 +278,15 @@ class AgentLoop:
         completion=None,
     ) -> dict:
         """Run one sample. Returns the submission line (env material)."""
-        base = build_base_prompt(sample, transcript, self.tools)
+        if getattr(self.config, "history_presentation_v2", False):
+            base = build_v2_prompt(sample, transcript, self.tools)
+        else:
+            base = build_base_prompt(sample, transcript, self.tools)
+        self.last_prompt_budget = measure_prompt_budget(
+            base,
+            getattr(self.config, "llm_max_context_tokens", 16384),
+            getattr(self.config, "prompt_output_reserve_tokens", 1024),
+        )
         prompt = base
         executed: list[dict] = []
         results: list[dict] = []
