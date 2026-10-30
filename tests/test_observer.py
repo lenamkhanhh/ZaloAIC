@@ -711,13 +711,16 @@ class TestObserverRosterRelationD1(unittest.TestCase):
             {"id": "c_m2", "name": "Minh", "phone": "0903777888",
              "relation": "đối tác"}])
 
-    # ---- R4 backfill (Run 4, this branch) ----
-    # Rule (same in observer and harness): same contact_id,
-    # first successful read missing a field, later successful
-    # read carrying it -> fill ONLY the missing field. Never
-    # overwrite with an empty value, never overwrite a
-    # non-empty value (conflict keeps first), failed reads
-    # neither create nor backfill an entry.
+    # ---- R4 backfill (Run 4, this branch) + R4-CONFLICT ----
+    # Rule (same in observer, harness, and agent): same
+    # contact_id, first successful read missing a field,
+    # later successful read carrying it -> fill ONLY the
+    # missing field. Never overwrite with an empty /
+    # invalid value, failed reads neither create nor
+    # backfill an entry, and a differing valid value
+    # from a later successful read REPLACES the older
+    # one (last-wins, R4-CONFLICT -- this supersedes the
+    # R4 backfill keep-first rule for conflicts).
     def test_collector_backfills_missing_relation(self):
         missing = [{"id": "c_m1", "name": "Minh",
                     "phone": "0903111222"},
@@ -762,7 +765,7 @@ class TestObserverRosterRelationD1(unittest.TestCase):
             {"id": "c_m2", "name": "Minh", "phone": "0903777888",
              "relation": "đối tác"}])
 
-    def test_collector_backfill_never_overwrites_empty_or_conflict(self):
+    def test_collector_backfill_never_overwrites_empty_last_wins_on_conflict(self):
         # Later empty / blank relation: no overwrite.
         for later in ([{"id": "c_m1", "name": "Minh",
                         "phone": "0903111222", "relation": "   "}],
@@ -780,7 +783,9 @@ class TestObserverRosterRelationD1(unittest.TestCase):
             self.assertEqual(
                 collect_rosters_from_prefix(prefix)[0]["relation"],
                 "khách hàng")
-        # Later conflicting non-empty relation: keep first.
+        # Later conflicting non-empty relation: LAST-WINS
+        # (R4-CONFLICT rule change, not a dodged case: the
+        # old keep-first expectation is superseded here).
         conflict = [{"id": "c_m1", "name": "Minh",
                      "phone": "0903111222", "relation": "đối tác"},
                     {"id": "c_m2", "name": "Minh",
@@ -797,7 +802,7 @@ class TestObserverRosterRelationD1(unittest.TestCase):
              "origin": "session"}]
         self.assertEqual(collect_rosters_from_prefix(prefix), [
             {"id": "c_m1", "name": "Minh", "phone": "0903111222",
-             "relation": "khách hàng"},
+             "relation": "đối tác"},
             {"id": "c_m2", "name": "Minh", "phone": "0903777888",
              "relation": "đối tác"}])
 
@@ -879,18 +884,19 @@ class TestObserverRosterRelationD1(unittest.TestCase):
             [(missing, True), (self.BASE, False)], "c_m1")
         self._assert_blocked_via_selection(rec)
 
-    def test_runtime_backfill_conflict_keeps_first(self):
+    def test_runtime_backfill_conflict_last_wins_blocks(self):
         conflict = [{"id": "c_m1", "name": "Minh",
                      "phone": "0903111222", "relation": "đối tác"},
                     {"id": "c_m2", "name": "Minh",
                      "phone": "0903777888",
                      "relation": "đối tác"}]
-        # If the later conflicting relation overwrote the first,
-        # c_m1 would block (duplicate đối tác). Keeping first
-        # means c_m1 still passes as khách hàng.
+        # Last-wins (R4-CONFLICT): the later conflicting
+        # relation replaces the first, so c_m1 is now a
+        # duplicate đối tác and blocks via selection --
+        # the old keep-first pass is superseded, not dodged.
         rec = self._run_two_searches_sms(
             [(self.BASE, True), (conflict, True)], "c_m1")
-        self._assert_passed(rec)
+        self._assert_blocked_via_selection(rec)
 
 
 _SENTINEL = object()

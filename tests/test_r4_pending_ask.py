@@ -25,9 +25,10 @@ simulator, no model — what is proven is loop order and the loop's
 own roster.
 
 Roster backfill (agent.py, unconditional task-1 change, NOT gated
-by the flag): a later successful contacts.search for an id already
-in the roster supplements missing fields only — never overwrites a
-non-empty field, never overwrites with an empty value, never appends
+by the flag), as superseded for conflicts by R4-CONFLICT: a later
+successful contacts.search for an id already in the roster
+supplements missing fields and replaces a differing valid field
+(last-wins) — never overwrites with an empty value, never appends
 a duplicate entry. Backfill mutates the roster copy, not the search
 result's own dict.
 
@@ -259,14 +260,19 @@ class TestRosterBackfill(unittest.TestCase):
         # Backfill did not mutate the first search result's own dict.
         self.assertNotIn("phone", first[0])
 
-    def test_backfill_keeps_first_on_conflict(self):
+    def test_backfill_last_wins_on_conflict(self):
         loop, out = self._roster_after(
             {"Lan": [{"id": "c1", "name": "Lan", "phone": "0901111111"}],
              "Lan2": [{"id": "c1", "name": "Lan", "phone": "0902222222",
                        "relation": "đồng nghiệp"}]})
         self.assertEqual(len(loop._roster), 1)
-        self.assertEqual(loop._roster[0]["phone"], "0901111111")
+        # Last-wins (R4-CONFLICT rule change, not a dodged
+        # case): the later valid phone replaces the first.
+        self.assertEqual(loop._roster[0]["phone"], "0902222222")
         self.assertEqual(loop._roster[0]["relation"], "đồng nghiệp")
+        self.assertTrue(any(
+            c["reason"] == "last_wins" and c["field"] == "phone"
+            for c in loop.roster_conflicts))
 
     def test_backfill_never_overwrites_with_empty(self):
         loop, out = self._roster_after(

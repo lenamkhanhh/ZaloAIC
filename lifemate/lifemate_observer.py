@@ -138,35 +138,77 @@ def _outcome_of(result):
     return "noop"
 
 
-def _collect_rosters(value, out):
-    """Recursively collect roster entries from a result value,
-    mirroring the paired audit's collect_rosters: any "contacts"
-    list with id-bearing entries counts; recursion does not
-    descend into "phone" values.
+def _norm_phone_digits(value):
+    """Digits-only phone, mirroring lifemate_phone_callback_evidence
+    .norm_phone for string input: an 11-digit "84..." form folds
+    to a 10-digit 0-number. Non-string input yields "" (no
+    coercion: a non-string phone is not a phone value here)."""
+    if not isinstance(value, str):
+        return ""
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if digits.startswith("84") and len(digits) == 11:
+        return "0" + digits[2:]
+    return digits
 
-    Allowlist, not passthrough: an entry keeps ONLY id, name,
-    phone, plus "relation" when it is a non-empty string. The
-    D1 qualifier in the negation module matches a descriptor
-    against a roster entry's structured attributes other than
-    id/name/phone, and "relation" is the structured attribute
-    that contract supports here. Any other field -- even a
-    string -- is NOT carried over: an arbitrary string in a
-    contact dictionary is not structured evidence, and
-    copying every field would let an unrelated string
+
+def _valid_phone(value):
+    """Roster-phone contract (R3-P0-PHONE, field "phone"): after
+    norm, 0-led and 10 or 11 digits. Anything else -- a tail,
+    a short number, a missing-zero number, a 9-digit or
+    12-digit form, a hotline -- is not a roster phone value
+    and is ignored, never coerced into one."""
+    digits = _norm_phone_digits(value)
+    return digits.startswith("0") and len(digits) in (10, 11)
+
+
+def _valid_text(value):
+    """A name/relation value carries information only when it is
+    a string with a non-blank stripped form. Non-strings are
+    never coerced; blank strings carry no information."""
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _roster_entry(entry):
+    """One roster entry, on the whitelist only, or None.
+
+    Fields, exactly: id, name, phone, relation. ``id`` is the
+    key only and is kept as-is when truthy (an entry with no
+    id is not roster evidence). ``name`` is the raw string
+    when valid, else "" (missing). ``phone`` is the raw
+    string when it passes the phone contract, else ""
+    (missing). ``relation`` is present only when valid;
+    otherwise the key is absent (missing). Every other
+    field -- even a string -- is dropped: an arbitrary
+    string in a contact dictionary is not structured
+    evidence, and copying it would let an unrelated string
     (a note, a label, a free-text comment) qualify a
-    duplicate. A non-string or blank "relation" is dropped
-    the same way a missing one is, never coerced."""
+    duplicate. Missing, in this module, is absent, None,
+    or "" for name/phone, and absent for relation."""
+    if not isinstance(entry, dict) or not entry.get("id"):
+        return None
+    contact = {"id": entry["id"],
+               "name": entry["name"] if _valid_text(
+                   entry.get("name")) else "",
+               "phone": entry["phone"] if _valid_phone(
+                   entry.get("phone")) else ""}
+    if _valid_text(entry.get("relation")):
+        contact["relation"] = entry["relation"]
+    return contact
+
+
+def _collect_rosters(value, out):
+    """Recursively collect NORMALISED roster entries from a
+    result value, mirroring the paired audit's collect_rosters:
+    any "contacts" list with id-bearing entries counts;
+    recursion does not descend into "phone" values. Entries
+    are normalised by _roster_entry, so no stray field and
+    no invalid value ever reaches a merge."""
     if isinstance(value, dict):
         contacts = value.get("contacts")
         if isinstance(contacts, list):
             for entry in contacts:
-                if isinstance(entry, dict) and entry.get("id"):
-                    contact = {"id": entry["id"],
-                               "name": entry.get("name", ""),
-                               "phone": entry.get("phone", "")}
-                    relation = entry.get("relation")
-                    if isinstance(relation, str) and relation.strip():
-                        contact["relation"] = relation
+                contact = _roster_entry(entry)
+                if contact is not None:
                     out.append(contact)
         for key, item in value.items():
             if key != "phone":
@@ -176,50 +218,325 @@ def _collect_rosters(value, out):
             _collect_rosters(item, out)
 
 
-def _backfill_roster_entry(existing, new):
-    """Fill ONLY fields that are missing in ``existing`` from ``new``.
+# ---------------------------------------------------------------------------
+# Unified roster conflict rule (R4-CONFLICT, same rule in all three
+# roster paths: this observer, analysis/gg_paired_audit.py, and
+# lifemate/agent.py -- the modules cannot import each other, so the
+# rule is stated in full in each place and must stay identical):
+#
+# 1. LAST-WINS, IN PREFIX ORDER. For the same registry
+#    ("contacts.contacts") and contact_id, a valid field from
+#    a NEWER successful read replaces the older value.
+#    Order is the order of events in the prefix (list order,
+#    which build_prefix guarantees is position order), never
+#    the system clock. A merged roster is a current-state
+#    view at proposal time, not a freeze at first sight.
+# 2. A field the newer read does not carry does NOT delete
+#    the older value: absence in a read is not a deletion
+#    signal (a later search may be a different query
+#    returning a subset). The older value is kept.
+# 3. A failed / noop read creates, updates, or deletes
+#    nothing (see collect_rosters_from_prefix for this
+#    path's success definition).
+# 4. Empty / null is missing, never a deletion: a missing
+#    or invalid newer value never overwrites and never
+#    deletes an older value.
+# 5. LIFECYCLE BARRIER, PER FIELD. A succeeded
+#    contacts.update whose returned item id equals its
+#    contact_id argument is lifecycle-confirmed
+#    post-mutation state (the adapter's PATCH_VERIFIED rule:
+#    a succeeded patch provably looked the entity up, so its
+#    returned fields are not an echo). Such an event is a
+#    barrier for the whitelisted valid fields it returns:
+#    pre-barrier values for those fields are discarded and
+#    are never re-applied after the barrier. A later read
+#    that AGREES with the confirmed value keeps it (and
+#    re-establishes it if it was UNKNOWN); a later read
+#    that CONTRADICTS the confirmed value does NOT
+#    overwrite it and does NOT revert it -- that field
+#    becomes UNKNOWN (dropped from the roster entry, with
+#    a conflict record carrying the reason), so it cannot
+#    be used to choose a person until a later barrier or
+#    an agreeing read re-establishes it. A barrier for one
+#    field touches no other field: contacts.update patches
+#    phone/email only, so a phone barrier never wipes a
+#    relation the update never touched.
+#    "Lifecycle-confirmed" here means ONLY that
+#    patch-verified shape above. It does NOT mean: a
+#    failed update, an update whose item id differs from
+#    its contact_id argument, an update result with no
+#    item, a user turn mentioning a change, a cancelled /
+#    replaced instruction (which governs instructions, not
+#    roster attributes), or absence from a later search.
+#    There is no contacts.delete in the tool catalog today,
+#    so no delete event can be a barrier in this code;
+#    absence is never treated as a deletion.
+# 6. UNKNOWN WHEN ORDER / SOURCE CANNOT BE ESTABLISHED.
+#    Two cases, both fail-closed: (a) a single successful
+#    read contains the same id twice with different valid
+#    values for one field -- the two values share one
+#    position and one event, so no order between them can
+#    be established, and last-wins cannot pick; that field
+#    becomes UNKNOWN (dropped, conflict recorded), even if
+#    an older value existed. (b) a post-barrier read
+#    contradicts a barrier value (rule 5). In both cases
+#    the roster entry must NOT be used to choose a person
+#    via that field: the adapter blocks on a missing /
+#    unqualified descriptor or phone, it does not pass on
+#    the stale or ambiguous value. A later unambiguous
+#    read (different event, single value) or a later
+#    barrier re-establishes an UNKNOWN field; a missing
+#    value in a later read does not.
+# 7. Only id/name/phone/relation ever reach a merge, and
+#    only valid values (rule 8) are ever applied.
+# 8. Missing = absent, None, or "" (name/phone); relation
+#    missing = absent. A wrong-type value (non-string
+#    name/relation, phone failing the contract) is ignored:
+#    no coercion, no overwrite, no deletion. A stray field
+#    is dropped at collection, before any merge.
+#
+# Conflict records live OUTSIDE the roster list (a roster
+# entry must stay whitelist-only: the D1 qualifier reads
+# every field other than id/name/phone as a structured
+# attribute, so a conflict/reason field inside an entry
+# could itself become qualifying evidence). They are
+# returned by collect_rosters_from_prefix_with_conflicts
+# and, per observed proposal, on ShadowObserver
+# .last_roster_conflicts. They are deliberately NOT added
+# to observer records: the export validator (another
+# owner's file, not edited here) accepts only the 9-key
+# record or the 9 keys plus selection_decision, and this
+# change must not break that schema.
+# ---------------------------------------------------------------------------
 
-    Shared backfill rule (same rule as the paired harness, see
-    ``analysis/gg_paired_audit.py:_backfill_roster_entry``):
+_ROSTER_FIELDS = ("name", "phone", "relation")
 
-    - Keyed by contact id only; ``id`` itself is never changed.
-    - A field is "missing" when it is absent, None, or "".
-    - A missing field is filled ONLY from a non-empty string
-      value in the later entry. A later empty/missing value
-      never overwrites anything (converse case: a later
-      incomplete read cannot erase a relation the first read
-      supplied).
-    - A field that already holds a non-empty value is NEVER
-      overwritten, even by a different non-empty value: on a
-      non-empty conflict the FIRST successful value is kept,
-      not silently replaced. This follows the lifecycle
-      patch/state rule that a state which does not match is
-      not attached to a different entity: a later read that
-      disagrees with the first successful read does not get
-      to rewrite the first read's evidence, and the conflict
-      is visible as "first value kept" rather than hidden by
-      an overwrite.
-    - Only whitelisted fields ever reach this function (the
-      collectors drop every other field first), so backfill
-      can never promote a stray string (note, company, ...)
-      into structured evidence.
-    - Order is preserved: backfilling an existing entry does
-      not move it.
-    """
-    for key, value in new.items():
-        if key == "id":
+
+def _new_roster_state():
+    """Fresh merge state: entries (the roster list, in
+    first-seen order), barriers {id: {field: confirmed}},
+    unknown {id: set(fields)}, conflicts [records]."""
+    return {"entries": [], "barriers": {}, "unknown": {},
+            "conflicts": []}
+
+
+def _entry_by_id(state, contact_id):
+    for entry in state["entries"]:
+        if entry["id"] == contact_id:
+            return entry
+    return None
+
+
+def _drop_field(entry, field):
+    """Drop a field from a roster entry, in the entry's own
+    missing form: name/phone become "", relation is removed."""
+    if field == "relation":
+        entry.pop("relation", None)
+    else:
+        entry[field] = ""
+
+
+def _group_read_entries(entries):
+    """Group one read event's entries by id, in first-seen
+    order. Returns (grouped, unknown_map): grouped is one
+    entry per id with the event's valid values; unknown_map
+    is {id: set(fields)} for fields that conflict WITHIN
+    this single read (rule 6a) -- those fields are dropped
+    from the grouped entry. Repeated identical values are
+    not a conflict; a field carried by only one duplicate
+    is not a conflict (absence in a duplicate is not a
+    value)."""
+    grouped = []
+    by_id = {}
+    unknown_map = {}
+    for entry in entries:
+        if entry is None:
             continue
-        old = existing.get(key)
-        if old is None or old == "":
-            if isinstance(value, str) and value.strip():
-                existing[key] = value
-        # else: old is non-empty -- keep first, whatever the
-        # later value is (equal, empty, or conflicting).
+        existing = by_id.get(entry["id"])
+        if existing is None:
+            existing = dict(entry)
+            by_id[entry["id"]] = existing
+            grouped.append(existing)
+            continue
+        for field in _ROSTER_FIELDS:
+            if field not in entry:
+                continue
+            new = entry[field]
+            if new is None or new == "":
+                continue
+            if field not in existing:
+                existing[field] = new
+            elif existing[field] is None or existing[field] == "":
+                # A normalised "" is missing, not a value:
+                # filling it is not a conflict.
+                existing[field] = new
+            elif existing[field] != new:
+                unknown_map.setdefault(entry["id"], set()).add(field)
+                _drop_field(existing, field)
+    return grouped, unknown_map
+
+
+def _merge_group_into_state(state, grouped, unknown_map, seq):
+    """Merge one read event's grouped entries into state,
+    in event order (rule 1). ``seq`` is the event's order
+    index in the prefix (enumeration order, not a clock).
+    A field in unknown_map for an id becomes UNKNOWN in
+    state (rule 6a), regardless of any older value."""
+    for entry in grouped:
+        contact_id = entry["id"]
+        existing = _entry_by_id(state, contact_id)
+        if existing is None:
+            existing = {"id": contact_id, "name": "",
+                        "phone": ""}
+            state["entries"].append(existing)
+        unknown_fields = unknown_map.get(contact_id, set())
+        barriers = state["barriers"].get(contact_id, {})
+        unknown = state["unknown"].setdefault(contact_id, set())
+        for field in _ROSTER_FIELDS:
+            if field in unknown_fields:
+                old = existing.get(field)
+                _drop_field(existing, field)
+                unknown.add(field)
+                state["conflicts"].append({
+                    "contact_id": contact_id, "field": field,
+                    "old": old, "new": None,
+                    "reason": "intra_read_conflict_unknown",
+                    "seq": seq,
+                    "detail": "one read contains conflicting "
+                    "values for this field; no order can be "
+                    "established, so the field is UNKNOWN, "
+                    "not last-wins and not keep-first"})
+                continue
+            if field not in entry:
+                continue
+            new = entry[field]
+            if new is None or new == "":
+                continue
+            if field in barriers:
+                confirmed = barriers[field]
+                if new == confirmed:
+                    if field in unknown:
+                        existing[field] = confirmed
+                        unknown.discard(field)
+                    elif existing.get(field) != confirmed:
+                        existing[field] = confirmed
+                    continue
+                old = existing.get(field)
+                _drop_field(existing, field)
+                unknown.add(field)
+                state["conflicts"].append({
+                    "contact_id": contact_id, "field": field,
+                    "old": confirmed, "new": new,
+                    "reason": "barrier_contradiction_unknown",
+                    "seq": seq,
+                    "detail": "post-barrier read contradicts "
+                    "lifecycle-confirmed value from a "
+                    "succeeded contacts.update; field is "
+                    "UNKNOWN, neither overwritten nor "
+                    "reverted"})
+                continue
+            if field in unknown:
+                existing[field] = new
+                unknown.discard(field)
+                continue
+            old = existing.get(field)
+            if old is None or old == "":
+                existing[field] = new
+            elif old != new:
+                existing[field] = new
+                state["conflicts"].append({
+                    "contact_id": contact_id, "field": field,
+                    "old": old, "new": new,
+                    "reason": "last_wins",
+                    "seq": seq,
+                    "detail": "later successful read replaces "
+                    "earlier value for the same id"})
+            # else: equal -- keep.
+
+
+def _apply_barrier_to_state(state, barrier_entry, seq):
+    """Apply a lifecycle-confirmed contacts.update to state
+    (rule 5). ``barrier_entry`` is a normalised roster
+    entry built from the update's returned item. Only its
+    present valid fields become barriers, and only those
+    fields are overwritten (pre-barrier values for those
+    fields are discarded); other fields are untouched, and
+    an UNKNOWN for a barrier field is cleared by the
+    confirmed value. A barrier is not a conflict and is
+    not recorded in conflicts."""
+    contact_id = barrier_entry["id"]
+    existing = _entry_by_id(state, contact_id)
+    if existing is None:
+        existing = {"id": contact_id, "name": "", "phone": ""}
+        state["entries"].append(existing)
+    barriers = state["barriers"].setdefault(contact_id, {})
+    unknown = state["unknown"].setdefault(contact_id, set())
+    for field in _ROSTER_FIELDS:
+        if field not in barrier_entry:
+            continue
+        # A normalised entry always carries name/phone keys,
+        # with "" for missing: "" is NOT a confirmed value
+        # and must never become a barrier or overwrite a
+        # value the update never touched.
+        if barrier_entry[field] is None or barrier_entry[field] == "":
+            continue
+        barriers[field] = barrier_entry[field]
+        existing[field] = barrier_entry[field]
+        unknown.discard(field)
+
+
+def _barrier_entry_from_update(args, result):
+    """Lifecycle-confirmed barrier entry for a contacts.update
+    event, or None. Confirmed means: the event succeeded,
+    its contact_id argument is truthy, and its returned
+    item is a dict whose id equals that argument (the
+    PATCH_VERIFIED shape). The barrier fields are the
+    item's whitelisted valid fields, normalised by
+    _roster_entry. Anything else -- a failed update, an
+    id mismatch, no item, an invalid field value -- yields
+    no barrier at all (never a partial barrier from an
+    unconfirmed value)."""
+    if not isinstance(args, dict) or not args.get("contact_id"):
+        return None
+    if not isinstance(result, dict):
+        return None
+    item = result.get("item")
+    if not isinstance(item, dict) or item.get("id") != args.get(
+            "contact_id"):
+        return None
+    return _roster_entry(item)
+
+
+def _backfill_roster_entry(existing, new):
+    """Backward-compatible single-entry merge, now LAST-WINS
+    (rule 1), not keep-first: a missing field is filled, an
+    equal value is kept, and a different valid value from
+    the later entry replaces the older one. Missing /
+    invalid later values never overwrite. Implemented via
+    the state core so the single-entry path cannot drift
+    from the grouped path; barrier and UNKNOWN state are
+    not carried by this wrapper (callers that need them
+    use the state functions)."""
+    state = _new_roster_state()
+    state["entries"].append(existing)
+    grouped, unknown_map = _group_read_entries([dict(new)])
+    _merge_group_into_state(state, grouped, unknown_map, 0)
+    # The wrapper mutates ``existing`` in place: the state
+    # entry IS ``existing`` (same dict object), so no copy
+    # back is needed. If ``new`` had no id match this is a
+    # no-op for the caller only when ids differ -- in that
+    # case the state gained a second entry, which the
+    # caller ignores, exactly as the old wrapper did.
 
 
 def _merge_roster_entry(out, contact):
-    """Append ``contact`` to ``out`` or backfill its existing
-    entry for the same id, per _backfill_roster_entry."""
+    """Append ``contact`` to ``out`` or merge it into its
+    existing entry for the same id, per the unified rule
+    (last-wins for a differing valid value, fill for a
+    missing field, never overwrite with a missing value).
+    This list wrapper carries no barrier / UNKNOWN state;
+    collect_rosters_from_prefix (which does) is the path
+    the observer itself uses."""
     for existing in out:
         if existing["id"] == contact["id"]:
             _backfill_roster_entry(existing, contact)
@@ -227,48 +544,72 @@ def _merge_roster_entry(out, contact):
     out.append(contact)
 
 
-def collect_rosters_from_prefix(prefix):
-    """Roster evidence from observed contacts.search results in the
-    prefix (history + session), in prefix order, deduped by id.
-    History results that are not search results contribute nothing
-    unless they carry a "contacts" list (same rule as the audit).
+def collect_rosters_from_prefix_with_conflicts(prefix):
+    """Roster evidence from observed contacts.search results
+    in the prefix (history + session), in prefix order,
+    deduped by id, plus the conflict records produced by
+    the unified rule. Returns (roster, conflicts).
 
-    Success-only: a prefix entry contributes roster evidence
-    ONLY when its read succeeded. Entries built by
-    build_prefix carry "outcome" ("succeeded" exactly, per
-    _outcome_of); entries without that field are judged by
-    the same rule on their result (ok is True and done is
-    not False). A failed read (ok False / schema_rejected),
-    a noop, or a result with no ok True never becomes
-    successful evidence, even if it carries a "contacts"
-    list -- a failed result's payload is not a roster, and a
-    failed read neither creates nor backfills an entry, so a
-    failed first read does not poison a later successful one
-    and a failed later read cannot erase or rewrite one.
-    Dedup is first-successful-wins per id, WITH backfill for
-    missing fields only (see _backfill_roster_entry): a later
-    successful result for the same id fills a field the first
-    successful entry lacked (in practice ``relation``), but
-    never overwrites a non-empty value and never overwrites
-    with an empty one."""
-    out = []
-    for entry in prefix or []:
+    Success-only: a prefix entry contributes roster
+    evidence ONLY when its read succeeded. Entries built
+    by build_prefix carry "outcome" ("succeeded" exactly,
+    per _outcome_of); entries without that field are
+    judged by the same rule on their result (ok is True
+    and done is not False). A failed read (ok False /
+    schema_rejected), a noop, or a result with no ok True
+    never becomes successful evidence, even if it carries
+    a "contacts" list -- a failed result's payload is not
+    a roster, and a failed read neither creates nor
+    backfills an entry, so a failed first read does not
+    poison a later successful one and a failed later read
+    cannot erase or rewrite one.
+
+    Lifecycle barriers (rule 5) are applied in prefix
+    order as they occur: a succeeded contacts.update
+    event (patch-verified, see _barrier_entry_from_update)
+    sets confirmed fields before later reads are merged,
+    and later reads are merged against those barriers.
+
+    No future data: this function sees only the prefix it
+    is given. A record observed at a proposal is not
+    retroactively rewritten by a later search; the later
+    search only affects later proposals' prefixes."""
+    state = _new_roster_state()
+    for seq, entry in enumerate(prefix or []):
         if not isinstance(entry, dict):
             continue
         result = entry.get("result")
         outcome = entry.get("outcome")
         if outcome is not None:
-            if outcome != "succeeded":
-                continue
-        elif not (isinstance(result, dict)
-                  and result.get("ok") is True
-                  and result.get("done") is not False):
+            succeeded = outcome == "succeeded"
+        elif isinstance(result, dict):
+            succeeded = result.get("ok") is True \
+                and result.get("done") is not False
+        else:
+            succeeded = False
+        if not succeeded:
+            continue
+        if entry.get("tool") == "contacts.update":
+            barrier = _barrier_entry_from_update(
+                entry.get("args") or {}, result)
+            if barrier is not None:
+                _apply_barrier_to_state(state, barrier, seq)
             continue
         found = []
         _collect_rosters(result, found)
-        for contact in found:
-            _merge_roster_entry(out, contact)
-    return out
+        grouped, unknown_map = _group_read_entries(found)
+        _merge_group_into_state(state, grouped, unknown_map, seq)
+    return state["entries"], state["conflicts"]
+
+
+def collect_rosters_from_prefix(prefix):
+    """Roster list only; see
+    collect_rosters_from_prefix_with_conflicts for the
+    rule, the success definition, and the conflict
+    records that accompany this list."""
+    roster, _conflicts = collect_rosters_from_prefix_with_conflicts(
+        prefix)
+    return roster
 
 
 def build_prefix(history, executed, results):
@@ -343,10 +684,16 @@ class ShadowObserver:
     def __init__(self, enabled=False):
         self.enabled = bool(enabled)
         self.records = []
+        # Conflict records from the most recent observed
+        # proposal's roster (see collect_rosters_from_prefix_
+        # with_conflicts). In-memory only, never a record
+        # key: the export schema is owned elsewhere.
+        self.last_roster_conflicts = []
 
     def reset(self):
         try:
             self.records = []
+            self.last_roster_conflicts = []
         except Exception:
             pass
 
@@ -459,7 +806,9 @@ class ShadowObserver:
                     "position": position,
                 })
                 return
-            roster = collect_rosters_from_prefix(prefix)
+            roster, roster_conflicts = \
+                collect_rosters_from_prefix_with_conflicts(prefix)
+            self.last_roster_conflicts = roster_conflicts
             try:
                 decision = _get_decide()(
                     grounded, prefix, roster, current_text, kinds,

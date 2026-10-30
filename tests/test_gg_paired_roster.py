@@ -167,13 +167,15 @@ class TestHarnessRoster(unittest.TestCase):
 
 
 class TestHarnessRosterBackfillR4(unittest.TestCase):
-    """R4 backfill, harness side: the SAME rule as the runtime
+    """R4 backfill, harness side, as superseded for conflicts
+    by R4-CONFLICT: the SAME rule as the runtime
     observer (see lifemate_observer._backfill_roster_entry):
     same id, first successful read missing a field, later
     successful read carrying it -> fill ONLY the missing
-    field. Never overwrite with an empty value, never
-    overwrite a non-empty value (conflict keeps first),
-    failed reads neither create nor backfill. collect_rosters
+    field. Never overwrite with an empty value, failed
+    reads neither create nor backfill, and a differing
+    valid value from a later successful read REPLACES
+    the older one (last-wins). collect_rosters
     is called once per read result in the harness, so these
     tests call it twice into the same ``out`` list, exactly
     as the history path does."""
@@ -217,7 +219,7 @@ class TestHarnessRosterBackfillR4(unittest.TestCase):
             {"ok": True, "contacts": self.MISSING})
         self.assertEqual(roster, self.FULL)
 
-    def test_conflict_keeps_first(self):
+    def test_conflict_last_wins(self):
         conflict = [
             {"id": "c_m1", "name": "Minh", "phone": "0903111222",
              "relation": "đối tác"},
@@ -226,11 +228,11 @@ class TestHarnessRosterBackfillR4(unittest.TestCase):
         roster = self._two_reads(
             {"ok": True, "contacts": self.FULL},
             {"ok": True, "contacts": conflict})
-        self.assertEqual(roster, self.FULL)
-        # Keeping first means c_m1 still passes as khách hàng;
-        # overwriting would make both arms block (duplicate
-        # đối tác).
-        self.assertFalse(decide_for("c_m1", roster).fired)
+        self.assertEqual(roster, conflict)
+        # Last-wins (R4-CONFLICT rule change, not a dodged
+        # case): c_m1 is now a duplicate đối tác, so the
+        # khách hàng descriptor no longer passes it.
+        self.assertTrue(decide_for("c_m1", roster).fired)
 
     def test_failed_read_neither_creates_nor_backfills(self):
         # Failed later carrying the relation: no backfill.
