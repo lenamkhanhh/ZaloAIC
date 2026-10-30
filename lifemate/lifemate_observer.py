@@ -122,18 +122,35 @@ def _outcome_of(result):
 
 
 def _collect_rosters(value, out):
-    """Recursively collect {id, name, phone} roster entries from a
-    result value, mirroring the paired audit's collect_rosters:
-    any "contacts" list with id-bearing entries counts; recursion
-    does not descend into "phone" values."""
+    """Recursively collect roster entries from a result value,
+    mirroring the paired audit's collect_rosters: any "contacts"
+    list with id-bearing entries counts; recursion does not
+    descend into "phone" values.
+
+    Allowlist, not passthrough: an entry keeps ONLY id, name,
+    phone, plus "relation" when it is a non-empty string. The
+    D1 qualifier in the negation module matches a descriptor
+    against a roster entry's structured attributes other than
+    id/name/phone, and "relation" is the structured attribute
+    that contract supports here. Any other field -- even a
+    string -- is NOT carried over: an arbitrary string in a
+    contact dictionary is not structured evidence, and
+    copying every field would let an unrelated string
+    (a note, a label, a free-text comment) qualify a
+    duplicate. A non-string or blank "relation" is dropped
+    the same way a missing one is, never coerced."""
     if isinstance(value, dict):
         contacts = value.get("contacts")
         if isinstance(contacts, list):
             for entry in contacts:
                 if isinstance(entry, dict) and entry.get("id"):
-                    out.append({"id": entry["id"],
-                                "name": entry.get("name", ""),
-                                "phone": entry.get("phone", "")})
+                    contact = {"id": entry["id"],
+                               "name": entry.get("name", ""),
+                               "phone": entry.get("phone", "")}
+                    relation = entry.get("relation")
+                    if isinstance(relation, str) and relation.strip():
+                        contact["relation"] = relation
+                    out.append(contact)
         for key, item in value.items():
             if key != "phone":
                 _collect_rosters(item, out)
@@ -146,14 +163,36 @@ def collect_rosters_from_prefix(prefix):
     """Roster evidence from observed contacts.search results in the
     prefix (history + session), in prefix order, deduped by id.
     History results that are not search results contribute nothing
-    unless they carry a "contacts" list (same rule as the audit)."""
+    unless they carry a "contacts" list (same rule as the audit).
+
+    Success-only: a prefix entry contributes roster evidence
+    ONLY when its read succeeded. Entries built by
+    build_prefix carry "outcome" ("succeeded" exactly, per
+    _outcome_of); entries without that field are judged by
+    the same rule on their result (ok is True and done is
+    not False). A failed read (ok False / schema_rejected),
+    a noop, or a result with no ok True never becomes
+    successful evidence, even if it carries a "contacts"
+    list -- a failed result's payload is not a roster.
+    Dedup is first-successful-wins per id: a later
+    successful result for the same id does not backfill
+    attributes the first successful entry lacked."""
     out = []
     seen = set()
     for entry in prefix or []:
         if not isinstance(entry, dict):
             continue
+        result = entry.get("result")
+        outcome = entry.get("outcome")
+        if outcome is not None:
+            if outcome != "succeeded":
+                continue
+        elif not (isinstance(result, dict)
+                  and result.get("ok") is True
+                  and result.get("done") is not False):
+            continue
         found = []
-        _collect_rosters(entry.get("result"), found)
+        _collect_rosters(result, found)
         for contact in found:
             if contact["id"] not in seen:
                 seen.add(contact["id"])
