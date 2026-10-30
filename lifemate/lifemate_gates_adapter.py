@@ -336,10 +336,17 @@ def _field_value_events(obj, path, tool, is_read, ref_values, pos,
 
     An item dict is any dict with a string "id"; its registry comes
     from registry_for_entry(tool, "id", path) with path = the key the
-    item sits under (None for a top-level item). Items whose tool has
-    no "id" registry mapping emit nothing (documented gap: e.g.
-    tasks/calendar/notes search results have no PRODUCER_REGISTRY
-    entries). Scalar fields only (str/int/float/bool, not None, not
+    item sits under (None for a top-level item). For patch-verified
+    tools, a primary record (path None/"" / "item") whose tool has
+    no PRODUCER_REGISTRY "id" mapping falls back to the
+    PATCH_VERIFIED registry: a succeeded patch whose returned
+    record id equals its patch id-arg provably looked the entity
+    up, so its returned fields are post-mutation state, not an
+    echo. Items whose tool has neither mapping emit nothing
+    (e.g. notes.append, which is neither PRODUCER_REGISTRY-listed
+    nor patch-verified -- its field values stay unknown until a
+    simulator-verified mapping exists; never guessed).
+    Scalar fields only (str/int/float/bool, not None, not
     nested); the "id" field itself is existence, not field_value.
     Same echo rule as the existence loop: a non-read string value
     restating the call's own reference args establishes nothing.
@@ -351,6 +358,9 @@ def _field_value_events(obj, path, tool, is_read, ref_values, pos,
         ent = obj.get("id")
         if isinstance(ent, str):
             reg = registry_for_entry(tool, "id", path)
+            if reg is None and tool in PATCH_VERIFIED \
+                    and path in (None, "", "item"):
+                reg = PATCH_VERIFIED[tool][0]
             if reg is not None:
                 for fk, fv in obj.items():
                     if fk == "id":
@@ -594,6 +604,19 @@ def build_ledger(prefix, roster, kinds):
         (e["tool"], list(e["fields"]))
         for e in events
         if "mutation_kind" in e and e.get("fields") is not None]
+    # R2-G3: a write's own result is post-mutation state, so at a
+    # shared position its mutation must precede its evidence in
+    # journal order. Without this, apply_prefix (stable by
+    # position) keeps evidence-before-mutation and the ledger
+    # self-kills the new field_value the write just returned
+    # (e.g. contacts.update phone, calendar.update_event title
+    # both read back as invalidated instead of the new value).
+    # Older records at strictly earlier positions are unaffected:
+    # they are still killed by the mutation, as before.
+    events = sorted(
+        events,
+        key=lambda e: (e.get("position", 0),
+                       0 if "mutation_kind" in e else 1))
     ledger.apply_prefix(events)
     return ledger, notes
 
