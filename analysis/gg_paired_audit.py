@@ -23,6 +23,11 @@ Candidate prefix (raw events, proposal excluded):
   + replay events before pos (origin "session", positions H+idx)
   + history user-turn texts as {"kind": "user_turn"} entries.
 Roster = hist_rosters + replay rosters with position < pos.
+Roster entries carry only id/name/phone plus a non-empty
+string ``relation`` (the one structured attribute D1 needs
+for train_0063/0225), taken only from successful reads;
+an explicit ok=False result contributes no roster entry,
+and no other string field is forwarded as evidence.
 
 Per gold write the script records: baseline fired/applicable,
 candidate fired/applicable, the reference group (phone / contact /
@@ -74,15 +79,48 @@ def load_kind_map(train_dir):
         return {}
 
 
+def _harness_roster_entry(entry):
+    """One roster entry, on the harness whitelist only.
+
+    D1 (lifemate_callback_negation.py) matches a descriptor
+    against every roster field other than id/name/phone, so
+    forwarding every string field would let an arbitrary
+    string (a note, a company, a free-text field) qualify a
+    duplicate as if it were structured evidence. The harness
+    therefore forwards exactly one structured attribute
+    beyond id/name/phone: ``relation``, and only when it is
+    a non-empty string. Any other field is dropped, and a
+    non-string ``relation`` (a number, a list, ...) is
+    dropped rather than coerced. Returns None when the
+    entry has no id.
+    """
+    if not isinstance(entry, dict) or not entry.get("id"):
+        return None
+    roster_entry = {"id": entry["id"],
+                    "name": entry.get("name", ""),
+                    "phone": entry.get("phone", "")}
+    relation = entry.get("relation")
+    if isinstance(relation, str) and relation.strip():
+        roster_entry["relation"] = relation
+    return roster_entry
+
+
 def collect_rosters(results, out):
     if isinstance(results, dict):
+        # A failed read is not roster evidence: an explicit
+        # ok=False result contributes nothing, even if its
+        # payload still carries a contacts list. (A result
+        # with no ok field at all keeps the old behaviour;
+        # only an explicit failure is excluded, so result
+        # shapes without an ok field do not lose rosters.)
+        if results.get("ok") is False:
+            return
         contacts = results.get("contacts")
         if isinstance(contacts, list):
             for entry in contacts:
-                if isinstance(entry, dict) and entry.get("id"):
-                    out.append({"id": entry["id"],
-                                "name": entry.get("name", ""),
-                                "phone": entry.get("phone", "")})
+                roster_entry = _harness_roster_entry(entry)
+                if roster_entry is not None:
+                    out.append(roster_entry)
         for key, value in results.items():
             if key != "phone":
                 collect_rosters(value, out)
@@ -226,12 +264,17 @@ def main():
                 succeeded=outcome_of(res) == "succeeded")))
             if call.get("name") == "contacts.search" \
                     and isinstance(res, dict) and res.get("ok"):
+                # Same whitelist as collect_rosters (history
+                # path): id/name/phone + string relation
+                # only. Without relation here, a session
+                # contacts.search would still starve D1
+                # exactly like the history path did. The
+                # res.get("ok") guard above already keeps
+                # failed reads out of this path.
                 for entry in res.get("contacts") or []:
-                    if isinstance(entry, dict) and entry.get("id"):
-                        replay_rosters.append(
-                            (idx, {"id": entry["id"],
-                                   "name": entry.get("name", ""),
-                                   "phone": entry.get("phone", "")}))
+                    roster_entry = _harness_roster_entry(entry)
+                    if roster_entry is not None:
+                        replay_rosters.append((idx, roster_entry))
         # ---- evaluate every gold write ----
         for pos, call in enumerate(gold):
             name = call.get("name", "")
