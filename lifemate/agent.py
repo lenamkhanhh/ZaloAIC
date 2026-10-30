@@ -250,6 +250,92 @@ def _needs_to_params(needs: list, tool_name: str) -> list:
     return params
 
 
+def _is_empty_roster_value(value) -> bool:
+    """A roster field counts as missing when it is None or a blank
+    string. 0 / False are values, not missing fields (roster fields
+    here are strings in practice, but the rule is stated generally)."""
+    if value is None:
+        return True
+    return isinstance(value, str) and not value.strip()
+
+
+def _backfill_roster_entry(existing: dict, later: dict) -> None:
+    """Task-1 agent backfill (R4, unconditional): a later successful
+    read for the same contact_id supplements fields the first entry
+    lacks, without ever overwriting. A later non-empty value never
+    replaces a non-empty value already held (a conflict keeps the
+    first value), and a later empty/missing value never overwrites
+    anything. Only the roster copy is mutated, never the search
+    result's own dict (the roster stores a shallow copy)."""
+    for key, value in (later or {}).items():
+        if key == "id":
+            continue
+        if _is_empty_roster_value(existing.get(key)) \
+                and not _is_empty_roster_value(value):
+            existing[key] = value
+
+
+def _leaf_values(value) -> set:
+    """All scalar leaves of a read result, for pending-ask unlocking.
+
+    A write value counts as read-sourced after an ask only when it
+    appears exactly as a leaf of a read result executed AFTER that
+    ask (post-ask reads only; pre-ask reads do not unlock)."""
+    out = set()
+    if isinstance(value, dict):
+        for item in value.values():
+            out |= _leaf_values(item)
+    elif isinstance(value, list):
+        for item in value:
+            out |= _leaf_values(item)
+    elif isinstance(value, (str, int, float)) and not isinstance(value, bool):
+        out.add(value)
+    return out
+
+
+def _pending_key_from_ask(call: dict):
+    """Pending key for an executed ask call, or None.
+
+    The key is (tool_name, params-tuple) — the same key LoopGuard
+    would distinguish for distinct asks, and the key R3-ASK-REPEAT
+    §5 specifies. Different (tool, params) asks are different keys."""
+    if call.get("name") != "sys.ask_missing_info":
+        return None
+    args = call.get("arguments", {}) or {}
+    params = args.get("params", [])
+    if isinstance(params, str):
+        params = [params]
+    return (args.get("tool_name"), tuple(params or []))
+
+
+def _pending_fill_blocked(pending: dict, call: dict) -> bool:
+    """True if this call writes into a pending slot without a
+    post-ask read source for the value it puts there.
+
+    Only writes whose tool matches a pending key and whose arguments
+    carry a pending param are checked; writes for unrelated tools /
+    slots pass through unchanged (R3 §4(5)). A pending param is
+    unblocked only when its exact value is in that key's post-ask
+    read leaves — every pending param present in the call must be
+    so sourced, otherwise the call is blocked as a whole."""
+    for (tool_name, params), unlocked in pending.items():
+        if call.get("name") != tool_name:
+            continue
+        args = call.get("arguments", {}) or {}
+        for param in params:
+            if param not in args:
+                continue
+            value = args[param]
+            try:
+                if value in unlocked:
+                    continue
+            except TypeError:
+                pass
+            if not any(value == leaf for leaf in unlocked):
+                return True
+    return False
+
+
 class AgentLoop:
     def __init__(self, config, tools: dict):
         self.config = config
@@ -295,6 +381,11 @@ class AgentLoop:
         # every run() so no sample's contacts leak into the next one.
         self._roster = None
         self.grounding_log = []
+        # R4 pending-ask state (only consulted when the flag is on):
+        # key (tool_name, params) -> set of scalar leaves of reads
+        # executed after that ask. Reset per run like the roster.
+        pending_asks: dict = {}
+        self._pending_asks = pending_asks
         # Shadow observer state is per-sample too (same reset point).
         self.observer.reset()
         while steps < self.config.max_steps:
@@ -338,6 +429,24 @@ class AgentLoop:
                                               "params": _needs_to_params(grounded.needs, call["name"])}}
                     else:
                         call = grounded.call
+                # R4 pending_ask_stop (flag ON only; flag OFF skips
+                # this block entirely, so the loop is baseline):
+                # a repeat ask for an already-pending key ends the
+                # turn with no second ask, and a write filling a
+                # pending slot without a post-ask read source ends
+                # the turn with no env.call. Distinct keys and
+                # unrelated writes are not stopped here.
+                if getattr(self.config, "pending_ask_stop", False):
+                    ask_key = _pending_key_from_ask(call)
+                    if ask_key is not None and ask_key in pending_asks:
+                        return env.submission_line()
+                    # A read is never a "write filling a slot": it is
+                    # the very source that can unlock a pending slot.
+                    is_read = self._kind_map.get(call["name"]) == "read" \
+                        or call["name"] == "contacts.search"
+                    if ask_key is None and not is_read \
+                            and _pending_fill_blocked(pending_asks, call):
+                        return env.submission_line()
                 check = env.validate(call["name"], call["arguments"])
                 if check.get("ok"):
                     break
@@ -372,20 +481,47 @@ class AgentLoop:
             result = env.call(call["name"], call["arguments"])
             executed.append(call)
             results.append(result)
+            # R4 pending_ask_stop bookkeeping (flag ON only): a
+            # successful ask opens its key with an empty post-ask
+            # read set; a later read's leaves unlock only keys
+            # already pending at the time of that read.
+            if getattr(self.config, "pending_ask_stop", False):
+                ask_key = _pending_key_from_ask(call)
+                if ask_key is not None:
+                    pending_asks.setdefault(ask_key, set())
+                elif self._kind_map.get(call["name"]) == "read" \
+                        or call["name"] == "contacts.search":
+                    leaves = _leaf_values(result)
+                    for unlocked in pending_asks.values():
+                        unlocked |= leaves
             if call["name"] == "contacts.search" and result.get("ok") \
                     and getattr(self.config, "grounding", False):
                 # Accumulate the roster from OBSERVED search results only
                 # (never from state files). Dedup by id; a later search
                 # may extend the roster mid-trace. Gated by the grounding
                 # flag so a dormant loop touches no grounding state.
+                # R4 task-1 backfill: a later successful search for an
+                # id already in the roster supplements its missing
+                # fields (see _backfill_roster_entry); it never
+                # overwrites a non-empty field, never overwrites with
+                # an empty value, and never appends a duplicate entry.
+                # Roster entries are shallow copies, so backfill never
+                # mutates a search result's own dict.
                 contacts = result.get("contacts")
                 if isinstance(contacts, list):
                     roster = self._roster if self._roster is not None else []
-                    seen = {c.get("id") for c in roster}
+                    by_id = {c.get("id"): c for c in roster
+                             if isinstance(c, dict) and c.get("id")}
                     for c in contacts:
-                        if isinstance(c, dict) and c.get("id") not in seen:
-                            roster.append(c)
-                            seen.add(c.get("id"))
+                        if not isinstance(c, dict) or not c.get("id"):
+                            continue
+                        existing = by_id.get(c["id"])
+                        if existing is None:
+                            entry = dict(c)
+                            roster.append(entry)
+                            by_id[c["id"]] = entry
+                        else:
+                            _backfill_roster_entry(existing, c)
                     self._roster = roster
             if completion is not None and completion(result, executed):
                 return env.submission_line()
