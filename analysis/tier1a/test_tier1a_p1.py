@@ -18,6 +18,7 @@ import json
 import sys
 import tempfile
 import unittest
+import types
 from unittest.mock import patch
 from pathlib import Path
 
@@ -330,6 +331,63 @@ class TestScoreRefusalAndSeparation(unittest.TestCase):
 
 
 class TestAsrCacheBeforeLlm(unittest.TestCase):
+    def test_off_on_reuses_same_model_and_keeps_fresh_runs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manifest = root / "manifest.json"
+            ids = ["dev_1", "dev_2", "dev_3"]
+            manifest.write_text(json.dumps(make_manifest(ids)), encoding="utf-8")
+            sentinel = object()
+            seen = []
+            def fake_run(args, shared_llm=None):
+                seen.append((shared_llm, args.observer, args.resume))
+                out = Path(args.out)
+                out.mkdir(parents=True)
+                (out / "traces_B0.jsonl").write_text("".join(
+                    json.dumps(fake_trace(sid, "B0")) + "\n" for sid in ids),
+                    encoding="utf-8")
+                return 0
+            args = argparse.Namespace(out=str(root/"off_on"), benchmark=str(manifest),
+                                      source_tree=str(REPO), data="unused")
+            with patch.object(R, "PILOT_SIZE", 3), patch.object(R, "cmd_run", fake_run):
+                self.assertEqual(R.cmd_check_off_on(args, shared_llm=sentinel), 0)
+            self.assertEqual(seen, [(sentinel, "off", False), (sentinel, "on", False)])
+
+    def test_engine_receives_context_bound_and_preserves_generation_protocol(self):
+        sys.path.insert(0, str(REPO))
+        captured = {}
+        vllm = types.ModuleType("vllm")
+        transformers = types.ModuleType("transformers")
+
+        class Engine:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+            def generate(self, texts, params):
+                return [types.SimpleNamespace(outputs=[types.SimpleNamespace(
+                    text='{"name":"contacts.search","arguments":{"query":"Lan"}}')])]
+
+        class Tokenizer:
+            @classmethod
+            def from_pretrained(cls, *args, **kwargs):
+                return cls()
+            def apply_chat_template(self, messages, **kwargs):
+                return messages[0]["content"]
+
+        vllm.LLM = Engine
+        vllm.SamplingParams = lambda **kwargs: kwargs
+        transformers.AutoTokenizer = Tokenizer
+        cfg = types.SimpleNamespace(llm_checkpoint="synthetic", llm_revision="pin",
+                                    llm_seed=42, llm_max_context_tokens=16384)
+        with patch.dict(sys.modules, {"vllm": vllm, "transformers": transformers}):
+            generator = R.build_pilot_llm(cfg)
+            self.assertEqual(captured["max_model_len"], 16384)
+            self.assertEqual(captured["max_num_seqs"], 1)
+            self.assertEqual(captured["dtype"], "float16")
+            self.assertTrue(captured["enforce_eager"])
+            self.assertEqual(generator.params, {"temperature": 0.0, "seed": 42,
+                                                "max_tokens": 512})
+            self.assertEqual(generator("request", {})["name"], "contacts.search")
+
     def test_asr_casts_features_but_keeps_integer_mask(self):
         try:
             import torch

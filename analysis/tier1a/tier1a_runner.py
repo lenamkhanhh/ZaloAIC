@@ -942,6 +942,25 @@ class LazyASR:
         return self.instance.transcribe(wav_path)
 
 
+def build_pilot_llm(cfg):
+    """Use the unchanged generator protocol with an explicit bounded engine."""
+    from lifemate.llm import VLLMGenerator
+    from transformers import AutoTokenizer
+    from vllm import LLM, SamplingParams
+
+    checkpoint = os.environ.get("TIER1A_LLM_MODEL_DIR") or cfg.llm_checkpoint
+    generator = VLLMGenerator.__new__(VLLMGenerator)
+    generator.tokenizer = AutoTokenizer.from_pretrained(
+        checkpoint, revision=cfg.llm_revision)
+    generator.llm = LLM(
+        model=checkpoint, revision=cfg.llm_revision, seed=cfg.llm_seed,
+        max_model_len=cfg.llm_max_context_tokens, max_num_seqs=1,
+        dtype="float16", enforce_eager=True, gpu_memory_utilization=0.90)
+    generator.params = SamplingParams(temperature=0.0, seed=cfg.llm_seed,
+                                      max_tokens=512)
+    return generator
+
+
 def input_hash_for_sample(sample_id: str, mode: str, wav_sha: str,
                           transcript_current, history_transcripts,
                           config_sha256: str, asr_checkpoint: str,
@@ -1141,7 +1160,7 @@ def cmd_asr_cache(args) -> int:
     return 0
 
 
-def cmd_run(args) -> int:
+def cmd_run(args, shared_llm=None) -> int:
     """GPU run phase: write submission traces to disk, nothing more.
 
     For each kept sample and each requested mode, a fresh env and a
@@ -1245,11 +1264,15 @@ def cmd_run(args) -> int:
               file=sys.stderr)
         return 2
     t0 = time.time()
-    llm = VLLMGenerator(cfg.llm_checkpoint, cfg.llm_revision, seed=cfg.llm_seed)
+    llm = shared_llm if shared_llm is not None else build_pilot_llm(cfg)
     load_log = {"llm_seconds": time.time() - t0,
                 "asr_backend_actual": asr_backend,
                 "asr_model_dir_actual": asr_model_dir,
-                "asr_gpu_loaded_during_run": False}
+                "asr_gpu_loaded_during_run": False,
+                "llm_weights_path": os.environ.get("TIER1A_LLM_MODEL_DIR") or cfg.llm_checkpoint,
+                "engine_max_model_len": cfg.llm_max_context_tokens,
+                "engine_max_num_seqs": 1, "engine_dtype": "float16",
+                "engine_enforce_eager": True, "gpu_memory_utilization": 0.90}
     (out / "model_load.json").write_text(json.dumps(load_log, indent=2), encoding="utf-8")
     # Precompute FIXED history + current transcripts and input hashes
     # per mode, BEFORE any AgentLoop run, so resume can compare them.
@@ -1407,7 +1430,7 @@ def cmd_run(args) -> int:
     return 0
 
 
-def cmd_check_off_on(args) -> int:
+def cmd_check_off_on(args, shared_llm=None) -> int:
     """OFF-vs-ON (stream-C 5.4): pilot 20, same condition (B0),
     observer OFF then ON. Submission lines must be identical.
 
@@ -1436,7 +1459,7 @@ def cmd_check_off_on(args) -> int:
             observer=flag, resume=False,
             asr_backend=getattr(args, "asr_backend", None),
             asr_model_dir=getattr(args, "asr_model_dir", None))
-        rc = cmd_run(ns)
+        rc = cmd_run(ns, shared_llm=shared_llm)
         if rc != 0:
             print(f"OFF-vs-ON: run with observer {flag} failed (rc={rc})", file=sys.stderr)
             return rc
