@@ -181,5 +181,176 @@ class TestShadowExportFreshProcess(unittest.TestCase):
             observer_module._decide_cache["fn"] = old
 
 
+def _base_record():
+    return {
+        "proposal_raw": {"name": "phone.call", "arguments": {}},
+        "proposal_grounded": {"name": "phone.call", "arguments": {}},
+        "validation_outcome": "ok",
+        "baseline_decision": {"fired": True, "applicable": True, "reason": "x"},
+        "candidate_decision": {"fired": True, "applicable": True},
+        "adjustments": [], "eligibility": None,
+        "error": None, "position": 0,
+    }
+
+
+def _envelope_for(records):
+    return {
+        "observer_enabled": True, "record_count": len(records),
+        "observer_error_count": sum(
+            1 for r in records if r.get("error")),
+        "records": records,
+    }
+
+
+_UNKNOWN_PENDING_SD = {
+    "decision": "unknown_pending",
+    "unknown_kind": "question_after_positive",
+    "active_status": "pending_unproven",
+    "blocked_subtype": "question",
+    "mismatch": "unknown_pending",
+    "last_event": {"kind": "positive_request", "turn_position": 0,
+                   "evidence": "history_text"},
+}
+
+_MISMATCH_SD = {
+    "decision": "mismatch",
+    "active_status": "discharged",
+    "blocked_subtype": "completion",
+    "mismatch": "blocked_request",
+    "last_event": {"kind": "positive_request", "turn_position": 0,
+                   "evidence": "history_text"},
+}
+
+
+class TestSelectionDecisionValidator(unittest.TestCase):
+    """R4 export-validator: 9-key old records and valid 10-key
+    selection_decision records pass; anything else fails.
+
+    The two valid shapes are the exact dicts the gates adapter
+    writes into notes["selection_decision"] (see the backfill-log
+    report §3): unknown_pending carries unknown_kind, mismatch
+    never does. The JSON round-trip test proves an UNKNOWN
+    record written to an export file still carries unknown_kind
+    and last_event when read back -- the fields the strict
+    9-key validator used to discard by rejection.
+    """
+
+    def test_old_9_key_record_still_passes(self):
+        self.assertEqual(validate_envelope(_envelope_for([_base_record()])), [])
+
+    def test_unknown_pending_10_key_passes(self):
+        rec = _base_record()
+        rec["selection_decision"] = dict(_UNKNOWN_PENDING_SD)
+        self.assertEqual(validate_envelope(_envelope_for([rec])), [])
+
+    def test_mismatch_10_key_passes(self):
+        rec = _base_record()
+        rec["selection_decision"] = dict(_MISMATCH_SD)
+        self.assertEqual(validate_envelope(_envelope_for([rec])), [])
+
+    def test_mismatch_with_last_event_none_passes(self):
+        # Adapter writes last_event=None when no decisive
+        # history event exists (e.g. question over an absent
+        # positive); that is a real adapter shape, not an error.
+        rec = _base_record()
+        sd = dict(_MISMATCH_SD)
+        sd["last_event"] = None
+        rec["selection_decision"] = sd
+        self.assertEqual(validate_envelope(_envelope_for([rec])), [])
+
+    def test_strange_10th_key_rejected(self):
+        rec = _base_record()
+        rec["note"] = "stray string, not structured evidence"
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_strange_key_alongside_valid_selection_decision_rejected(self):
+        rec = _base_record()
+        rec["selection_decision"] = dict(_UNKNOWN_PENDING_SD)
+        rec["note"] = "extra key is still a schema violation"
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_selection_decision_wrong_type_rejected(self):
+        for bad in ("unknown_pending", ["unknown_pending"], None, 42, True):
+            with self.subTest(bad=bad):
+                rec = _base_record()
+                rec["selection_decision"] = bad
+                self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_selection_decision_missing_decision_rejected(self):
+        rec = _base_record()
+        sd = dict(_UNKNOWN_PENDING_SD)
+        del sd["decision"]
+        rec["selection_decision"] = sd
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_selection_decision_unknown_decision_value_rejected(self):
+        rec = _base_record()
+        sd = dict(_UNKNOWN_PENDING_SD)
+        sd["decision"] = "passed"
+        rec["selection_decision"] = sd
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_unknown_pending_without_unknown_kind_rejected(self):
+        rec = _base_record()
+        sd = dict(_UNKNOWN_PENDING_SD)
+        del sd["unknown_kind"]
+        rec["selection_decision"] = sd
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_mismatch_with_unknown_kind_rejected(self):
+        rec = _base_record()
+        sd = dict(_MISMATCH_SD)
+        sd["unknown_kind"] = "question_after_positive"
+        rec["selection_decision"] = sd
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_selection_decision_unknown_field_rejected(self):
+        rec = _base_record()
+        sd = dict(_UNKNOWN_PENDING_SD)
+        sd["company"] = "stray field inside selection_decision"
+        rec["selection_decision"] = sd
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_malformed_last_event_rejected(self):
+        for bad_event in (
+                {"kind": "positive_request", "turn_position": "0",
+                 "evidence": "history_text"},
+                {"kind": "positive_request", "turn_position": 0},
+                "positive_request",
+        ):
+            with self.subTest(bad_event=bad_event):
+                rec = _base_record()
+                sd = dict(_UNKNOWN_PENDING_SD)
+                sd["last_event"] = bad_event
+                rec["selection_decision"] = sd
+                self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_error_and_decision_checks_still_apply_to_10_key(self):
+        # Validator is not loosened elsewhere: a 10-key record
+        # with an observer error, or missing decisions for a
+        # validated non-ask proposal, still fails.
+        rec = _base_record()
+        rec["selection_decision"] = dict(_UNKNOWN_PENDING_SD)
+        rec["error"] = "RuntimeError: decide failed"
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+        rec = _base_record()
+        rec["selection_decision"] = dict(_MISMATCH_SD)
+        rec["baseline_decision"] = None
+        self.assertTrue(validate_envelope(_envelope_for([rec])))
+
+    def test_unknown_record_json_round_trip_keeps_structured_fields(self):
+        rec = _base_record()
+        rec["selection_decision"] = dict(_UNKNOWN_PENDING_SD)
+        envelope = _envelope_for([rec])
+        restored = json.loads(json.dumps(envelope, ensure_ascii=False))
+        self.assertEqual(validate_envelope(restored), [])
+        sd = restored["records"][0]["selection_decision"]
+        self.assertEqual(sd["unknown_kind"], "question_after_positive")
+        self.assertEqual(sd["last_event"],
+                         {"kind": "positive_request", "turn_position": 0,
+                          "evidence": "history_text"})
+        self.assertEqual(sd["decision"], "unknown_pending")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

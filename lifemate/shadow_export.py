@@ -71,7 +71,12 @@ two failed attempts at the same evidence position share it.
 
 Integration success (this is the gate, and it is strict):
   * OFF: records must be [], submission/state_hash are the control.
-  * ON: every record must have exactly the 9 observer keys, error
+  * ON: every record must have exactly the 9 observer keys, or
+    the 9 keys plus exactly one conditional 10th key
+    ``selection_decision`` validated per
+    ``_validate_selection_decision`` (R4 export-validator: the
+    backfill-log branch adds this key only when the adapter set
+    a selection_decision; no other 10th key is accepted). Error
     must be null, and every validated non-ask proposal must have a
     non-null baseline_decision and candidate_decision (dicts).
   * Export must equal records: json.loads(loop.observer.to_json())
@@ -105,6 +110,115 @@ RECORD_KEYS = {
     "baseline_decision", "candidate_decision", "adjustments",
     "eligibility", "error", "position",
 }
+# R4 export-validator schema for the conditional 10th record key.
+# These are exactly the fields the gates adapter writes into
+# notes["selection_decision"] (lifemate_gates_adapter.py check-5):
+#   unknown_pending: decision, unknown_kind, active_status,
+#     blocked_subtype, mismatch, last_event
+#   mismatch:        decision, active_status, blocked_subtype,
+#     mismatch, last_event  (NO unknown_kind is ever invented
+#     for mismatch -- the backfill-log branch copies the dict
+#     verbatim, so a mismatch record carrying unknown_kind is
+#     rejected here: it would collapse the UNKNOWN/mismatch
+#     distinction the log exists to preserve)
+# No other selection_decision field is accepted, and no other
+# 10th record key is accepted. This is deliberately not "any
+# dict": decision is required and restricted to the two values
+# the adapter ever produces, unknown_kind is required for
+# unknown_pending (it is what distinguishes structured UNKNOWN
+# from a plain mismatch) and forbidden on mismatch, and every
+# present string field must be a non-empty string.
+# last_event is the adapter's {kind, turn_position, evidence}
+# dict when a decisive history event exists; the adapter
+# writes None for it when there is none (e.g. a mismatch
+# question over an absent positive), so None is accepted and
+# a present dict must have exactly those three fields, with
+# turn_position an int (bool is not an int here, even though
+# bool subclasses int in Python). active_status /
+# blocked_subtype / mismatch are validated for type when
+# present, not required, so a future adapter variant that
+# omits one does not fail validation on a field the order
+# did not name as mandatory.
+SELECTION_DECISION_KEYS = {
+    "decision", "unknown_kind", "active_status",
+    "blocked_subtype", "mismatch", "last_event",
+}
+SELECTION_DECISIONS = {"unknown_pending", "mismatch"}
+SELECTION_DECISION_STRING_FIELDS = {
+    "unknown_kind", "active_status", "blocked_subtype", "mismatch",
+}
+LAST_EVENT_KEYS = {"kind", "turn_position", "evidence"}
+
+
+def _is_nonempty_str(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_selection_decision(sd, record_index: int) -> list[str]:
+    """Validate one selection_decision value; [] = accepted.
+
+    This is called only for a record whose keys are exactly
+    RECORD_KEYS + {"selection_decision"}; a record with any
+    other key set never reaches this check.
+    """
+    failures = []
+    if not isinstance(sd, dict):
+        return [f"record {record_index} selection_decision "
+                "is not an object"]
+    extra = set(sd.keys()) - SELECTION_DECISION_KEYS
+    if extra:
+        failures.append(
+            f"record {record_index} selection_decision has "
+            f"unknown field(s): {sorted(extra)}")
+    decision = sd.get("decision")
+    if decision is None:
+        failures.append(
+            f"record {record_index} selection_decision missing decision")
+    elif decision not in SELECTION_DECISIONS:
+        failures.append(
+            f"record {record_index} selection_decision decision "
+            f"must be 'unknown_pending' or 'mismatch', got {decision!r}")
+    elif decision == "unknown_pending" and not _is_nonempty_str(
+            sd.get("unknown_kind")):
+        failures.append(
+            f"record {record_index} selection_decision "
+            "unknown_pending requires unknown_kind")
+    if decision == "mismatch" and "unknown_kind" in sd:
+        failures.append(
+            f"record {record_index} selection_decision "
+            "mismatch must not carry unknown_kind")
+    for field in sorted(SELECTION_DECISION_STRING_FIELDS):
+        if field in sd and not _is_nonempty_str(sd[field]):
+            failures.append(
+                f"record {record_index} selection_decision {field} "
+                "must be a non-empty string")
+    if "last_event" in sd and sd["last_event"] is not None:
+        event = sd["last_event"]
+        if not isinstance(event, dict):
+            failures.append(
+                f"record {record_index} selection_decision "
+                "last_event is not an object")
+        else:
+            if set(event.keys()) != LAST_EVENT_KEYS:
+                failures.append(
+                    f"record {record_index} selection_decision "
+                    "last_event keys differ from "
+                    "{kind, turn_position, evidence}")
+            if not _is_nonempty_str(event.get("kind")):
+                failures.append(
+                    f"record {record_index} selection_decision "
+                    "last_event kind must be a non-empty string")
+            turn_position = event.get("turn_position")
+            if not isinstance(turn_position, int) or isinstance(
+                    turn_position, bool):
+                failures.append(
+                    f"record {record_index} selection_decision "
+                    "last_event turn_position must be an int")
+            if not _is_nonempty_str(event.get("evidence")):
+                failures.append(
+                    f"record {record_index} selection_decision "
+                    "last_event evidence must be a non-empty string")
+    return failures
 
 
 def _code_commit() -> str | None:
@@ -148,9 +262,15 @@ def validate_envelope(envelope: dict) -> list[str]:
         if not isinstance(rec, dict):
             failures.append(f"record {i} is not an object")
             continue
-        if set(rec.keys()) != RECORD_KEYS:
+        if set(rec.keys()) == RECORD_KEYS:
+            pass  # old 9-key record, unchanged
+        elif set(rec.keys()) == RECORD_KEYS | {"selection_decision"}:
+            failures.extend(
+                _validate_selection_decision(rec["selection_decision"], i))
+        else:
             failures.append(
-                f"record {i} keys differ from the 9-key observer schema")
+                f"record {i} keys differ from the 9-key observer schema "
+                "or the 10-key selection_decision schema")
         if rec.get("error") is not None:
             failures.append(f"record {i} has observer error: {rec.get('error')}")
         grounded = rec.get("proposal_grounded")
