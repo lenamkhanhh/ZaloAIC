@@ -3073,6 +3073,68 @@ def analyze_action_selection(text, target_names=(), target_phones=(),
             "mention_present": mention_present}
 
 
+def _distinguishing_token_entry(phrase, entries_fields):
+    """R7 distinguishing-content-token match (module-level, pure).
+
+    ``phrase`` is a list of folded tokens collected next to a
+    name mention; ``entries_fields`` is a list of
+    ``(roster_index, {field_key: [folded tokens]})`` for the
+    duplicate group, built ONLY from structured roster fields
+    other than id/name/phone. No word, phrase or sentence is
+    whitelisted: the only vocabulary is the roster's own
+    attribute tokens.
+
+    Rule: let D be the phrase tokens that occur in ANY entry's
+    structured attributes (framing tokens that occur in none
+    -- a locative or particle around the descriptor -- are
+    ignored, not treated as evidence). D qualifies an entry
+    ONLY when (a) D is non-empty, (b) D is a subset of exactly
+    one entry's attribute-token set, and (c) every other entry
+    carries, non-empty, EVERY field of the winner that contains
+    a D token. (c) is the F5 proven-uniqueness condition for
+    tokens: if another entry's field that could also carry D
+    is missing, that field is UNKNOWN and uniqueness is not
+    proven. In particular a single token that occurs in several
+    entries' attributes matches several candidates under (b)
+    and qualifies nobody; tokens drawn from two different
+    entries likewise qualify nobody. Returns the winning
+    roster index, or None.
+    """
+    if not phrase or not entries_fields:
+        return None
+    token_sets = {}
+    for idx, fields in entries_fields:
+        union = set()
+        for seq in fields.values():
+            union.update(seq)
+        token_sets[idx] = union
+    union_all = set()
+    for union in token_sets.values():
+        union_all.update(union)
+    disc = {t for t in phrase if t in union_all}
+    if not disc:
+        return None
+    cands = [idx for idx, union in token_sets.items()
+             if disc <= union]
+    if len(cands) != 1:
+        return None
+    win = cands[0]
+    win_fields = entries_fields[
+        [i for i, (idx, _f) in enumerate(entries_fields)
+         if idx == win][0]][1]
+    matched_fields = {k for k, seq in win_fields.items()
+                      if set(seq) & disc}
+    if not matched_fields:
+        return None
+    for idx, fields in entries_fields:
+        if idx == win:
+            continue
+        for key in matched_fields:
+            if not fields.get(key):
+                return None
+    return win
+
+
 def analyze_selection_consistency(text, action, target_names=(),
                                   target_phones=(), roster=(),
                                   history_texts=(),
@@ -3152,6 +3214,30 @@ def analyze_selection_consistency(text, action, target_names=(),
     become the recipient; a digit run disables the
     duplicate guard only when governed / role-bound to
     the recipient, never by mere presence (D3).
+
+    Antecedent (R7): a reduced descriptor is recognised by
+    its distinguishing content tokens, not only by exact /
+    contiguous attribute equality (see
+    _distinguishing_token_entry): framing tokens that occur
+    in no duplicate's attributes are ignored, and the
+    remaining attribute tokens must belong to exactly one
+    entry with every carrying field present elsewhere --
+    a token shared by several entries, or tokens drawn from
+    two entries, qualify nobody. A lookup / open / view
+    history turn (tim / tra cuu / xem; mo is not an
+    other-action verb at all) that uniquely resolves a
+    duplicate group therefore establishes that entry as the
+    antecedent for a pronoun in the immediately following
+    action turn in the same session; a replaced or
+    cancelled antecedent no longer qualifies (the existing
+    history supersession / correction rules apply to the
+    distinguishing-token events exactly as to exact
+    phrases). A pronoun resolves only to that unique
+    antecedent, for the action the current turn actually
+    requests: an antecedent for a call does not license a
+    message proposal, and vice versa (layer B reports the
+    other-action verb as action_mismatch). No unique
+    antecedent -> UNKNOWN (unknown_referent), never a guess.
 
     History (history_texts: prior user-turn texts from the
     adapter's prefix) fills exactly two gaps, and no others:
@@ -3888,19 +3974,24 @@ def analyze_selection_consistency(text, action, target_names=(),
             # R6 descriptor action-scoping + correction
             # clauses for this history turn, computed once:
             # other-action verbs that are NOT lookups
-            # (tim / tra cuu count as identifying the
-            # person for this purpose; luu / xoa / kiem
-            # tra / ghi / chuyen / ... do not) govern an
+            # (tim / tra cuu / xem count as identifying the
+            # person for this purpose -- R7: a view/open
+            # turn is an antecedent-establishing turn, like
+            # a search turn; luu / xoa / kiem tra / ghi /
+            # chuyen / ... do not) govern an
             # object span; a descriptor in such a span is
             # another action's object, not a callback
             # selection, so it contributes no event.
+            # "mo" (open) needs no exemption: it is not in
+            # _OTHER_VERB_PATTERNS at all, so a mention
+            # governed by it already contributes.
             # A correction clause is exactly ["a",
             # "khong"] or ["khong"] as its own clause.
             _h_other_spans = []
             _h_corr_cids = set()
             _h_other_pats = sorted(_OTHER_VERB_PATTERNS,
                                    key=lambda p: -len(p[0]))
-            _h_lookup = (["tim"], ["tra", "cuu"])
+            _h_lookup = (["tim"], ["tra", "cuu"], ["xem"])
             _hi = 0
             while _hi < len(hfolds):
                 _matched = None
@@ -4050,6 +4141,37 @@ def analyze_selection_consistency(text, action, target_names=(),
                     if after_seq:
                         descriptor_events.append(
                             (after_seq, _superseding, _replacing))
+                        # R7 distinguishing-token event:
+                        # the ordinary scan stops at the
+                        # first rejected token, so a
+                        # reduced descriptor whose
+                        # distinguishing attribute token
+                        # sits past that stop (a framing
+                        # token, then a verb-colliding
+                        # attribute token) would otherwise
+                        # lose its only distinguishing
+                        # token. Append, as a SEPARATE
+                        # event with the same superseding
+                        # / replacing flags, the attribute
+                        # tokens of the same run, in run
+                        # order -- ONLY when a noun
+                        # descriptor already started the
+                        # phrase, so a name-as-subject
+                        # verb clause (ordinary scan
+                        # empty) still collects nothing.
+                        # The event then goes through the
+                        # unchanged D1 / token rules, so
+                        # a token shared by several entries
+                        # still qualifies nobody.
+                        _dup_tok_union = set()
+                        for _seq in dup_attr_seqs:
+                            _dup_tok_union.update(_seq)
+                        _dist = [t for t in _after_run
+                                 if t in _dup_tok_union]
+                        if _dist and _dist != after_seq:
+                            descriptor_events.append(
+                                (_dist, _superseding,
+                                 _replacing))
                 if _after_exact is None and not after_seq and dup_attr_seqs and ne < len(hfolds):
                     # R4 VERB-COLLISION RESCUE (post-name
                     # only): the ordinary scan above stops
@@ -4244,6 +4366,34 @@ def analyze_selection_consistency(text, action, target_names=(),
                 if not _proven:
                     return set()
                 return set(matched_entries)
+            # R7 distinguishing-token fallback: no unique
+            # contiguous match. A phrase whose attribute
+            # tokens belong to exactly one entry (see
+            # _distinguishing_token_entry) qualifies that
+            # entry; a phrase whose tokens are shared or
+            # span two entries qualifies nobody.
+            _hist_fields = []
+            for i in idxs:
+                _fields = {}
+                for _key, _val in (roster[i] or {}).items():
+                    if _key in ("id", "name", "phone"):
+                        continue
+                    if not isinstance(_val, str) \
+                            or not _val.strip():
+                        continue
+                    _seq = [_fold(t) for t in
+                            re.findall(r"[^\W_]+", _nfc(_val))]
+                    if _seq:
+                        _fields[_key] = _seq
+                _hist_fields.append((i, _fields))
+            _tok_entries = set()
+            for _phrase in descriptor_phrases:
+                _win = _distinguishing_token_entry(
+                    _phrase, _hist_fields)
+                if _win is not None:
+                    _tok_entries.add(_win)
+            if len(_tok_entries) == 1:
+                return set(_tok_entries)
             # ROUND 4 fallback: descriptor-only with no
             # unique structured match qualifies NOTHING.
             return set()
@@ -4313,32 +4463,54 @@ def analyze_selection_consistency(text, action, target_names=(),
             if _r6_is_subseq(phrase, seq) \
                     or _r6_is_subseq(seq, phrase):
                 matched.setdefault(i, set()).add(tuple(seq))
-        if len(matched) != 1:
-            return set()
-        # Field keys that matched, recovered from the
-        # roster (seqs alone do not carry their key).
-        _entry = next(iter(matched))
-        _match_keys = set()
-        for _key, _val in (roster[_entry] or {}).items():
-            if _key in ("id", "name", "phone"):
-                continue
-            if not isinstance(_val, str) or not _val.strip():
-                continue
-            _seq = [_fold(t) for t in
-                    re.findall(r"[^\W_]+", _nfc(_val))]
-            if _seq and (_r6_is_subseq(phrase, _seq)
-                         or _r6_is_subseq(_seq, phrase)):
-                _match_keys.add(_key)
+        if len(matched) == 1:
+            # Field keys that matched, recovered from the
+            # roster (seqs alone do not carry their key).
+            _entry = next(iter(matched))
+            _match_keys = set()
+            for _key, _val in (roster[_entry] or {}).items():
+                if _key in ("id", "name", "phone"):
+                    continue
+                if not isinstance(_val, str) or not _val.strip():
+                    continue
+                _seq = [_fold(t) for t in
+                        re.findall(r"[^\W_]+", _nfc(_val))]
+                if _seq and (_r6_is_subseq(phrase, _seq)
+                             or _r6_is_subseq(_seq, phrase)):
+                    _match_keys.add(_key)
+            _proven = all(
+                any(isinstance((roster[i] or {}).get(_k), str)
+                    and (roster[i] or {}).get(_k).strip()
+                    for _k in _match_keys)
+                for i in idxs if i != _entry)
+            if _proven:
+                return {_entry}
+        # R7 distinguishing-token fallback (also after a
+        # contiguous match whose F5 proof failed: the token
+        # rule's own all-fields proof is strictly stronger
+        # for the fields it uses, so it cannot rescue a
+        # case the contiguous proof failed for the same
+        # field -- it only fires when the phrase's
+        # distinguishing tokens, taken together, belong to
+        # exactly one entry with every carrying field
+        # present elsewhere).
+        _r6_fields = []
         for i in idxs:
-            if i == _entry:
-                continue
-            _has_field = any(
-                isinstance((roster[i] or {}).get(_k), str)
-                and (roster[i] or {}).get(_k).strip()
-                for _k in _match_keys)
-            if not _has_field:
-                return set()
-        return {_entry}
+            _fields = {}
+            for _key, _val in (roster[i] or {}).items():
+                if _key in ("id", "name", "phone"):
+                    continue
+                if not isinstance(_val, str) or not _val.strip():
+                    continue
+                _seq = [_fold(t) for t in
+                        re.findall(r"[^\W_]+", _nfc(_val))]
+                if _seq:
+                    _fields[_key] = _seq
+            _r6_fields.append((i, _fields))
+        _win = _distinguishing_token_entry(phrase, _r6_fields)
+        if _win is not None:
+            return {_win}
+        return set()
 
     def _r6_mention_phrases(ns, ne, seg_start, seg_end, idxs):
         attr_seqs = [seq for (_i, seq) in _r6_attr_seqs(idxs)]
@@ -4372,6 +4544,28 @@ def analyze_selection_consistency(text, action, target_names=(),
                 j += 1
             if seq:
                 phrases.append(seq)
+                # R7 distinguishing-token phrase: same
+                # rule as the history collector -- when
+                # a noun descriptor started the phrase,
+                # also offer the run's attribute tokens
+                # in run order as a separate candidate
+                # phrase. A reduced descriptor whose
+                # distinguishing token sits past the
+                # ordinary scan's stop is then visible
+                # to _r6_match_entries, while a
+                # name-as-subject verb clause (ordinary
+                # scan empty) still offers nothing. If
+                # the two candidate phrases vote for
+                # different entries, _r6_choice_for_
+                # evidence reports a conflict and blocks
+                # (fail-closed), never a guessed person.
+                _attr_union = set()
+                for _seq in attr_seqs:
+                    _attr_union.update(_seq)
+                _dist = [t for t in after_run
+                         if t in _attr_union]
+                if _dist and _dist != seq:
+                    phrases.append(_dist)
         # Before the name: ordinary scan, else exact
         # suffix rescue (mirrors the history pre-name
         # rescue: "ban hoc Trang" -- "hoc" stops the scan).
