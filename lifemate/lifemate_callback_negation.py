@@ -3379,10 +3379,16 @@ def analyze_selection_consistency(text, action, target_names=(),
     # (no callback verb, no roster-name mention in that
     # clause, only this phone run in it), an earlier
     # clause's positive verb governs the duplicate name,
-    # and every clause between them contains no callback
-    # verb, no roster-name mention and no phone run
-    # (a clean appositive chain, no intervening person
-    # to break the link). A phone whose own clause
+    # and every clause between them is CLEAN in the
+    # round-5 sense: no roster-name mention (an
+    # intervening person), no ROSTER-PHONE run (other
+    # digit runs -- ages, years, rooms, counts -- are
+    # not phones and do not break), and no truly
+    # governing callback verb (its object span must
+    # contain a roster name or a roster phone; a
+    # verb-like token inside a noun phrase governs
+    # nothing and does not break). A phone whose own
+    # clause
     # names the person ("So cua Binh la A") is an
     # identity clause, not a bare fragment, so (c)
     # never fires on it: it stays standalone. No name,
@@ -3477,12 +3483,16 @@ def analyze_selection_consistency(text, action, target_names=(),
         # person at all, not just no duplicate, or the
         # appositive link is broken by another person.
         all_roster_names = set()
+        all_roster_phones = set()
         for e in roster:
             parts = _nfc(str(e.get("name") or "")).split()
             if parts:
                 all_roster_names.add(_nfc(str(e.get("name")
                                             or "")))
                 all_roster_names.add(parts[-1])
+            ph = _norm_phone(e.get("phone") or "")
+            if ph:
+                all_roster_phones.add(ph)
         phone_qualified = None
         phone_seen = False
         descriptor_seen = False
@@ -3604,20 +3614,69 @@ def analyze_selection_consistency(text, action, target_names=(),
                             between = clause_order[
                                 clause_order.index(hcid) + 1:
                                 clause_order.index(pcid)]
+                            # ROUND 5 (L5 decision): a
+                            # between-clause breaks the
+                            # chain ONLY when it really
+                            # intervenes on a person or a
+                            # phone, by structure, never
+                            # by phrase list:
+                            # - a roster-name mention
+                            #   still breaks (an
+                            #   intervening person);
+                            # - a digit run breaks ONLY
+                            #   when its normalised value
+                            #   is a roster phone -- an
+                            #   age, year, room or count
+                            #   is not a phone, so it
+                            #   does not break;
+                            # - a callback verb breaks
+                            #   ONLY when it truly
+                            #   governs: its
+                            #   _extract_object span
+                            #   contains a roster-name
+                            #   mention or a roster-phone
+                            #   run. A verb-like token
+                            #   inside a noun phrase
+                            #   governs nothing, so it
+                            #   does not break.
                             clean = True
                             for mid in between:
                                 if any(
-                                        hcids[v2["start"]] == mid
-                                        for v2 in hverbs) \
-                                        or any(
-                                            hcids[ns] == mid
-                                            for (ns, _ne)
-                                            in all_mentions) \
-                                        or any(
-                                            hcids[s2] == mid
-                                            for (s2, _e2, _d2,
-                                             _k2) in hruns):
+                                        hcids[ns] == mid
+                                        for (ns, _ne)
+                                        in all_mentions):
                                     clean = False
+                                    break
+                                if any(
+                                        hcids[s2] == mid
+                                        and _norm_phone(d2)
+                                        in all_roster_phones
+                                        for (s2, _e2, d2,
+                                         _k2) in hruns):
+                                    clean = False
+                                    break
+                                for v2 in hverbs:
+                                    if hcids[v2["start"]] \
+                                            != mid:
+                                        continue
+                                    vspan = _extract_object(
+                                        v2, hraws, hfolds,
+                                        hcids, hbounds)
+                                    if any(
+                                            vspan[0] <= ns
+                                            and ne <= vspan[1]
+                                            for (ns, ne)
+                                            in all_mentions) \
+                                            or any(
+                                                vspan[0] <= s2
+                                                and e2 <= vspan[1]
+                                                and _norm_phone(d2)
+                                                in all_roster_phones
+                                                for (s2, e2, d2,
+                                                 _k2) in hruns):
+                                        clean = False
+                                        break
+                                if not clean:
                                     break
                             if clean:
                                 gov_actions.add(hv["action"])
