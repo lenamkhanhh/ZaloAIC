@@ -297,20 +297,26 @@ class TestR2P0LifecycleFix(unittest.TestCase):
                 "invalidated", bad)
 
     def test_hourless_time_needs_ask_and_raw_not_active(self):
-        # In-tree grounding: word hour, no digit hour.
+        # Integration interaction fix (not a behaviour change):
+        # the P0 test originally used "ngày mai lúc tám giờ",
+        # but the grounding branch (08ef73c) legitimately
+        # GROUNDS word hours, so that input is GROUNDED
+        # there and on the merged tree. The NEEDS_ASK case
+        # this test guards is a PURELY hourless time, which
+        # is NEEDS_ASK (time:hour) on both groundings.
         g = ground_tool_call(
             {"name": "calendar.create_event",
              "arguments": {"title": "Hop",
-                           "time": "ngày mai lúc tám giờ"}},
+                           "time": "ngày mai"}},
             {"current_time": datetime(2026, 10, 30, 9, 0)})
         self.assertEqual(g.status, "NEEDS_ASK")
         self.assertIn("time:hour", g.needs)
         # The raw string fed past that gate must not be active.
         prefix = [
             _entry("calendar.create_event",
-                   {"title": "Hop", "time": "ngày mai lúc tám giờ"},
+                   {"title": "Hop", "time": "ngày mai"},
                    {"ok": True, "item": {"id": "e9", "title": "Hop",
-                                         "time": "ngày mai lúc tám giờ"}},
+                                         "time": "ngày mai"}},
                    0),
         ]
         ledger, _ = build_ledger(prefix, [], KINDS)
