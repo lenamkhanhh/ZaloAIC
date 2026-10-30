@@ -57,11 +57,11 @@ import sys
 import unicodedata
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_gates import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_gates import (  # noqa: E402
     gate_contact_ambiguity, gate_read_before_write, gate_confirmation,
     gate_confirmation_scoped, PriorCall, flatten_result_entries)
-from lifemate_provenance import find_number_spans, nfc_lower  # noqa: E402
+from lifemate.lifemate_provenance import find_number_spans, nfc_lower  # noqa: E402
 
 READ_VERBS = ("search", "list", "get", "status", "forecast", "balance",
               "history", "detail")

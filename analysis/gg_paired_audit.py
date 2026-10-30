@@ -123,10 +123,20 @@ def main():
     ap.add_argument("--out-json", default="/tmp/gg_paired.json")
     args = ap.parse_args()
 
-    sys.path.insert(0, args.lifemate_dir)
-    from lifemate_gates import (  # noqa: E402
+    # Package-mode import contract: --lifemate-dir names the package
+    # directory itself; its PARENT (the repo root) goes on sys.path
+    # and modules are imported as lifemate.* -- the same contract as
+    # the real entrypoint (lifemate/run.py). Never add lifemate/
+    # itself: that path masked the observer import failure at d1090d1d.
+    _lm_dir = Path(args.lifemate_dir)
+    if _lm_dir.name != "lifemate":
+        raise SystemExit(
+            "--lifemate-dir must name the package directory "
+            "(a directory called 'lifemate'); got: %s" % args.lifemate_dir)
+    sys.path.insert(0, str(_lm_dir.parent))
+    from lifemate.lifemate_gates import (  # noqa: E402
         PriorCall, flatten_result_entries, gate_read_before_write)
-    from lifemate_gates_adapter import decide  # noqa: E402
+    from lifemate.lifemate_gates_adapter import decide  # noqa: E402
     train_dir = str(Path(args.train_jsonl).resolve().parent)
     sys.path.insert(0, train_dir)
     from zaic_tools import ToolEnv  # noqa: E402

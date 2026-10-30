@@ -53,8 +53,8 @@ import sys
 import unicodedata
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_provenance import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_provenance import (  # noqa: E402
     Evidence, prove_argument, find_number_spans)
 
 MONITORED = ("time", "date", "start", "end", "amount", "contact_id")

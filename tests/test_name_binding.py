@@ -17,9 +17,8 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent
-                       / "lifemate"))
-import lifemate_phone_callback_evidence as ev
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import lifemate.lifemate_phone_callback_evidence as ev
 
 
 def missed(cid, name, phone, pos=0, relation=None):

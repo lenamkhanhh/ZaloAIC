@@ -127,7 +127,9 @@ import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
-FALLBACK_REPO = Path.home() / "workspace" / "zalo-aic-round3"
+# No workspace fallback: callers must pass --lifemate-dir / --e7-audit.
+# A fallback into a private workdir made runs silently depend on one
+# machine; a missing path now fails loudly instead.
 
 MONITORED = ("time", "date", "start", "end", "amount", "contact_id")
 
@@ -138,7 +140,9 @@ def resolve_lifemate_dir(explicit):
     cand = HERE.parent.parent / "lifemate"
     if (cand / "lifemate_provenance.py").exists():
         return cand
-    return FALLBACK_REPO / "lifemate"
+    raise SystemExit(
+        "cannot locate the lifemate package directory: pass "
+        "--lifemate-dir <repo>/lifemate (no workspace fallback)")
 
 
 def resolve_e7_path(explicit, lifemate_dir):
@@ -147,7 +151,9 @@ def resolve_e7_path(explicit, lifemate_dir):
     cand = HERE.parent / "e7_dag_shadow_audit.py"
     if cand.exists():
         return cand
-    return FALLBACK_REPO / "analysis" / "e7_dag_shadow_audit.py"
+    raise SystemExit(
+        "cannot locate e7_dag_shadow_audit.py: pass --e7-audit <path> "
+        "(no workspace fallback)")
 
 
 def load_module(name, path):
@@ -448,15 +454,22 @@ def main():
     args = ap.parse_args()
 
     lifemate_dir = resolve_lifemate_dir(args.lifemate_dir)
-    sys.path.insert(0, str(lifemate_dir))
-    from lifemate_provenance import Evidence, prove_argument  # noqa: E402
-    from lifemate_gates import (  # noqa: E402
+    # Package-mode import contract (see gg_paired_audit.py): the
+    # PARENT of the package directory goes on sys.path; modules are
+    # imported as lifemate.*. Never add lifemate/ itself.
+    if lifemate_dir.name != "lifemate":
+        raise SystemExit(
+            "--lifemate-dir must name the package directory "
+            "(a directory called 'lifemate'); got: %s" % lifemate_dir)
+    sys.path.insert(0, str(lifemate_dir.parent))
+    from lifemate.lifemate_provenance import Evidence, prove_argument  # noqa: E402
+    from lifemate.lifemate_gates import (  # noqa: E402
         PRODUCER_REGISTRY, gate_read_before_write, PriorCall,
         flatten_result_entries)
-    from lifemate_gates_adapter import (  # noqa: E402
+    from lifemate.lifemate_gates_adapter import (  # noqa: E402
         build_ledger, decide as adapter_decide,
         filtered_prefix_for_phone)
-    from lifemate_evidence_lifecycle import (  # noqa: E402
+    from lifemate.lifemate_evidence_lifecycle import (  # noqa: E402
         make_prover_validity)
 
     # R5: tool -> unique registry from PRODUCER_REGISTRY "id" entries.

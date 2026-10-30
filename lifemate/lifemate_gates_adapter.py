@@ -110,7 +110,7 @@ precede session positions. The proposal position defaults to
 
 import copy
 
-from lifemate_gates import (
+from .lifemate_gates import (
     CONSUMER_REGISTRY,
     PATCH_VERIFIED,
     PriorCall,
@@ -127,7 +127,7 @@ from lifemate_gates import (
     nfc_lower,
     registry_for_entry,
 )
-from lifemate_phone_callback_evidence import (
+from .lifemate_phone_callback_evidence import (
     callback_reference_for,
     fold_vietnamese,
     norm_phone,
@@ -136,7 +136,7 @@ from lifemate_phone_callback_evidence import (
     parse_tail_correction,
     phone_evidence_for,
 )
-from lifemate_callback_negation import (
+from .lifemate_callback_negation import (
     analyze_action_selection,
     analyze_instruction_selection,
     analyze_topic_selection,
@@ -145,7 +145,7 @@ from lifemate_callback_negation import (
     phone_mentions_all_content,
     turn_fully_delegated,
 )
-from lifemate_evidence_lifecycle import (
+from .lifemate_evidence_lifecycle import (
     CONSUMER_CONTRACTS,
     EvidenceLedger,
     check_eligibility,

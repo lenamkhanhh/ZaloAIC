@@ -16,15 +16,13 @@ import os
 import sys
 import unittest
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-for _cand in (os.path.join(_HERE, "..", "lifemate"),
-              os.path.join(_HERE, "lifemate"), _HERE):
-    if os.path.isfile(os.path.join(_cand,
-                                   "lifemate_phone_callback_evidence.py")):
-        sys.path.insert(0, os.path.abspath(_cand))
-        break
+# Package-mode import: the repo root (parent of tests/) is the only
+# path entry added -- never the lifemate/ directory itself, so this
+# test exercises the same import contract as the real entrypoint.
+sys.path.insert(0, os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))
 
-import lifemate_phone_callback_evidence as ev
+import lifemate.lifemate_phone_callback_evidence as ev
 
 
 def _succeeded(tool, result, position=0, args=None):

@@ -13,14 +13,14 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_gates_adapter import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_gates_adapter import (  # noqa: E402
     _vetoed_by_selection,
     build_ledger,
     decide,
     filtered_prefix_for_phone,
 )
-from lifemate_evidence_lifecycle import check_eligibility  # noqa: E402
+from lifemate.lifemate_evidence_lifecycle import check_eligibility  # noqa: E402
 
 KINDS = {
     "contacts.search": "read", "contacts.get": "read",
@@ -268,7 +268,7 @@ class TestAdapter(unittest.TestCase):
         # read whose result contains the id in a reminders-registry
         # field is not available through real tools, so instead
         # verify the ledger directly: evidence after delete wins.
-        from lifemate_evidence_lifecycle import EvidenceLedger  # noqa
+        from lifemate.lifemate_evidence_lifecycle import EvidenceLedger  # noqa
         ledger = EvidenceLedger()
         ledger.apply_prefix([
             {"kind": "entity", "value": "r_1",
@@ -399,7 +399,7 @@ class TestReviewerRound2Adapter(unittest.TestCase):
         self.assertTrue(dec.fired)
 
     def test_fixed_field_forwarding_logged(self):
-        from lifemate_gates_adapter import build_ledger
+        from lifemate.lifemate_gates_adapter import build_ledger
         prefix = [call_entry("tasks.complete", {"task_id": "t_1"},
                              {"ok": True, "item": {"id": "t_1",
                                                    "done": True}},
@@ -473,7 +473,7 @@ class TestIntegrationReviewFails(unittest.TestCase):
 
     def test_scene_run_id_shape_emits(self):
         # FAIL-3: real scene_run results key devices by "id".
-        from lifemate_gates_adapter import build_ledger
+        from lifemate.lifemate_gates_adapter import build_ledger
         kinds = dict(KINDS)
         kinds["smart_home.scene_run"] = "write"
         _, notes = build_ledger(
@@ -485,7 +485,7 @@ class TestIntegrationReviewFails(unittest.TestCase):
         self.assertEqual(notes["mutation_skipped"], [])
 
     def test_unknown_tool_skip_logged(self):
-        from lifemate_gates_adapter import build_ledger
+        from lifemate.lifemate_gates_adapter import build_ledger
         _, notes = build_ledger(
             [call_entry("contacts.delete", {"contact_id": "c_1"},
                         {"ok": True}, 0, origin="session")],
@@ -497,7 +497,7 @@ class TestIntegrationReviewFails(unittest.TestCase):
         # C2 latent hole: the name->id resolution itself is
         # unit-testable even though no contacts.delete exists
         # today to invalidate a contact end-to-end.
-        from lifemate_gates_adapter import _resolve_roster_name
+        from lifemate.lifemate_gates_adapter import _resolve_roster_name
         roster = [{"id": "c_1", "name": "An"},
                   {"id": "c_2", "name": "Bình"},
                   {"id": "c_3", "name": "An"}]
@@ -1383,7 +1383,7 @@ class TestRound4Batch3(unittest.TestCase):
         # revocation engages if that baseline rule ever
         # changes, and it already matters for B's target names
         # on other bindings.
-        from lifemate_gates_adapter import _known_names_for_number
+        from lifemate.lifemate_gates_adapter import _known_names_for_number
         names = _known_names_for_number(
             "0902345678", None,
             [{"id": "c_vy", "name": "Vy", "phone": "0902345678"}],

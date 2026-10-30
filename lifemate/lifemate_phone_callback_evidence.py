@@ -65,7 +65,7 @@ import unicodedata
 # module so history binding judges delegated turns by exactly
 # the current-text rule. No cycle: the negation module imports
 # only the standard library.
-from lifemate_callback_negation import (
+from .lifemate_callback_negation import (
     phone_numbers_for_action,
     turn_fully_delegated,
 )

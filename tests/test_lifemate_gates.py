@@ -8,8 +8,8 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_gates import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_gates import (  # noqa: E402
     gate_contact_ambiguity, gate_read_before_write, gate_confirmation,
     gate_confirmation_scoped, AskBudget, PriorCall)
 
@@ -615,7 +615,7 @@ class TestRegistryMapping(unittest.TestCase):
         self.assertTrue(r.fired)
 
     def test_flattener_paths(self):
-        from lifemate_gates import flatten_result_entries
+        from lifemate.lifemate_gates import flatten_result_entries
         entries = flatten_result_entries(
             {"ok": True,
              "devices": [{"id": "fan_bedroom"}],

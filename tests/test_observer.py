@@ -21,6 +21,7 @@ Run from the workdir root on both backends:
 import copy
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,6 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "lifemate"))
 
 from lifemate.agent import AgentLoop  # noqa: E402
 from lifemate.config import PipelineConfig  # noqa: E402
@@ -609,6 +609,12 @@ def run_frozen_baseline():
 
 class TestOldBaselineControl(unittest.TestCase):
     def test_frozen_agent_matches_off_and_on(self):
+        # The frozen-v10 control tree is a local reference, not part
+        # of the repo: skip (do not fail) where it is absent, so the
+        # suite runs on any checkout without a private workspace path.
+        if not FROZEN_ROOT.is_dir():
+            self.skipTest("frozen-v10 reference tree absent: %s"
+                          % FROZEN_ROOT)
         frozen = run_frozen_baseline()
         self.assertEqual(set(frozen.keys()), set(CONTROL_FIXTURES.keys()))
         for name, (outputs, grounding, max_steps, reject, noop) in \
@@ -623,6 +629,82 @@ class TestOldBaselineControl(unittest.TestCase):
                                    f"baseline-control/{name}/OFF")
             assert_behaviour_equal(self, frozen[name], on,
                                    f"baseline-control/{name}/ON")
+
+
+# ------------------------------------------------------------------
+# Clean-process package-mode observer contract (observer import fix).
+#
+# At d1090d1d the observer computed NO decision in a real entrypoint
+# process (repo root on sys.path, no lifemate/ entry) because the
+# adapter used top-level imports that only worked when tests added
+# lifemate/ to sys.path. This test pins the real contract: a FRESH
+# interpreter, cwd = repo root, NO PYTHONPATH, NO preloaded test
+# modules, must produce a real baseline/candidate decision with
+# error=None -- and the decisions must equal a direct in-process
+# decide() call on the same inputs (one code path, one identity).
+# ------------------------------------------------------------------
+
+_CLEAN_CHILD = r'''
+import json, sys
+# For `python -c`, sys.path[0] is '' (the cwd). The repo root must be
+# the only lifemate-resolving entry: no entry may be the lifemate/
+# directory itself.
+assert not any(
+    p and (p.rstrip("/") == "lifemate"
+           or p.rstrip("/").endswith("/lifemate"))
+    for p in sys.path), sys.path
+from lifemate.lifemate_observer import ShadowObserver
+obs = ShadowObserver(True)
+call = {"name": "phone.call",
+        "arguments": {"phone_number": "0902345678"}}
+obs.observe_proposal(
+    call, call, history=[], executed=[], results=[],
+    current_text="Gọi số0902345678",
+    kinds={"phone.call": "write"})
+rec = obs.records[0]
+assert rec["error"] is None, rec
+assert isinstance(rec["baseline_decision"], dict), rec
+assert isinstance(rec["candidate_decision"], dict), rec
+assert isinstance(rec["baseline_decision"]["fired"], bool), rec
+assert isinstance(rec["candidate_decision"]["fired"], bool), rec
+# Package identity: the gate module must be loaded as lifemate.*,
+# never a second top-level copy.
+assert "lifemate.lifemate_gates" in sys.modules, sorted(sys.modules)
+assert "lifemate_gates" not in sys.modules, "dual module identity"
+print(json.dumps(rec, ensure_ascii=False))
+'''
+
+
+class TestCleanProcessPackageObserver(unittest.TestCase):
+    def test_observer_computes_decision_in_clean_process(self):
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", _CLEAN_CHILD],
+            cwd=str(ROOT), env=env, capture_output=True, text=True,
+            timeout=180)
+        self.assertEqual(proc.returncode, 0,
+                         "clean-process observer run failed:\nSTDOUT:\n%s\nSTDERR:\n%s"
+                         % (proc.stdout, proc.stderr))
+        rec = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertIsNone(rec["error"])
+        self.assertIsInstance(rec["baseline_decision"], dict)
+        self.assertIsInstance(rec["candidate_decision"], dict)
+        # Same inputs through the direct in-process path must give
+        # the same decisions: one code path, not two identities.
+        from lifemate.lifemate_gates_adapter import decide
+        direct = decide(
+            {"name": "phone.call",
+             "arguments": {"phone_number": "0902345678"}},
+            [], [], "Gọi số0902345678", {"phone.call": "write"},
+            proposal_position=0, eligibility=True)
+        self.assertEqual(rec["baseline_decision"]["fired"],
+                         direct.baseline_fired)
+        self.assertEqual(rec["baseline_decision"]["applicable"],
+                         direct.applicable)
+        self.assertEqual(rec["candidate_decision"]["fired"], direct.fired)
+        self.assertEqual(rec["candidate_decision"]["applicable"],
+                         direct.applicable)
 
 
 if __name__ == "__main__":

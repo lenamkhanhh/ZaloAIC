@@ -13,8 +13,8 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_callback_negation import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_callback_negation import (  # noqa: E402
     _has_other_number,
     analyze_action_selection,
     analyze_instruction_selection,
@@ -24,7 +24,7 @@ from lifemate_callback_negation import (  # noqa: E402
     phone_mentions_all_content,
     phone_numbers_for_action,
 )
-from lifemate_gates_adapter import decide as _decide  # noqa: E402
+from lifemate.lifemate_gates_adapter import decide as _decide  # noqa: E402
 
 KINDS = {"phone.call": "write", "sms.send": "write"}
 Y = "0911111111"
@@ -1169,7 +1169,7 @@ class TestRound7Batch6Selection(unittest.TestCase):
         # rule; it stays covered by r4b6_probes at decide
         # level, where it fires via the foreign-action
         # fallback.)
-        from lifemate_callback_negation import (
+        from lifemate.lifemate_callback_negation import (
             _clause_bounds, _forwarded_target_to_other, _nfc,
             _strip_quoted, _tokenize)
         text = ("Chuyển tiếp số %s cho Bình. Nhắn cho Lan đi. "
@@ -1273,7 +1273,7 @@ class TestRound7Batch6Selection(unittest.TestCase):
         # NOT delegation; a text with no queried-action verb
         # is NOT fully delegated (vacuous exclusion would
         # wrongly drop turns that merely mention a number).
-        from lifemate_callback_negation import (
+        from lifemate.lifemate_callback_negation import (
             turn_fully_delegated)
         self.assertTrue(turn_fully_delegated(
             "Nhờ Vy gọi số %s giúp" % self.X, "call"))

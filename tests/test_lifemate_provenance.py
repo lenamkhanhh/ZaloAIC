@@ -10,12 +10,12 @@ import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_provenance import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_provenance import (  # noqa: E402
     parse_number_words, find_number_spans, parse_relative_datetime,
     find_datetime_spans, split_correction_segments, Evidence, Verdict,
     prove_argument, prove_call)
-from lifemate_evidence_lifecycle import (  # noqa: E402
+from lifemate.lifemate_evidence_lifecycle import (  # noqa: E402
     EvidenceLedger, field_value_record, make_prover_validity)
 
 ANCHOR = datetime(2026, 11, 18, 21, 0,

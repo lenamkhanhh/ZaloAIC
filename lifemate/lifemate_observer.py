@@ -64,11 +64,16 @@ Record schema (exactly these keys, all JSON-serialisable):
 Import safety: this module imports ONLY the standard library at
 module level. The coordinator-owned adapter is imported LAZILY
 inside ``_get_decide`` and only when flag ON and a decision is
-actually needed, because the adapter's own imports are absolute
-(``from lifemate_gates import ...``) and require the lifemate/
-directory on ``sys.path`` (the same precondition as the existing
-adapter tests). If that import fails, the record carries the error
-and the agent keeps its baseline behaviour.
+actually needed. The adapter and its dependencies use
+intra-package relative imports, and every outside consumer
+(scripts, tests, entrypoints) imports them as ``lifemate.*``
+with the repo root on ``sys.path`` -- the same contract as the
+real entrypoint (``lifemate/run.py``). Adding lifemate/ itself
+to ``sys.path`` is NOT required and must not be relied on: a
+record with an import error in a clean process means the
+contract is broken, not that the observer is "working". If the
+import fails, the record carries the error and the agent keeps
+its baseline behaviour.
 """
 from __future__ import annotations
 

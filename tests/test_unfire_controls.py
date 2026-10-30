@@ -31,8 +31,8 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_gates_adapter import decide  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_gates_adapter import decide  # noqa: E402
 
 KINDS = {
     "phone.recent_calls": "read", "phone.call": "write",

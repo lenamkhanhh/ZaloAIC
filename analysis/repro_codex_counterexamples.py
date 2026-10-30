@@ -16,9 +16,9 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lifemate"))
-from lifemate_provenance import Evidence, prove_argument  # noqa: E402
-from lifemate_gates import (  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from lifemate.lifemate_provenance import Evidence, prove_argument  # noqa: E402
+from lifemate.lifemate_gates import (  # noqa: E402
     gate_read_before_write, PriorCall)
 
 ANCHOR = datetime(2026, 11, 18, 21, 0, tzinfo=timezone(timedelta(hours=7)))
