@@ -1,3 +1,5 @@
+> **Mốc tài liệu:** Nội dung dưới đây thuộc các vòng trước và giữ lại để tái lập. Trước khi chạy hoặc chọn cấu hình, đọc [trạng thái hiện tại](docs/STATUS.md); không dùng số cũ làm kết quả của commit mới.
+
 # Khoảng trống — những gì chưa xác minh hoặc chưa truy cập được
 
 > Đọc file này trước khi chốt bất kỳ quyết định nộp bài nào. Không lấp các mục
