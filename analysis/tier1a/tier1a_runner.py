@@ -54,6 +54,38 @@ metrics.py is unchanged; the changes in this packaged version are:
     observer OFF then ON, submission lines compared byte-for-byte.
     It exits non-zero on any mismatch; the notebook scoring cell
     refuses to score unless the OFF-vs-ON report says identical.
+  * Phase 1 fix (this branch, LifeMate only, no lifemate/ edit):
+    faster-whisper CANNOT load vinai/PhoWhisper-small directly:
+    faster-whisper needs a CTranslate2 directory (model.bin +
+    config.json + tokenizer/vocabulary), and the pinned checkpoint
+    is a transformers-format checkpoint with no model.bin
+    (RUN_LIFEMATE.md section 5, recorded after faster-whisper
+    1.2.1 installed but load failed; a third-party CTranslate2
+    conversion of the same checkpoint exists precisely because
+    the original is not CTranslate2). So this runner now (a)
+    checks the ASR model files BEFORE any weight is loaded and
+    fails fast with the conversion command when the direct
+    faster-whisper load is impossible, and (b) offers a
+    transformers backend (AutoModelForSpeechSeq2Seq, same
+    checkpoint, greedy, language vi) selected with
+    --asr-backend transformers / TIER1A_ASR_BACKEND. The selected
+    backend is recorded in the config snapshot and per-mode run
+    manifest; it never silently replaces the pinned config.
+  * Completeness gate (Phase 1, mandatory): score refuses to
+    compute any total unless both arms cover exactly the manifest
+    ids (no missing, no duplicate, no extra, same id set in both
+    arms, no trace with a run error, no arm mismatch) AND the
+    OFF-vs-ON pilot is 20 samples and identical. A partial run
+    is reported as INCOMPLETE with the missing list, exit 2, and
+    no score_report.json is written. Run manifests carry their
+    own COMPLETE/INCOMPLETE status per mode.
+  * Resume (Phase 1): `run --resume` reuses a previous trace
+    only when its stored input hash matches the input hash
+    recomputed for this run (sample, mode, wav sha, current and
+    history transcripts, config and checkpoint/backend). A trace
+    with a run error, a missing run-manifest sidecar, or a
+    changed input hash is re-run. Resume never reuses a trace
+    blindly and never changes the manifest order.
 
 Modes (stream-C section 0, section 5):
   B0     — current turn: ASR baseline (vinai/PhoWhisper-small,
@@ -248,6 +280,232 @@ def verify_source_git(source_tree: Path) -> dict:
             "ddbe0a0_is_ancestor": ancestor.returncode == 0,
             "lifemate_diff_lines": len(diff.stdout.splitlines()),
             "lifemate_diff_empty": diff.stdout.strip() == ""}
+
+
+# ---------------------------------------------------------------- ASR backends
+# Phase 1: faster-whisper needs CTranslate2 format. The pinned
+# checkpoint vinai/PhoWhisper-small is transformers-format, so a
+# direct WhisperModel("vinai/PhoWhisper-small") load is NOT possible.
+# Two supported paths, both checked BEFORE any weight is loaded:
+#   (a) Convert once on the GPU host, then point at the converted dir:
+#       pip install "faster-whisper==1.2.1" ctranslate2 "transformers[torch]"
+#       ct2-transformers-converter --model vinai/PhoWhisper-small \
+#           --output_dir /kaggle/working/PhoWhisper-small-ct2 \
+#           --copy_files tokenizer.json preprocessor_config.json \
+#           --quantization float16
+#       then run with --asr-backend faster-whisper
+#       --asr-model-dir /kaggle/working/PhoWhisper-small-ct2.
+#       Record the actual installed versions (pip show ctranslate2
+#       faster-whisper transformers) in the run report; only
+#       faster-whisper==1.2.1 is version-pinned here because it is
+#       the version recorded in RUN_LIFEMATE.md section 5. Other
+#       package versions are recorded after install, never invented.
+#       A converted directory must contain model.bin + config.json
+#       + a tokenizer/vocabulary file; preprocessor_config.json is
+#       reported but not hard-required (see check_ct2_dir).
+#   (b) Transformers backend, same checkpoint, no conversion:
+#       run with --asr-backend transformers. It loads
+#       AutoModelForSpeechSeq2Seq + AutoProcessor for
+#       vinai/PhoWhisper-small, greedy (num_beams=1, do_sample=False),
+#       language vi, task transcribe. This is a Phase-1 fallback
+#       for the impossible direct faster-whisper load, recorded as
+#       asr_backend_actual=transformers in every run manifest; it
+#       does not change the pinned checkpoint or the LLM.
+# A third-party CTranslate2 conversion (e.g. qbsmlabs/PhoWhisper-small)
+# is NOT pinned here: if an operator wants to use one, they must
+# point at a local converted directory that passes check_ct2_dir
+# and record its source in the run report themselves.
+PINNED_ASR_CHECKPOINT = "vinai/PhoWhisper-small"
+CT2_TOKENIZER_FILES = ("tokenizer.json", "vocabulary.json", "vocabulary.txt",
+                       "shared_vocabulary.txt", "tokenizer_config.json")
+TRANSFORMERS_TOKENIZER_FILES = ("tokenizer_config.json", "tokenizer.json")
+
+
+def _tokenizer_evidence(names) -> str | None:
+    for name in CT2_TOKENIZER_FILES:
+        if name in names:
+            return name
+    return None
+
+
+def check_ct2_dir(path: Path) -> dict:
+    """Verify a CTranslate2 model directory, stdlib only, no weights.
+
+    Required: model.bin + config.json + one tokenizer/vocabulary file.
+    Raises SystemExit listing exactly what is missing, before any
+    faster-whisper load is attempted."""
+    names = {p.name for p in Path(path).iterdir()} if Path(path).is_dir() else set()
+    missing = []
+    if "model.bin" not in names:
+        missing.append("model.bin (CTranslate2 weights — a transformers-format "
+                       "checkpoint has no model.bin and cannot be loaded "
+                       "directly by faster-whisper)")
+    if "config.json" not in names:
+        missing.append("config.json")
+    tok = _tokenizer_evidence(names)
+    if tok is None:
+        missing.append("tokenizer/vocabulary file (one of: "
+                       + ", ".join(CT2_TOKENIZER_FILES) + ")")
+    if missing:
+        raise SystemExit(f"CTranslate2 model directory incomplete: {path}\n"
+                         f"missing: {missing}\n"
+                         "Convert the transformers checkpoint first "
+                         "(see the conversion command in this file) or "
+                         "use --asr-backend transformers.")
+    return {"backend": "faster-whisper", "model_dir": str(path),
+            "model_bin": True, "config_json": True, "tokenizer_file": tok,
+            "preprocessor_config_present": "preprocessor_config.json" in names}
+
+
+def check_transformers_dir(path: Path) -> dict:
+    """Verify a transformers Whisper directory, stdlib only, no weights.
+
+    Required: config.json + preprocessor_config.json + a tokenizer
+    file + weights (model.safetensors, or its index, or
+    pytorch_model.bin). Raises SystemExit listing what is missing,
+    before any large weight download is attempted."""
+    names = {p.name for p in Path(path).iterdir()} if Path(path).is_dir() else set()
+    missing = []
+    if "config.json" not in names:
+        missing.append("config.json")
+    if "preprocessor_config.json" not in names:
+        missing.append("preprocessor_config.json")
+    tok = None
+    for name in TRANSFORMERS_TOKENIZER_FILES:
+        if name in names:
+            tok = name
+            break
+    if tok is None:
+        missing.append("tokenizer file (tokenizer_config.json or tokenizer.json)")
+    weights = None
+    for name in ("model.safetensors", "model.safetensors.index.json",
+                 "pytorch_model.bin"):
+        if name in names:
+            weights = name
+            break
+    if weights is None:
+        missing.append("weights (model.safetensors, model.safetensors.index.json, "
+                       "or pytorch_model.bin)")
+    if missing:
+        raise SystemExit(f"transformers model directory incomplete: {path}\n"
+                         f"missing: {missing}")
+    return {"backend": "transformers", "model_dir": str(path),
+            "config_json": True, "preprocessor_config_json": True,
+            "tokenizer_file": tok, "weights_file": weights}
+
+
+def _list_hf_files(repo_id: str):
+    """List files of a Hub repo (metadata only, no weights), or None
+    when huggingface_hub is unavailable. Never downloads weights."""
+    try:
+        from huggingface_hub import list_repo_files
+    except ImportError:
+        return None
+    return list_repo_files(repo_id, repo_type="model")
+
+
+def check_asr_model(backend: str, checkpoint: str, model_dir: str | None) -> dict:
+    """Fail-fast ASR model check, before any weight load.
+
+    Returns a report dict. Raises SystemExit with the exact missing
+    files / the conversion command / the transformers alternative.
+    For the pinned checkpoint under faster-whisper with no converted
+    directory, this fails immediately without attempting a download:
+    the checkpoint is known transformers-format (see the section
+    header), so attempting WhisperModel() on it can only fail after
+    wasted setup."""
+    if backend not in ("faster-whisper", "transformers"):
+        raise SystemExit(f"unknown ASR backend {backend!r}: "
+                         "use faster-whisper or transformers")
+    if model_dir:
+        path = Path(model_dir)
+        if not path.is_dir():
+            raise SystemExit(f"ASR model directory does not exist: {path}")
+        if backend == "faster-whisper":
+            report = check_ct2_dir(path)
+        else:
+            report = check_transformers_dir(path)
+        report["checkpoint"] = checkpoint
+        report["source"] = "local_dir"
+        return report
+    if backend == "faster-whisper" and checkpoint == PINNED_ASR_CHECKPOINT:
+        raise SystemExit(
+            "BLOCKED: faster-whisper cannot load vinai/PhoWhisper-small "
+            "directly. The checkpoint is transformers-format (no model.bin "
+            "for CTranslate2); RUN_LIFEMATE.md section 5 records the same "
+            "failure with faster-whisper 1.2.1. No download was attempted.\n"
+            "Do one of:\n"
+            "  (a) Convert once, then rerun with the converted directory:\n"
+            "      ct2-transformers-converter --model vinai/PhoWhisper-small \\\n"
+            "          --output_dir /kaggle/working/PhoWhisper-small-ct2 \\\n"
+            "          --copy_files tokenizer.json preprocessor_config.json \\\n"
+            "          --quantization float16\n"
+            "      and pass --asr-model-dir /kaggle/working/PhoWhisper-small-ct2\n"
+            "  (b) Use the transformers backend instead:\n"
+            "      --asr-backend transformers\n"
+            "      (same checkpoint, greedy, language vi; recorded as "
+            "asr_backend_actual=transformers in the run manifest)")
+    # A local checkpoint path (not a Hub id) is checked as a directory.
+    if Path(checkpoint).is_dir():
+        report = (check_ct2_dir(checkpoint) if backend == "faster-whisper"
+                  else check_transformers_dir(checkpoint))
+        report["checkpoint"] = checkpoint
+        report["source"] = "local_dir"
+        return report
+    files = _list_hf_files(checkpoint)
+    if files is None:
+        raise SystemExit(
+            f"BLOCKED: cannot verify ASR model files for {checkpoint!r} "
+            "before downloading weights (huggingface_hub is not installed). "
+            "Point at a local model directory with --asr-model-dir, or "
+            "install huggingface_hub so the file list can be checked first.")
+    names = set(files)
+    if backend == "faster-whisper":
+        if "model.bin" not in names or "config.json" not in names \
+                or _tokenizer_evidence(names) is None:
+            raise SystemExit(
+                f"BLOCKED: Hub repo {checkpoint!r} has no CTranslate2 files "
+                f"(model.bin/config.json/tokenizer) in its file list: "
+                f"{sorted(names)}. Convert it first or use "
+                "--asr-backend transformers.")
+        return {"backend": backend, "checkpoint": checkpoint,
+                "source": "hub_file_list", "model_bin": True,
+                "tokenizer_file": _tokenizer_evidence(names)}
+    missing = []
+    if "config.json" not in names:
+        missing.append("config.json")
+    if "preprocessor_config.json" not in names:
+        missing.append("preprocessor_config.json")
+    if not any(t in names for t in TRANSFORMERS_TOKENIZER_FILES):
+        missing.append("tokenizer_config.json/tokenizer.json")
+    if not any(w in names for w in ("model.safetensors",
+                                    "model.safetensors.index.json",
+                                    "pytorch_model.bin")):
+        missing.append("weights")
+    if missing:
+        raise SystemExit(f"BLOCKED: Hub repo {checkpoint!r} is missing "
+                         f"transformers files {missing} (file list checked, "
+                         "no weights downloaded).")
+    return {"backend": backend, "checkpoint": checkpoint,
+            "source": "hub_file_list"}
+
+
+def resolve_asr_backend(args, cfg: dict):
+    """Selected ASR backend + model dir: flag > env > pinned config.
+
+    The pinned config backend is faster-whisper; selecting
+    transformers is a recorded fallback, not a silent config edit."""
+    backend = getattr(args, "asr_backend", None) \
+        or os.environ.get("TIER1A_ASR_BACKEND") or cfg.get("asr_backend")
+    model_dir = getattr(args, "asr_model_dir", None) \
+        or os.environ.get("TIER1A_ASR_MODEL_DIR") or None
+    return backend, model_dir
+
+
+def cmd_check_asr_model(args) -> int:
+    report = check_asr_model(args.asr_backend, args.checkpoint, args.asr_model_dir)
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0
 
 
 # ---------------------------------------------------------------- separation
@@ -552,10 +810,12 @@ class AsrCache:
     """Per-checkpoint JSON cache. Key includes checkpoint + wav sha."""
 
     def __init__(self, path: Path, checkpoint: str, revision: str,
-                 backend: str, beam_size: int, language: str):
+                 backend: str, beam_size: int, language: str,
+                 model_dir: str | None = None):
         self.path = Path(path)
         self.meta = {"checkpoint": checkpoint, "revision": revision,
-                     "backend": backend, "beam_size": beam_size, "language": language}
+                     "backend": backend, "beam_size": beam_size, "language": language,
+                     "model_dir": model_dir or ""}
         self.data = json.loads(self.path.read_text()) if self.path.exists() else {}
         if self.data and self.data.get("meta") != self.meta:
             raise SystemExit(f"ASR cache meta mismatch in {path}: refusing cross-checkpoint reuse")
@@ -569,6 +829,118 @@ class AsrCache:
             "transcript": transcript, "wav_path": wav_path, "seconds": seconds}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.data, ensure_ascii=False), encoding="utf-8")
+
+
+class TransformersASR:
+    """Phase-1 fallback ASR: same PhoWhisper checkpoint via transformers.
+
+    Interface matches FasterWhisperASR.transcribe(wav_path) so the
+    cache and run code use it unchanged. Greedy decoding
+    (num_beams=1, do_sample=False), language vi, task transcribe.
+    Wavs are read with stdlib wave only: the dataset wavs are
+    16 kHz mono 16-bit (RUN_LIFEMATE.md section 5); a wav at another
+    sample rate fails fast instead of being silently resampled.
+    Instantiation (weight load) happens only on the GPU host, after
+    check_asr_model has passed."""
+
+    def __init__(self, checkpoint: str, device: str = "cuda"):
+        try:
+            import torch
+            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+        except ImportError as exc:
+            raise RuntimeError(
+                "transformers/torch not installed for the transformers ASR "
+                "backend (see RUN_LIFEMATE.md section 3).") from exc
+        self.torch = torch
+        self.processor = AutoProcessor.from_pretrained(checkpoint)
+        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            checkpoint, torch_dtype=torch.float16 if device == "cuda"
+            else torch.float32).to(device)
+        self.device = device
+
+    def _read_wav(self, wav_path):
+        import wave
+        with wave.open(str(wav_path), "rb") as w:
+            rate = w.getframerate()
+            channels = w.getnchannels()
+            width = w.getsampwidth()
+            frames = w.readframes(w.getnframes())
+        if rate != 16000:
+            raise ValueError(f"wav sample rate is {rate}, not 16000: "
+                             f"{wav_path} (no silent resampling)")
+        if width != 2:
+            raise ValueError(f"wav sample width is {width} bytes, not 2: {wav_path}")
+        import array
+        samples = array.array("h")
+        samples.frombytes(frames)
+        if channels == 2:
+            samples = array.array("h", [
+                (samples[i] + samples[i + 1]) // 2
+                for i in range(0, len(samples) - 1, 2)])
+        elif channels != 1:
+            raise ValueError(f"wav has {channels} channels, expected 1 or 2: {wav_path}")
+        return [s / 32768.0 for s in samples]
+
+    def transcribe(self, wav_path) -> str:
+        audio = self._read_wav(wav_path)
+        inputs = self.processor(audio, sampling_rate=16000, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        try:
+            forced = self.processor.get_decoder_prompt_ids(language="vi",
+                                                           task="transcribe")
+            gen_kwargs = {"forced_decoder_ids": forced}
+        except Exception:
+            gen_kwargs = {"language": "vi", "task": "transcribe"}
+        with self.torch.no_grad():
+            ids = self.model.generate(**inputs, max_new_tokens=256,
+                                      do_sample=False, num_beams=1, **gen_kwargs)
+        return self.processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+
+
+def build_asr(backend: str, checkpoint: str, model_dir: str | None, source_tree: Path):
+    """Build the ASR object for a backend already checked by
+    check_asr_model. Faster-whisper uses the library class (unchanged
+    lifemate code); transformers uses the runner-local wrapper above."""
+    sys.path.insert(0, str(source_tree))
+    if backend == "transformers":
+        return TransformersASR(model_dir or checkpoint, device="cuda")
+    from lifemate.asr import FasterWhisperASR
+    return FasterWhisperASR(model_dir or checkpoint, device="cuda",
+                            compute_type="float16")
+
+
+def input_hash_for_sample(sample_id: str, mode: str, wav_sha: str,
+                          transcript_current, history_transcripts,
+                          config_sha256: str, asr_checkpoint: str,
+                          asr_backend: str, llm_checkpoint: str,
+                          llm_revision: str) -> str:
+    """Deterministic input hash for resume: a stored trace is reused
+    only when every input that could change its output is identical."""
+    payload = [sample_id, mode, wav_sha, transcript_current,
+               history_transcripts, config_sha256, asr_checkpoint,
+               asr_backend, llm_checkpoint, llm_revision]
+    return sha256_text(json.dumps(payload, ensure_ascii=False))
+
+
+def resume_plan(expected_ids: list[str], existing_traces: dict,
+                stored_hashes: dict, current_hashes: dict):
+    """Pure resume decision (stdlib, CPU): which ids can be skipped.
+
+    Skip only a trace with no run error, a non-null state hash, and
+    a stored input hash equal to the recomputed one. Everything
+    else (missing, errored, changed input, missing sidecar entry)
+    is re-run, in manifest order."""
+    skip, rerun = [], []
+    for sid in expected_ids:
+        trace = existing_traces.get(sid)
+        if trace is not None and trace.get("run_error") is None \
+                and trace.get("state_hash") is not None \
+                and stored_hashes.get(sid) == current_hashes.get(sid) \
+                and current_hashes.get(sid) is not None:
+            skip.append(sid)
+        else:
+            rerun.append(sid)
+    return {"skip": skip, "rerun": rerun}
 
 
 # ---------------------------------------------------------------- smoke
@@ -675,16 +1047,7 @@ def cmd_asr_cache(args) -> int:
     No model for the agent is loaded here, and no correctness
     information is computed here.
     """
-    try:
-        import torch  # noqa: F401
-    except ImportError:
-        print("BLOCKED: torch not installed; cannot run ASR on this VM.", file=sys.stderr)
-        return 2
     source = Path(args.source_tree)
-    sys.path.insert(0, str(source))
-    from lifemate.asr import FasterWhisperASR
-    from lifemate.config import PipelineConfig
-
     verified = verify_source(source)
     manifest_report = validate_manifest(Path(args.benchmark), source)
     bench = load_benchmark(Path(args.benchmark))
@@ -693,15 +1056,29 @@ def cmd_asr_cache(args) -> int:
         print(f"BLOCKED: no train.jsonl under {data_root}", file=sys.stderr)
         return 2
     cfg_dict = dict(verified["config"])
+    asr_backend, asr_model_dir = resolve_asr_backend(args, cfg_dict)
+    # Fail-fast file check BEFORE torch import and before any weight load.
+    asr_report = check_asr_model(asr_backend, cfg_dict["asr_checkpoint"], asr_model_dir)
+    print(f"ASR backend check: {json.dumps(asr_report, ensure_ascii=False)}")
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        print("BLOCKED: torch not installed; cannot run ASR on this VM.", file=sys.stderr)
+        return 2
+    sys.path.insert(0, str(source))
+    from lifemate.config import PipelineConfig
     cfg_dict["shadow_observer"] = True
+    cfg_dict["asr_backend"] = asr_backend
     cfg = PipelineConfig(**cfg_dict)
     cfg.check_budget()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     _, samples = _load_samples_for_run(source, data_root)
-    asr = FasterWhisperASR(cfg.asr_checkpoint, device="cuda", compute_type="float16")
+    asr = build_asr(asr_backend, cfg.asr_checkpoint, asr_model_dir, source)
+    # The cache meta includes backend + model_dir, so a converted
+    # directory and a transformers directory never share entries.
     cache = AsrCache(out / "asr_cache_baseline.json", cfg.asr_checkpoint, "",
-                     "faster-whisper", 1, "vi")
+                     asr_backend, 1, "vi", model_dir=asr_model_dir)
     log = []
     for sid in bench["ids"]:
         sample = samples.get(sid)
@@ -744,20 +1121,7 @@ def cmd_run(args) -> int:
     computed only later, by the separate score command, from the
     traces already on disk.
     """
-    try:
-        import torch  # noqa: F401
-    except ImportError:
-        print("BLOCKED: torch not installed; cannot run models on this VM.", file=sys.stderr)
-        return 2
     source = Path(args.source_tree)
-    sys.path.insert(0, str(source))
-    from lifemate.adapter import ZaicEnv
-    from lifemate.agent import AgentLoop
-    from lifemate.asr import FasterWhisperASR
-    from lifemate.config import PipelineConfig
-    from lifemate.llm import VLLMGenerator
-    from lifemate.loader import catalog_tools_for_sample
-
     verified = verify_source(source)
     manifest_report = validate_manifest(Path(args.benchmark), source)
     bench = load_benchmark(Path(args.benchmark))
@@ -771,20 +1135,46 @@ def cmd_run(args) -> int:
         return 2
     observer_on = getattr(args, "observer", "on") != "off"
     cfg_dict = dict(verified["config"])
+    asr_backend, asr_model_dir = resolve_asr_backend(args, cfg_dict)
+    # Fail-fast ASR file check BEFORE torch import and weight loads.
+    asr_report = check_asr_model(asr_backend, cfg_dict["asr_checkpoint"], asr_model_dir)
+    print(f"ASR backend check: {json.dumps(asr_report, ensure_ascii=False)}")
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        print("BLOCKED: torch not installed; cannot run models on this VM.", file=sys.stderr)
+        return 2
+    sys.path.insert(0, str(source))
+    from lifemate.adapter import ZaicEnv
+    from lifemate.agent import AgentLoop
+    from lifemate.config import PipelineConfig
+    from lifemate.llm import VLLMGenerator
+    from lifemate.loader import catalog_tools_for_sample
+
     cfg_dict["shadow_observer"] = observer_on
+    cfg_dict["asr_backend"] = asr_backend
     cfg = PipelineConfig(**cfg_dict)
     cfg.check_budget()
     assert cfg.pending_ask_stop is False
     assert cfg.history_presentation_v2 is False
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    snapshot = dict(cfg_dict)
+    snapshot["asr_backend_pinned"] = verified["config"]["asr_backend"]
+    snapshot["asr_model_dir_actual"] = asr_model_dir
+    snapshot["asr_check"] = asr_report
     (out / "config_snapshot.json").write_text(
-        json.dumps(cfg_dict, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+    # Legacy shared manifest (kept for notebook compatibility); the
+    # per-mode run_manifest_<mode>.json files written below are
+    # authoritative, because they carry status + input hashes.
     (out / "run_manifest.json").write_text(
         json.dumps({"manifest": manifest_report, "modes": modes,
                     "pilot": bool(args.pilot),
                     "shadow_observer": observer_on,
                     "observer_note": "observer ON to log, never to block",
+                    "asr_backend_actual": asr_backend,
+                    "asr_model_dir_actual": asr_model_dir,
                     "config_sha256": verified["config_sha256"],
                     "split_sha256": verified["split_sha256"]},
                    indent=2, ensure_ascii=False), encoding="utf-8")
@@ -803,50 +1193,103 @@ def cmd_run(args) -> int:
         kept.append(sid)
     (out / "excluded.json").write_text(
         json.dumps(excluded, indent=2, ensure_ascii=False), encoding="utf-8")
-    asr = FasterWhisperASR(cfg.asr_checkpoint, device="cuda", compute_type="float16")
+    asr = build_asr(asr_backend, cfg.asr_checkpoint, asr_model_dir, source)
     cache = AsrCache(out / "asr_cache_baseline.json", cfg.asr_checkpoint, "",
-                     "faster-whisper", 1, "vi")
+                     asr_backend, 1, "vi", model_dir=asr_model_dir)
     t0 = time.time()
     llm = VLLMGenerator(cfg.llm_checkpoint, cfg.llm_revision, seed=cfg.llm_seed)
-    load_log = {"llm_seconds": time.time() - t0}
+    load_log = {"llm_seconds": time.time() - t0,
+                "asr_backend_actual": asr_backend,
+                "asr_model_dir_actual": asr_model_dir}
     (out / "model_load.json").write_text(json.dumps(load_log, indent=2), encoding="utf-8")
+    # Precompute FIXED history + current transcripts and input hashes
+    # per mode, BEFORE any AgentLoop run, so resume can compare them.
+    # History is fixed in every mode: transcript from the sample
+    # when present, else the shared baseline cache. Only the
+    # current turn varies between modes.
+    prepared = {}
+    for mode in modes:
+        prepared[mode] = {}
+        for sid in kept:
+            sample = samples[sid]
+            hist_sources, hist_texts = [], []
+            for turn in sample.history:
+                if turn.role == "user" and turn.audio_text is None and turn.audio:
+                    wav = data_root / "train" / turn.audio
+                    if not wav.exists():
+                        hist_sources.append("missing")
+                        hist_texts.append(None)
+                        continue
+                    wsha = sha256_file(wav)
+                    txt, _, _ = _build_asr_cache(cache, asr, wav, wsha)
+                    hist_sources.append("baseline_asr")
+                    hist_texts.append(txt)
+                elif turn.role == "user":
+                    hist_sources.append("gold" if turn.audio_text else "missing")
+                    hist_texts.append(turn.audio_text)
+            wav = data_root / "train" / sample.audio
+            wsha = sha256_file(wav)
+            if mode == "B-gold":
+                transcript, input_mode = sample.audio_text, "gold"
+            else:
+                txt, _, _ = _build_asr_cache(cache, asr, wav, wsha)
+                transcript, input_mode = txt, "asr_baseline"
+            ihash = input_hash_for_sample(
+                sid, mode, wsha, transcript, hist_texts,
+                verified["config_sha256"], cfg.asr_checkpoint, asr_backend,
+                cfg.llm_checkpoint, cfg.llm_revision)
+            prepared[mode][sid] = {
+                "hist_sources": hist_sources, "hist_texts": hist_texts,
+                "wav": wav, "wav_sha": wsha, "transcript": transcript,
+                "input_mode": input_mode, "input_hash": ihash}
     for mode in modes:
         traces_path = out / f"traces_{mode}.jsonl"
-        with open(traces_path, "w", encoding="utf-8") as fout:
-            for sid in kept:
+        manifest_path = out / f"run_manifest_{mode}.json"
+        # Resume: reuse only traces whose stored input hash matches.
+        existing, existing_dup = load_traces_file(traces_path)
+        stored_hashes = {}
+        if getattr(args, "resume", False) and manifest_path.exists() \
+                and not existing_dup:
+            try:
+                stored_hashes = json.loads(
+                    manifest_path.read_text(encoding="utf-8")).get("input_hashes", {})
+            except Exception:
+                stored_hashes = {}
+        if getattr(args, "resume", False) and traces_path.exists() \
+                and not manifest_path.exists():
+            print(f"{mode}: resume requested but {manifest_path} is missing "
+                  "— re-running all samples (safe fallback, no blind reuse).")
+        current_hashes = {sid: prepared[mode][sid]["input_hash"] for sid in kept}
+        plan = resume_plan(kept, existing, stored_hashes, current_hashes) \
+            if getattr(args, "resume", False) else {"skip": [], "rerun": list(kept)}
+        if plan["skip"]:
+            print(f"{mode}: resume skips {len(plan['skip'])} unchanged traces, "
+                  f"re-runs {len(plan['rerun'])}.")
+        new_traces = {}
+        run_error = None
+        try:
+            for sid in plan["rerun"]:
                 sample = samples[sid]
-                # History FIXED: gold transcript, else shared baseline cache.
-                hist_sources = []
+                prep = prepared[mode][sid]
+                hist_sources = prep["hist_sources"]
+                transcript, input_mode = prep["transcript"], prep["input_mode"]
+                # Apply the precomputed fixed history to this run.
+                hist_iter = iter(prep["hist_texts"])
                 for turn in sample.history:
-                    if turn.role == "user" and turn.audio_text is None and turn.audio:
-                        wav = data_root / "train" / turn.audio
-                        if not wav.exists():
-                            hist_sources.append("missing")
-                            continue
-                        wsha = sha256_file(wav)
-                        txt, _, _ = _build_asr_cache(cache, asr, wav, wsha)
-                        turn.audio_text = txt
-                        hist_sources.append("baseline_asr")
-                    elif turn.role == "user":
-                        hist_sources.append("gold" if turn.audio_text else "missing")
-                wav = data_root / "train" / sample.audio
-                wsha = sha256_file(wav)
-                if mode == "B-gold":
-                    transcript, input_mode = sample.audio_text, "gold"
-                else:
-                    txt, _, _ = _build_asr_cache(cache, asr, wav, wsha)
-                    transcript, input_mode = txt, "asr_baseline"
+                    if turn.role == "user":
+                        turn.audio_text = next(hist_iter)
+                wav, wsha = prep["wav"], prep["wav_sha"]
                 tools = catalog_tools_for_sample(catalog, sample)
                 env = ZaicEnv(data_root, "train", sample.id)
                 loop = AgentLoop(cfg, tools)
                 gen = TracingGenerator(llm)
                 start = time.time()
-                run_error = None
+                sample_error = None
                 line = None
                 try:
                     line = loop.run(sample, transcript, env, gen)
                 except Exception as exc:
-                    run_error = f"{type(exc).__name__}: {exc}"
+                    sample_error = f"{type(exc).__name__}: {exc}"
                     line = env.submission_line()
                 seconds = time.time() - start
                 if gen.generations:
@@ -855,7 +1298,7 @@ def cmd_run(args) -> int:
                 observer_log = getattr(loop.observer, "records", None)
                 if observer_log is None:
                     observer_log = getattr(loop.observer, "log", [])
-                trace = {
+                new_traces[sid] = {
                     "sample_id": sid, "split": "dev", "arm": mode,
                     "input_mode": input_mode, "transcript_current": transcript,
                     "transcript_gold_current": sample.audio_text,
@@ -869,10 +1312,49 @@ def cmd_run(args) -> int:
                     "observer_log": observer_log,
                     "seconds": seconds,
                     "n_generations": len(gen.generations),
-                    "run_error": run_error,
+                    "run_error": sample_error,
                 }
-                fout.write(json.dumps(trace, ensure_ascii=False) + "\n")
-        print(f"{mode}: {len(kept)} traces -> {traces_path}")
+        except Exception as exc:
+            run_error = f"{type(exc).__name__}: {exc}"
+            print(f"{mode}: run crashed mid-way: {run_error}", file=sys.stderr)
+        # Final traces file, always in manifest (kept) order: reused
+        # traces first in that order, then newly run ones. A crash
+        # leaves a PARTIAL file, and the manifest below says so.
+        final_traces = {}
+        for sid in kept:
+            if sid in plan["skip"] and sid in existing:
+                final_traces[sid] = existing[sid]
+            elif sid in new_traces:
+                final_traces[sid] = new_traces[sid]
+        with open(traces_path, "w", encoding="utf-8") as fout:
+            for sid in kept:
+                if sid in final_traces:
+                    fout.write(json.dumps(final_traces[sid], ensure_ascii=False) + "\n")
+        errored = sorted(sid for sid, t in final_traces.items() if t.get("run_error"))
+        missing = sorted(set(kept) - set(final_traces))
+        status = "COMPLETE" if (not run_error and not errored and not missing
+                                and not excluded) else "INCOMPLETE"
+        manifest_path.write_text(json.dumps({
+            "manifest": manifest_report, "mode": mode, "pilot": bool(args.pilot),
+            "shadow_observer": observer_on,
+            "observer_note": "observer ON to log, never to block",
+            "asr_backend_actual": asr_backend,
+            "asr_model_dir_actual": asr_model_dir,
+            "asr_check": asr_report,
+            "config_sha256": verified["config_sha256"],
+            "split_sha256": verified["split_sha256"],
+            "status": status, "n_expected_kept": len(kept),
+            "n_traced": len(final_traces), "n_resumed_skipped": len(plan["skip"]),
+            "excluded": excluded, "missing": missing, "run_errors": errored,
+            "crash_error": run_error, "input_hashes": current_hashes,
+            "note": "COMPLETE requires no excluded, no missing, no run errors. "
+                    "Score additionally requires all manifest ids, not just kept."},
+            indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"{mode}: {len(final_traces)} traces ({status}) -> {traces_path}")
+        if status != "COMPLETE":
+            print(f"{mode}: run manifest INCOMPLETE: excluded={len(excluded)} "
+                  f"missing={missing} run_errors={errored} crash={run_error}",
+                  file=sys.stderr)
     return 0
 
 
@@ -885,15 +1367,20 @@ def cmd_check_off_on(args) -> int:
     mismatch, and the notebook scoring cell refuses to score in
     that case. No correctness information is involved here.
     """
-    import copy
     base_out = Path(args.out)
+    # OFF-vs-ON runs are always fresh (never resumed): reusing a
+    # previous pilot trace would hide an observer effect.
+    bench = load_benchmark(Path(args.benchmark))
+    pilot_ids = bench["ids"][:20]
     results = {}
     for flag, sub in (("off", "off"), ("on", "on")):
         sub_out = base_out / sub
         ns = argparse.Namespace(
             source_tree=args.source_tree, benchmark=args.benchmark,
             out=str(sub_out), data=args.data, mode="B0", pilot=True,
-            observer=flag)
+            observer=flag, resume=False,
+            asr_backend=getattr(args, "asr_backend", None),
+            asr_model_dir=getattr(args, "asr_model_dir", None))
         rc = cmd_run(ns)
         if rc != 0:
             print(f"OFF-vs-ON: run with observer {flag} failed (rc={rc})", file=sys.stderr)
@@ -908,15 +1395,98 @@ def cmd_check_off_on(args) -> int:
     mismatches = [sid for sid in common
                   if results["off"][sid] != results["on"][sid]]
     report = {"n_common": len(common),
+              "n_pilot_expected": len(pilot_ids),
+              "pilot_ids": pilot_ids,
               "n_off_only": len(set(results["off"]) - set(results["on"])),
               "n_on_only": len(set(results["on"]) - set(results["off"])),
-              "identical": not mismatches and len(common) > 0,
+              "identical": not mismatches and len(common) == len(pilot_ids)
+                           and set(common) == set(pilot_ids),
               "mismatches": mismatches}
     base_out.mkdir(parents=True, exist_ok=True)
     (base_out / "off_on_report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0 if report["identical"] else 1
+
+
+# ---------------------------------------------------------------- completeness gate
+def load_traces_file(path: Path):
+    """Load one traces file, detecting duplicate ids (a dict alone
+    would silently hide them). Returns (rows, duplicates)."""
+    rows, duplicates, seen = {}, [], set()
+    if not path.exists():
+        return rows, duplicates
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        sid = row["sample_id"]
+        if sid in seen:
+            duplicates.append(sid)
+        seen.add(sid)
+        rows[sid] = row
+    return rows, duplicates
+
+
+def check_trace_completeness(manifest: dict, traces_by_mode: dict,
+                             off_on: dict | None, pilot: bool = False) -> dict:
+    """Mandatory completeness gate for score (Phase 1).
+
+    Expected ids are the full manifest, or its first 20 when pilot
+    scoring is explicitly requested. COMPLETE requires, for EACH arm:
+    exactly the expected ids, no duplicates, no extras, no trace
+    with a run error, no arm mismatch; both arms must share the
+    same id set; and the OFF-vs-ON report must exist, be identical,
+    cover exactly the pilot ids, and have n_common == len(pilot).
+    Anything else is INCOMPLETE: score must not print any total.
+    This function is pure (no gold reads, no model runs)."""
+    expected = list(manifest["ids"][:20]) if pilot else list(manifest["ids"])
+    expected_set = set(expected)
+    pilot_ids = list(manifest["ids"][:20])
+    report: dict = {"status": "COMPLETE", "pilot": pilot,
+                    "expected_n": len(expected), "per_mode": {},
+                    "missing": {}, "extra": {}, "duplicates": {},
+                    "run_errors": {}, "arm_mismatches": {},
+                    "arm_id_sets_equal": True, "off_on": None}
+    mode_sets = {}
+    for mode, (rows, duplicates) in traces_by_mode.items():
+        ids = set(rows)
+        missing = sorted(expected_set - ids)
+        extra = sorted(ids - expected_set)
+        run_errors = sorted(sid for sid, r in rows.items() if r.get("run_error"))
+        arm_mismatches = sorted(sid for sid, r in rows.items()
+                                if r.get("arm") != mode)
+        report["per_mode"][mode] = {"n": len(rows)}
+        report["missing"][mode] = missing
+        report["extra"][mode] = extra
+        report["duplicates"][mode] = sorted(set(duplicates))
+        report["run_errors"][mode] = run_errors
+        report["arm_mismatches"][mode] = arm_mismatches
+        mode_sets[mode] = ids
+        if missing or extra or duplicates or run_errors or arm_mismatches:
+            report["status"] = "INCOMPLETE"
+    if len(mode_sets) >= 2:
+        first = next(iter(mode_sets.values()))
+        if any(s != first for s in mode_sets.values()):
+            report["arm_id_sets_equal"] = False
+            report["status"] = "INCOMPLETE"
+    if off_on is None:
+        report["off_on"] = {"present": False, "identical": False,
+                            "reason": "off_on_report.json missing: run "
+                                      "check-off-on before scoring"}
+        report["status"] = "INCOMPLETE"
+    else:
+        ok = bool(off_on.get("identical")) \
+            and off_on.get("n_common") == len(pilot_ids) \
+            and (off_on.get("pilot_ids") in (None, pilot_ids))
+        report["off_on"] = {"present": True, "identical": bool(off_on.get("identical")),
+                            "n_common": off_on.get("n_common"),
+                            "n_pilot_expected": len(pilot_ids),
+                            "pilot_ids_match": off_on.get("pilot_ids") in (None, pilot_ids),
+                            "ok": ok}
+        if not ok:
+            report["status"] = "INCOMPLETE"
+    return report
 
 
 # ---------------------------------------------------------------- score (after runs)
@@ -929,33 +1499,52 @@ def cmd_score(args) -> int:
     alongside them. Input traces must already exist on disk.
     """
     source = Path(args.source_tree)
+    d = Path(args.traces)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    # Completeness gate FIRST, before any correctness is computed:
+    # a partial run must never yield a total score. The manifest
+    # gate also refuses provisional / held-out / edited manifests.
+    manifest_report = validate_manifest(Path(args.benchmark), source)
+    manifest = load_benchmark(Path(args.benchmark))
+    pilot = bool(getattr(args, "pilot", False))
+
+    def load(mode):
+        path = d / f"traces_{mode}.jsonl"
+        if not path.exists():
+            raise SystemExit(f"run trace missing (run phase first): {path}")
+        return load_traces_file(path)
+
+    gold_traces, asr_traces = load("B-gold"), load("B0")
+    off_on_path = Path(getattr(args, "off_on", None) or (d / "off_on" / "off_on_report.json"))
+    off_on = None
+    if off_on_path.exists():
+        off_on = json.loads(off_on_path.read_text(encoding="utf-8"))
+    gate = check_trace_completeness(
+        manifest, {"B-gold": gold_traces, "B0": asr_traces}, off_on, pilot=pilot)
+    gate["manifest"] = manifest_report
+    (out / "completeness_gate.json").write_text(
+        json.dumps(gate, indent=2, ensure_ascii=False), encoding="utf-8")
+    if gate["status"] != "COMPLETE":
+        print(json.dumps(gate, indent=2, ensure_ascii=False), file=sys.stderr)
+        print("SCORE REFUSED: traces are INCOMPLETE (see completeness_gate.json). "
+              "No total score is printed and no score_report.json is written. "
+              "Fix the run (resume / re-run the missing samples) and score again.",
+              file=sys.stderr)
+        return 2
+    print(f"Completeness gate COMPLETE: {json.dumps(gate, ensure_ascii=False)}")
     sys.path.insert(0, str(source))
     from lifemate.loader import load_catalog, load_split
     from lifemate.run import _gold_hash
     from lifemate.scoring import score_sample
     from lifemate.loader import fuzzy_params
 
-    d = Path(args.traces)
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
     data_root = Path(args.data)
     catalog = load_catalog(data_root, "train")
     samples = {s.id: s for s in load_split(data_root, "train")}
     fuzzy = fuzzy_params(catalog)
-
-    def load(mode):
-        path = d / f"traces_{mode}.jsonl"
-        if not path.exists():
-            raise SystemExit(f"run trace missing (run phase first): {path}")
-        rows = {}
-        for line in path.read_text().splitlines():
-            r = json.loads(line)
-            rows[r["sample_id"]] = r
-        return rows
-
-    gold_rows, asr_rows = load("B-gold"), load("B0")
-    common = [sid for sid in gold_rows if sid in asr_rows]
-    assert common, "no common sample ids between B-gold and B0 traces"
+    gold_rows, asr_rows = gold_traces[0], asr_traces[0]
+    common = list(manifest["ids"][:20]) if pilot else list(manifest["ids"])
     scored = {}
     for mode, rows in (("B-gold", gold_rows), ("B0", asr_rows)):
         scored[mode] = {}
@@ -1090,21 +1679,40 @@ def main(argv=None) -> int:
     for name in ("asr-cache", "run", "check-off-on"):
         sp = sub.add_parser(name)
         add_common(sp, need_data=True)
+        sp.add_argument("--asr-backend", default=None,
+                        help="faster-whisper (default, pinned) or transformers "
+                             "(Phase-1 fallback); env TIER1A_ASR_BACKEND also works")
+        sp.add_argument("--asr-model-dir", default=None,
+                        help="local model directory: converted CTranslate2 dir "
+                             "for faster-whisper, transformers dir for transformers; "
+                             "env TIER1A_ASR_MODEL_DIR also works")
         if name == "run":
             sp.add_argument("--mode", default="B0,B-gold")
             sp.add_argument("--pilot", action="store_true")
             sp.add_argument("--observer", choices=["on", "off"], default="on")
-    sp = sub.add_parser("score")
-    sp.add_argument("--traces", default=str(Path(DEFAULT_WORKING) / "tier1a-output"))
-    add_common(sp, need_data=True)
-    sp = sub.add_parser("analyze")
-    sp.add_argument("--traces", default=str(Path(DEFAULT_WORKING) / "tier1a-output"))
-    add_common(sp, need_data=True)
+            sp.add_argument("--resume", action="store_true",
+                            help="reuse traces whose input hash matches; "
+                                 "re-run the rest, in manifest order")
+    sp = sub.add_parser("check-asr-model")
+    sp.add_argument("--asr-backend", default="faster-whisper")
+    sp.add_argument("--asr-model-dir", default=None)
+    sp.add_argument("--checkpoint", default=PINNED_ASR_CHECKPOINT)
+    for name in ("score", "analyze"):
+        sp = sub.add_parser(name)
+        sp.add_argument("--traces", default=str(Path(DEFAULT_WORKING) / "tier1a-output"))
+        sp.add_argument("--pilot", action="store_true",
+                        help="score only the pilot 20 (first 20 manifest ids); "
+                             "without it, score requires the full manifest")
+        sp.add_argument("--off-on", default=None,
+                        help="off_on_report.json path (default: <traces>/off_on/)")
+        add_common(sp, need_data=True)
     args = p.parse_args(argv)
     if args.cmd == "smoke":
         return cmd_smoke(args)
     if args.cmd == "check-separation":
         return cmd_check_separation(args)
+    if args.cmd == "check-asr-model":
+        return cmd_check_asr_model(args)
     if args.cmd == "validate-manifest":
         return cmd_validate_manifest(args)
     if args.cmd == "asr-cache":
