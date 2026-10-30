@@ -250,6 +250,31 @@ def _needs_to_params(needs: list, tool_name: str) -> list:
     return params
 
 
+def _is_empty_roster_value(value) -> bool:
+    """A roster field counts as missing when it is None or a blank
+    string. 0 / False are values, not missing fields (roster fields
+    here are strings in practice, but the rule is stated generally)."""
+    if value is None:
+        return True
+    return isinstance(value, str) and not value.strip()
+
+
+def _backfill_roster_entry(existing: dict, later: dict) -> None:
+    """Task-1 agent backfill (R4, unconditional): a later successful
+    read for the same contact_id supplements fields the first entry
+    lacks, without ever overwriting. A later non-empty value never
+    replaces a non-empty value already held (a conflict keeps the
+    first value), and a later empty/missing value never overwrites
+    anything. Only the roster copy is mutated, never the search
+    result's own dict (the roster stores a shallow copy)."""
+    for key, value in (later or {}).items():
+        if key == "id":
+            continue
+        if _is_empty_roster_value(existing.get(key)) \
+                and not _is_empty_roster_value(value):
+            existing[key] = value
+
+
 class AgentLoop:
     def __init__(self, config, tools: dict):
         self.config = config
@@ -372,20 +397,55 @@ class AgentLoop:
             result = env.call(call["name"], call["arguments"])
             executed.append(call)
             results.append(result)
+            # R4 pending_ask_stop, REVISED contract (flag ON only;
+            # flag OFF skips this block entirely):
+            # a sys.ask_missing_info that env.call executes
+            # SUCCESSFULLY (result ok is True, as the real adapter
+            # returns for an ask: ok True + waiting_for_user) ends
+            # the turn IMMEDIATELY, with the ask kept in the
+            # submission. The generator is not called again, and no
+            # read / write / further ask runs after that ask.
+            # This is deliberately NOT a pending-key / post-ask-read
+            # rule any more: there is no read-leaf unlock, no
+            # distinct-key allowance after an ask, and no fill
+            # blocking to evaluate, because the turn is already
+            # over. An ask that validation rejects never reaches
+            # env.call, so it cannot trigger this rule; an ask
+            # whose env.call returns ok False is not successful,
+            # so it falls through to the old flow below (guard /
+            # re-prompt) instead of ending the turn by this rule.
+            if getattr(self.config, "pending_ask_stop", False) \
+                    and call["name"] == "sys.ask_missing_info" \
+                    and result.get("ok") is True:
+                return env.submission_line()
             if call["name"] == "contacts.search" and result.get("ok") \
                     and getattr(self.config, "grounding", False):
                 # Accumulate the roster from OBSERVED search results only
                 # (never from state files). Dedup by id; a later search
                 # may extend the roster mid-trace. Gated by the grounding
                 # flag so a dormant loop touches no grounding state.
+                # R4 task-1 backfill: a later successful search for an
+                # id already in the roster supplements its missing
+                # fields (see _backfill_roster_entry); it never
+                # overwrites a non-empty field, never overwrites with
+                # an empty value, and never appends a duplicate entry.
+                # Roster entries are shallow copies, so backfill never
+                # mutates a search result's own dict.
                 contacts = result.get("contacts")
                 if isinstance(contacts, list):
                     roster = self._roster if self._roster is not None else []
-                    seen = {c.get("id") for c in roster}
+                    by_id = {c.get("id"): c for c in roster
+                             if isinstance(c, dict) and c.get("id")}
                     for c in contacts:
-                        if isinstance(c, dict) and c.get("id") not in seen:
-                            roster.append(c)
-                            seen.add(c.get("id"))
+                        if not isinstance(c, dict) or not c.get("id"):
+                            continue
+                        existing = by_id.get(c["id"])
+                        if existing is None:
+                            entry = dict(c)
+                            roster.append(entry)
+                            by_id[c["id"]] = entry
+                        else:
+                            _backfill_roster_entry(existing, c)
                     self._roster = roster
             if completion is not None and completion(result, executed):
                 return env.submission_line()

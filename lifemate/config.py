@@ -45,6 +45,7 @@ class PipelineConfig:
     history_presentation_v2: bool = False  # R2-G5 variant: P1 V2 two-block history prompt; OFF by default, B0 unchanged when False
     prompt_output_reserve_tokens: int = 1024  # R2-G5 measurement only: tokens reserved for output when measuring prompt budget; never truncates a prompt by itself
     shadow_observer: bool = False  # R5 shadow-only G&G observer; OFF by default, logs decisions only, never alters behaviour
+    pending_ask_stop: bool = False  # R4 variant (REVISED contract): when True, a successful ask ends the turn immediately (see agent.py); OFF by default, control flow unchanged when False
     selective_reads: bool = True
     verification_read_after_write: bool = False
     constrained_decoding: str = "validate-and-retry"  # XGrammar via vLLM when available
