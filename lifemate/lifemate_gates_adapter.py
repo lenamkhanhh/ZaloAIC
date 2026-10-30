@@ -2284,10 +2284,20 @@ def decide(call, prefix, roster, current_text, kinds,
     # the right action, or the right role for that number
     # (chat2 ATK-001/007/009/014/015). This check fires ONLY
     # on an explicit contradiction reported by
-    # analyze_selection_consistency; UNKNOWN abstains (the
-    # baseline pass stands). It is a shadow adjustment like
-    # the lifecycle one: same adjustment record shape,
-    # mechanism "selection_mismatch".
+    # analyze_selection_consistency; a genuine abstention
+    # (consistent True, no decision) still stands -- the
+    # baseline pass stands. That abstention rule does NOT
+    # cover H2-S11: decision "unknown_pending" is NOT an
+    # abstention, it is a structured UNKNOWN that must
+    # still fire (fired True) with mechanism
+    # "unknown_pending", never fired False, never
+    # re-labelled as a discharged completion. The
+    # adjustment trail is what carries the decision into
+    # the observer/shadow logs (the observer copies
+    # adjustments whole); notes["selection_decision"]
+    # carries the same fields for in-process consumers.
+    # It is a shadow adjustment like the lifecycle one:
+    # same adjustment record shape.
     if not baseline.fired and not fired \
             and proposal_action is not None \
             and isinstance(current_text, str) \
@@ -2319,7 +2329,42 @@ def decide(call, prefix, roster, current_text, kinds,
                 notes["adapter_gaps"].append(
                     "selection_consistency_error:%r" % (exc,))
                 consistency = {"consistent": True}
-            if not consistency["consistent"]:
+            # H2-S11: decision is checked BEFORE the binary
+            # flag, on purpose. An old caller that read
+            # only consistent would still fire here
+            # (consistent stays False for unknown_pending),
+            # but the mechanism must be unknown_pending,
+            # not selection_mismatch, or the shadow log
+            # would re-label an unproven instruction as a
+            # proven contradiction. .get() keeps the
+            # exception fallback ({"consistent": True},
+            # no decision) on the old pass path.
+            if consistency.get("decision") == "unknown_pending":
+                fired = True
+                ref_label = ("%s %s" % refs[0]) if refs \
+                    else (call.get("name") or "proposal")
+                adjustments.append({
+                    "reference": ref_label, "old": "passed",
+                    "new": "fired", "mechanism": "unknown_pending",
+                    "basis": None, "question_b": None,
+                    "question_b_reason": "unknown_pending: %s "
+                    "(active_status=%s, blocked_subtype=%s)"
+                    % (consistency.get("detail"),
+                       consistency.get("active_status"),
+                       consistency.get("blocked_subtype")),
+                    "sources": []})
+                notes["selection_decision"] = {
+                    "decision": "unknown_pending",
+                    "unknown_kind": consistency.get(
+                        "unknown_kind"),
+                    "active_status": consistency.get(
+                        "active_status"),
+                    "blocked_subtype": consistency.get(
+                        "blocked_subtype"),
+                    "mismatch": consistency.get("mismatch"),
+                    "last_event": consistency.get("last_event"),
+                    }
+            elif not consistency["consistent"]:
                 fired = True
                 ref_label = ("%s %s" % refs[0]) if refs \
                     else (call.get("name") or "proposal")
@@ -2331,6 +2376,23 @@ def decide(call, prefix, roster, current_text, kinds,
                         consistency["mismatch"],
                         consistency["detail"]),
                     "sources": []})
+                if consistency.get("decision") == "mismatch":
+                    # S11 discharged / cancelled / none
+                    # taxonomy (check-5 direct past govern):
+                    # still a selection_mismatch fire, but
+                    # the decision fields are preserved in
+                    # notes so the log does not collapse
+                    # discharged into unknown_pending.
+                    notes["selection_decision"] = {
+                        "decision": "mismatch",
+                        "active_status": consistency.get(
+                            "active_status"),
+                        "blocked_subtype": consistency.get(
+                            "blocked_subtype"),
+                        "mismatch": consistency.get("mismatch"),
+                        "last_event": consistency.get(
+                            "last_event"),
+                        }
     # --- R5 eligibility report (shadow only; NEVER changes fired) ---
     if eligibility:
         tool_name = (call or {}).get("name")
