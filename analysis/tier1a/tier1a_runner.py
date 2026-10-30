@@ -902,7 +902,9 @@ class TransformersASR:
     def transcribe(self, wav_path) -> str:
         audio = self._read_wav(wav_path)
         inputs = self.processor(audio, sampling_rate=16000, return_tensors="pt")
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        inputs = {k: v.to(device=self.device, dtype=self.model.dtype)
+                  if v.is_floating_point() else v.to(self.device)
+                  for k, v in inputs.items()}
         try:
             forced = self.processor.get_decoder_prompt_ids(language="vi",
                                                            task="transcribe")

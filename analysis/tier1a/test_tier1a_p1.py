@@ -330,6 +330,37 @@ class TestScoreRefusalAndSeparation(unittest.TestCase):
 
 
 class TestAsrCacheBeforeLlm(unittest.TestCase):
+    def test_asr_casts_features_but_keeps_integer_mask(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch unavailable")
+        layer = torch.nn.Conv1d(2, 2, 1).half()
+
+        class Processor:
+            def __call__(self, *args, **kwargs):
+                return {"input_features": torch.ones(1, 2, 4),
+                        "attention_mask": torch.ones(1, 4, dtype=torch.int64)}
+            def get_decoder_prompt_ids(self, **kwargs):
+                return []
+            def batch_decode(self, ids, **kwargs):
+                return ["xin chào"]
+
+        class Model:
+            dtype = torch.float16
+            def generate(self, input_features, attention_mask, **kwargs):
+                self.seen_mask = attention_mask.dtype
+                layer(input_features)  # Reproduces the actual convolution dtype failure.
+                return torch.ones(1, 2, dtype=torch.int64)
+
+        asr = R.TransformersASR.__new__(R.TransformersASR)
+        asr.torch, asr.processor, asr.model, asr.device = torch, Processor(), Model(), "cpu"
+        asr._read_wav = lambda path: [0.0]
+        with self.assertRaises(RuntimeError):
+            layer(torch.ones(1, 2, 4))
+        self.assertEqual(asr.transcribe("synthetic.wav"), "xin chào")
+        self.assertEqual(asr.model.seen_mask, torch.int64)
+
     def test_three_sample_pilot_rejects_fourth_trace(self):
         ids = [f"dev_{i}" for i in range(25)]
         with patch.object(R, "PILOT_SIZE", 3):
