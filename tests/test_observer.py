@@ -434,6 +434,288 @@ class TestSchemaAndConfig(unittest.TestCase):
             json.dumps(rec)
 
 # ---------------------------------------------------------------------------
+# R3: D1 structured-attribute qualification through the REAL runtime
+# path (RAW contacts.search result -> collector -> adapter decide
+# -> observer -> AgentLoop). These tests never call decide() directly
+# for the D1 verdict: the verdict is read off the observer record
+# produced by a real AgentLoop run with shadow ON.
+#
+# Vocabulary (shadow-only): candidate fired=False means the shadow
+# gate PASSES the proposal ("qua"); fired=True means the shadow gate
+# BLOCKS it ("chan"). The observer never enforces anything: the
+# submitted calls are identical in the pass and block cases, and
+# that is asserted explicitly below so a fired=True record is never
+# misread as the loop refusing the call.
+#
+# Fixture shape (paired-dev shape train_0063/0225, synthetic only):
+# two contacts share the name "Minh"; a history user turn carries
+# the descriptor "khach hang" adjacent to the name. D1 qualifies
+# an entry ONLY when the descriptor matches a STRUCTURED roster
+# attribute (here "relation") of exactly one duplicate.
+# ---------------------------------------------------------------------------
+
+class TestObserverRosterRelationD1(unittest.TestCase):
+    HISTORY = "Tìm số của Minh khách hàng dùm tôi"
+    CURRENT = "Nhắn tin cho Minh"
+    SEARCH = {"name": "contacts.search", "arguments": {"query": "Minh"}}
+    STOP = {"stop": True}
+
+    BASE = [{"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "khách hàng"},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+             "relation": "đối tác"}]
+
+    def _sms(self, contact_id):
+        return {"name": "sms.send",
+                "arguments": {"contact_id": contact_id,
+                              "content": "hi"}}
+
+    def _run(self, searches, history_text=None, outputs=None):
+        """Run a real AgentLoop (shadow ON) whose contacts.search
+        calls return, in order, the (contacts, ok) pairs in
+        ``searches``. Returns (records, submitted)."""
+        searches = list(searches)
+
+        class RosterEnv:
+            def __init__(self):
+                self.calls = []
+                self.search_index = 0
+
+            def validate(self, name, args):
+                return {"ok": True}
+
+            def call(self, name, args):
+                self.calls.append({"name": name,
+                                   "arguments": dict(args)})
+                if name == "contacts.search":
+                    idx = min(self.search_index,
+                              len(searches) - 1)
+                    self.search_index += 1
+                    contacts, ok = searches[idx]
+                    result = {"ok": ok,
+                              "contacts": copy.deepcopy(contacts)}
+                    if not ok:
+                        result["error"] = "search failed"
+                    return result
+                return {"ok": True}
+
+            def submission_line(self):
+                blob = json.dumps(self.calls, sort_keys=True,
+                                  ensure_ascii=False)
+                return {"tool_calls": [dict(c) for c in self.calls],
+                        "state_hash": hashlib.sha256(
+                            blob.encode()).hexdigest()}
+
+        cfg = PipelineConfig(shadow_observer=True)
+        loop = AgentLoop(cfg, TOOLS)
+        history = [FakeTurn("user", audio_text=(
+            self.HISTORY if history_text is None else history_text))]
+        env = RosterEnv()
+        loop.run(FakeSample(history=history), self.CURRENT,
+                 env, FakeGenerator(outputs))
+        return ([dict(r) for r in loop.observer.records],
+                loop, env)
+
+    def _run_sms(self, searches, contact_id, history_text=None):
+        records, _loop, _env = self._run(
+            searches, history_text=history_text,
+            outputs=[self.SEARCH, self._sms(contact_id), self.STOP])
+        sms_records = [r for r in records
+                       if isinstance(r["proposal_grounded"], dict)
+                       and r["proposal_grounded"].get("name")
+                       == "sms.send"]
+        self.assertEqual(len(sms_records), 1)
+        return sms_records[0]
+
+    def _assert_passed(self, rec):
+        self.assertIsNone(rec["error"])
+        self.assertIsNotNone(rec["candidate_decision"])
+        self.assertTrue(rec["candidate_decision"]["applicable"])
+        self.assertFalse(rec["candidate_decision"]["fired"])
+        self.assertEqual(rec["adjustments"], [])
+
+    def _assert_blocked_via_selection(self, rec):
+        self.assertIsNone(rec["error"])
+        self.assertIsNotNone(rec["candidate_decision"])
+        self.assertTrue(rec["candidate_decision"]["applicable"])
+        self.assertTrue(rec["candidate_decision"]["fired"])
+        self.assertTrue(any(
+            a.get("mechanism") == "selection_mismatch"
+            for a in rec["adjustments"]), rec["adjustments"])
+
+    def _assert_blocked(self, rec):
+        self.assertIsNone(rec["error"])
+        self.assertIsNotNone(rec["candidate_decision"])
+        self.assertTrue(rec["candidate_decision"]["fired"])
+
+    def test_runtime_d1_relation_correct_passes_wrong_blocks(self):
+        # BEFORE the R3 fix both arms blocked here (fired=2/2):
+        # the observer stripped "relation" before decide() ever
+        # saw it, so D1 could match nothing. After the fix the
+        # relation-qualified entry passes and the other blocks.
+        passed = self._run_sms([(self.BASE, True)], "c_m1")
+        self._assert_passed(passed)
+        blocked = self._run_sms([(self.BASE, True)], "c_m2")
+        self._assert_blocked_via_selection(blocked)
+        # Shadow-only: the loop still submits the sms in both
+        # cases; the observer record is a log, not a gate.
+        for cid in ("c_m1", "c_m2"):
+            records, _loop, env = self._run(
+                [(self.BASE, True)],
+                outputs=[self.SEARCH, self._sms(cid), self.STOP])
+            self.assertIn({"name": "sms.send",
+                           "arguments": {"contact_id": cid,
+                                         "content": "hi"}},
+                          [dict(c) for c in env.calls])
+
+    def test_runtime_d1_missing_relation_blocks_both(self):
+        contacts = [{"id": "c_m1", "name": "Minh",
+                     "phone": "0903111222"},
+                    {"id": "c_m2", "name": "Minh",
+                     "phone": "0903777888"}]
+        for cid in ("c_m1", "c_m2"):
+            rec = self._run_sms([(contacts, True)], cid)
+            self._assert_blocked_via_selection(rec)
+
+    def test_runtime_d1_duplicate_relation_blocks_both(self):
+        contacts = [{"id": "c_m1", "name": "Minh",
+                     "phone": "0903111222",
+                     "relation": "khách hàng"},
+                    {"id": "c_m2", "name": "Minh",
+                     "phone": "0903777888",
+                     "relation": "khách hàng"}]
+        for cid in ("c_m1", "c_m2"):
+            rec = self._run_sms([(contacts, True)], cid)
+            self._assert_blocked_via_selection(rec)
+
+    def test_runtime_d1_mismatched_descriptor_blocks_both(self):
+        # Descriptor "ban hoc" matches NEITHER structured
+        # relation, so it qualifies nothing -- both block.
+        for cid in ("c_m1", "c_m2"):
+            rec = self._run_sms(
+                [(self.BASE, True)], cid,
+                history_text="Tìm số của Minh bạn học dùm tôi")
+            self._assert_blocked_via_selection(rec)
+
+    def test_runtime_d1_stray_string_field_is_not_evidence(self):
+        # A free-text "note" carrying the descriptor word is NOT
+        # a structured attribute: with no "relation" at all, the
+        # descriptor must qualify nothing, even though the note
+        # literally says "khach hang".
+        contacts = [{"id": "c_m1", "name": "Minh",
+                     "phone": "0903111222", "note": "khách hàng"},
+                    {"id": "c_m2", "name": "Minh",
+                     "phone": "0903777888", "note": "đối tác"}]
+        for cid in ("c_m1", "c_m2"):
+            rec = self._run_sms([(contacts, True)], cid)
+            self._assert_blocked_via_selection(rec)
+
+    def test_runtime_d1_failed_search_is_not_evidence(self):
+        # The search FAILED (ok False) even though its payload
+        # carries a full roster with the matching relation.
+        # A failed read's payload is not roster evidence, so
+        # the descriptor qualifies nothing and the proposal
+        # stays blocked (safe direction).
+        rec = self._run_sms([(self.BASE, False)], "c_m1")
+        self._assert_blocked(rec)
+
+    def test_runtime_d1_no_future_result_rewrites_a_record(self):
+        # First search returns a SINGLE Minh (no duplicate, so
+        # no ambiguity yet): the sms passes. A LATER search
+        # then reveals a second Minh with no relation, so a
+        # second identical sms blocks. The first record must
+        # still say "passed" after the run: observer records
+        # are snapshots at proposal time, never recomputed
+        # with results that arrived later.
+        single = [{"id": "c_m1", "name": "Minh",
+                   "phone": "0903111222"}]
+        dup_no_relation = [{"id": "c_m1", "name": "Minh",
+                            "phone": "0903111222"},
+                           {"id": "c_m2", "name": "Minh",
+                            "phone": "0903777888"}]
+        records, _loop, _env = self._run(
+            [(single, True), (dup_no_relation, True)],
+            outputs=[self.SEARCH, self._sms("c_m1"),
+                     self.SEARCH, self._sms("c_m1"), self.STOP])
+        sms_records = [r for r in records
+                       if isinstance(r["proposal_grounded"], dict)
+                       and r["proposal_grounded"].get("name")
+                       == "sms.send"]
+        self.assertEqual(len(sms_records), 2)
+        self._assert_passed(sms_records[0])
+        self._assert_blocked_via_selection(sms_records[1])
+
+    def test_collector_keeps_relation_only_allowlisted_field(self):
+        raw = {"ok": True, "contacts": [
+            {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "khách hàng", "note": "khách hàng",
+             "label": "khách hàng", "nickname": "Minh",
+             "extra": {"relation": "khách hàng"}},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+             "relation": 123},
+            {"id": "c_m3", "name": "Minh", "phone": "0903999999",
+             "relation": "   "},
+            {"id": "c_m4", "name": "Minh", "phone": "0903888888",
+             "relation": None}]}
+        prefix = [{"tool": "contacts.search", "args": {},
+                   "result": raw, "outcome": "succeeded",
+                   "position": 0, "origin": "session"}]
+        roster = collect_rosters_from_prefix(prefix)
+        self.assertEqual(roster, [
+            {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "khách hàng"},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888"},
+            {"id": "c_m3", "name": "Minh", "phone": "0903999999"},
+            {"id": "c_m4", "name": "Minh", "phone": "0903888888"}])
+
+    def test_collector_success_only(self):
+        def entry(result, outcome=_SENTINEL):
+            e = {"tool": "contacts.search", "args": {},
+                 "result": result, "position": 0,
+                 "origin": "session"}
+            if outcome is not _SENTINEL:
+                e["outcome"] = outcome
+            return e
+
+        good = {"ok": True, "contacts": copy.deepcopy(self.BASE)}
+        # Every non-success shape contributes nothing, even
+        # with a full contacts payload attached.
+        for prefix in (
+                [entry({"ok": False, "contacts": self.BASE},
+                       "schema_rejected")],
+                [entry({"ok": True, "done": False,
+                        "contacts": self.BASE}, "noop")],
+                [entry({"contacts": self.BASE}, "unknown")],
+                [entry({"ok": False, "contacts": self.BASE})],
+                [entry({"ok": True, "done": False,
+                        "contacts": self.BASE})],
+                [entry({"contacts": self.BASE})]):
+            self.assertEqual(collect_rosters_from_prefix(prefix), [])
+        # Success shapes keep the relation.
+        for prefix in ([entry(good, "succeeded")],
+                       [entry(good)]):
+            self.assertEqual(collect_rosters_from_prefix(prefix), [
+                {"id": "c_m1", "name": "Minh",
+                 "phone": "0903111222", "relation": "khách hàng"},
+                {"id": "c_m2", "name": "Minh",
+                 "phone": "0903777888", "relation": "đối tác"}])
+        # A failed first read does not poison a later successful
+        # one for the same id: the successful entry is the
+        # first SUCCESSFUL entry, so it wins the dedup.
+        prefix = [entry({"ok": False, "contacts": self.BASE},
+                        "schema_rejected"),
+                  entry(good, "succeeded")]
+        self.assertEqual(collect_rosters_from_prefix(prefix), [
+            {"id": "c_m1", "name": "Minh", "phone": "0903111222",
+             "relation": "khách hàng"},
+            {"id": "c_m2", "name": "Minh", "phone": "0903777888",
+             "relation": "đối tác"}])
+
+
+_SENTINEL = object()
+
+
+# ---------------------------------------------------------------------------
 # Independent old-baseline control: the same fixtures run on the
 # UNMODIFIED frozen-v10 agent in a subprocess (PYTHONPATH = frozen root),
 # so the frozen package cannot collide with the new one. The runner is
