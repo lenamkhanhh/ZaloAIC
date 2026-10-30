@@ -3106,12 +3106,15 @@ def analyze_selection_consistency(text, action, target_names=(),
     qualifies that entry alone, and only when the phone is
     governed by a positive verb of the proposal action or
     is a standalone identity reference -- a phone governed
-    by another action's positive verb qualifies nothing; a
-    noun descriptor adjacent to the name qualifies the name
-    in discourse but proves no entry -- the descriptor
-    fallback below is a documented residual, kept only for
-    the pinned "Minh khach hang" shape) is not an ambiguity
-    the current text creates,
+    by another action's positive verb qualifies nothing
+    (including a long appositive governed across clauses,
+    round 4); a noun descriptor adjacent to the name
+    qualifies NOTHING in round 4 (G5 R1 KNOWN-OPEN-FAIL,
+    NOT FOR RUNTIME USE: descriptor-only evidence must
+    not pass all duplicates, and the old pinned "Minh
+    khach hang" pass is therefore intentionally broken
+    until re-pinned) is not an ambiguity the current
+    text creates,
     and a BLOCKED current verb (past / question / status:
     no current request signal) does not cancel a prior turn
     that positively selected this proposal -- but only while
@@ -3356,21 +3359,48 @@ def analyze_selection_consistency(text, action, target_names=(),
     # all. A phone governed by a positive verb of a
     # DIFFERENT action only ("Nhan tin cho Binh so A" for
     # a call proposal) qualifies NOTHING -- both arms
-    # block. Government is the module's own notion: the
-    # phone run inside the verb's _extract_object span.
-    # No name, phone, number or sentence is hardcoded
-    # here: matching is by roster phone equality, name
-    # mention and verb government only.
-    # (2) DESCRIPTOR (residual, read this before relying on
-    # it): if no phone turn qualifies any entry, a noun
+    # block.
+    # GOVERNMENT, ROUND 4 (Run 2, G5 FIX_REQUIRED): the
+    # round-3 test -- phone run inside the verb's
+    # _extract_object span (at most 3 tokens) -- is too
+    # narrow for a LONG APPOSITIVE: in "Nhan tin cho
+    # Binh, <long description>, so A" the phone sits in
+    # a bare fragment clause AFTER the verb's clause, so
+    # round 3 fell back to standalone and wrongly
+    # qualified A for a call proposal. A phone is now
+    # governed by a positive verb when ANY of these hold:
+    # (a) the phone run is inside the verb's object span
+    # (round 3); (b) the phone run is in the SAME clause
+    # as the verb, AFTER the verb, and the verb's object
+    # span contains a mention of the duplicate name (the
+    # verb governs the person, the phone is that
+    # person's number stated later in the clause); (c)
+    # the phone run is in a LATER bare-fragment clause
+    # (no callback verb, no roster-name mention in that
+    # clause, only this phone run in it), an earlier
+    # clause's positive verb governs the duplicate name,
+    # and every clause between them contains no callback
+    # verb, no roster-name mention and no phone run
+    # (a clean appositive chain, no intervening person
+    # to break the link). A phone whose own clause
+    # names the person ("So cua Binh la A") is an
+    # identity clause, not a bare fragment, so (c)
+    # never fires on it: it stays standalone. No name,
+    # phone, number or sentence is hardcoded here:
+    # matching is by roster phone equality, name mention
+    # and verb government only.
+    # (2) DESCRIPTOR, ROUND 4 (Run 2, G5 R1
+    # KNOWN-OPEN-FAIL, NOT FOR RUNTIME USE): a noun
     # descriptor immediately adjacent to the name ("Minh
-    # khach hang") qualifies the NAME in discourse, and the
-    # returned set is all duplicates -- because a descriptor
-    # does NOT prove which entry it is. This preserves the
-    # pinned "Minh khach hang" pass, but it is a known
-    # false-pass residual for the OTHER duplicate arm: the
-    # descriptor is evidence the name was qualified in
-    # conversation, not evidence for a roster entry.
+    # khach hang") qualifies NOTHING. A descriptor does
+    # not prove which entry it is, so descriptor-only
+    # evidence must not pass all duplicates -- round 3
+    # returned all duplicates here and that was the
+    # false-pass residual. This deliberately changes the
+    # old pinned "Minh khach hang" pass: that repo test
+    # now FAILS until L5/G5 re-pin it, and that failure
+    # is reported, not hidden by editing the test (only
+    # this file may change in round 4).
     # (3) NOT QUALIFYING: adjacent prepositions / particles
     # / discourse tokens in _QUALIFIER_STOP ("cho Minh",
     # "Minh nhe"), any adjacent VERB (the name is the
@@ -3441,6 +3471,18 @@ def analyze_selection_consistency(text, action, target_names=(),
                 raw_names.add(parts[-1])
         if not raw_names:
             return set()
+        # All roster names (full + last token), for the
+        # round-4 discourse check: a bare-fragment clause
+        # or an intervening clause must mention NO roster
+        # person at all, not just no duplicate, or the
+        # appositive link is broken by another person.
+        all_roster_names = set()
+        for e in roster:
+            parts = _nfc(str(e.get("name") or "")).split()
+            if parts:
+                all_roster_names.add(_nfc(str(e.get("name")
+                                            or "")))
+                all_roster_names.add(parts[-1])
         phone_qualified = None
         phone_seen = False
         descriptor_seen = False
@@ -3494,6 +3536,9 @@ def analyze_selection_consistency(text, action, target_names=(),
                         (rs, re_) for (rs, re_, d, _k)
                         in hruns
                         if _norm_phone(d) == phone]
+                    all_mentions = _find_name_mentions(
+                        hraws, hfolds, sorted(all_roster_names))
+                    clause_order = sorted(set(hcids))
                     gov_actions = set()
                     for hv in hverbs:
                         if hv["start"] in hwrapped \
@@ -3506,10 +3551,77 @@ def analyze_selection_consistency(text, action, target_names=(),
                             continue
                         hspan = _extract_object(
                             hv, hraws, hfolds, hcids, hbounds)
+                        hcid = hcids[hv["start"]]
+                        # (a) round 3: phone inside the
+                        # object span.
                         if any(hspan[0] <= rs
                                and re_ <= hspan[1]
                                for (rs, re_) in phone_spans):
                             gov_actions.add(hv["action"])
+                            continue
+                        span_has_dup_name = any(
+                            hspan[0] <= ns and ne <= hspan[1]
+                            for (ns, ne) in mentions)
+                        if not span_has_dup_name:
+                            continue
+                        # (b) same clause, phone after the
+                        # verb, verb governs the duplicate
+                        # name: the phone is that person's
+                        # number stated later in the
+                        # clause, past the 3-token span.
+                        if any(hcids[rs] == hcid
+                               and rs > hv["start"]
+                               for (rs, _re) in phone_spans):
+                            gov_actions.add(hv["action"])
+                            continue
+                        # (c) discourse fragment: an
+                        # earlier verb governs the
+                        # duplicate name, the phone sits
+                        # in a later bare-fragment clause,
+                        # and no clause between them
+                        # mentions a person, a callback
+                        # verb or another phone run.
+                        for (rs, re_) in phone_spans:
+                            pcid = hcids[rs]
+                            if pcid not in clause_order \
+                                    or clause_order.index(pcid) \
+                                    <= clause_order.index(hcid):
+                                continue
+                            if any(hcids[v2["start"]] == pcid
+                                   for v2 in hverbs):
+                                continue
+                            if any(hcids[ns] == pcid
+                                   for (ns, _ne)
+                                   in all_mentions):
+                                continue
+                            clause_phones = {
+                                _norm_phone(d)
+                                for (s2, _e2, d, _k2)
+                                in hruns
+                                if hcids[s2] == pcid}
+                            if clause_phones != {phone}:
+                                continue
+                            between = clause_order[
+                                clause_order.index(hcid) + 1:
+                                clause_order.index(pcid)]
+                            clean = True
+                            for mid in between:
+                                if any(
+                                        hcids[v2["start"]] == mid
+                                        for v2 in hverbs) \
+                                        or any(
+                                            hcids[ns] == mid
+                                            for (ns, _ne)
+                                            in all_mentions) \
+                                        or any(
+                                            hcids[s2] == mid
+                                            for (s2, _e2, _d2,
+                                             _k2) in hruns):
+                                    clean = False
+                                    break
+                            if clean:
+                                gov_actions.add(hv["action"])
+                                break
                     if gov_actions \
                             and action not in gov_actions:
                         continue
@@ -3537,11 +3649,14 @@ def analyze_selection_consistency(text, action, target_names=(),
         if phone_seen:
             return set()
         if descriptor_seen:
-            # RESIDUAL (see (2) above): a descriptor does
-            # not prove an entry; the set stays all
-            # duplicates so the pinned descriptor shape
-            # still passes for the baseline proposal.
-            return set(idxs)
+            # ROUND 4 (see (2) above): descriptor-only
+            # qualifies NOTHING. Returning all duplicates
+            # here was the round-3 false-pass residual;
+            # descriptor-only evidence must not pass all
+            # duplicates. The old pinned "Minh khach
+            # hang" pass therefore fails until L5/G5
+            # re-pin it -- reported, not hidden.
+            return set()
         return set()
 
     # 2. Duplicate name (proposal-action verbs only): the
