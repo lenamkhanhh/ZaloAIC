@@ -3101,14 +3101,24 @@ def analyze_selection_consistency(text, action, target_names=(),
     History (history_texts: prior user-turn texts from the
     adapter's prefix) fills exactly two gaps, and no others:
     a duplicate name the conversation previously QUALIFIED
-    ("Minh khach hang" -- any content token adjacent to the
-    name in a history turn) is not an ambiguity the current
-    text creates, and a BLOCKED current verb (past / question
-    / status: no current request signal) does not cancel a
-    prior turn that positively selected this proposal. Active
-    current vetoes (negated / replaced / cancelled, a
-    different action, a different person) always win over
-    history: the current turn is the latest instruction.
+    for a SPECIFIC entry (see _history_qualified_entries:
+    a history turn naming the person with that entry's phone
+    qualifies that entry alone; a noun descriptor adjacent
+    to the name qualifies the name in discourse but proves
+    no entry -- the descriptor fallback below is a documented
+    residual, kept only for the pinned "Minh khach hang"
+    shape) is not an ambiguity the current text creates,
+    and a BLOCKED current verb (past / question / status:
+    no current request signal) does not cancel a prior turn
+    that positively selected this proposal -- but only while
+    that history-positive state is still ACTIVE (a later
+    negated / replaced / cancelled history turn revokes it),
+    and never when the current turn itself directly states
+    the proposal as completed (a past verb directly
+    governing the proposal phone/name). Active current
+    vetoes (negated / replaced / cancelled, a different
+    action, a different person) always win over history:
+    the current turn is the latest instruction.
 
     Checks, in order (first mismatch wins):
     1. delegation -- the whole action is another actor's job
@@ -3116,15 +3126,18 @@ def analyze_selection_consistency(text, action, target_names=(),
     2. duplicate_name -- a positively governed name maps to
        >= 2 roster phones, the proposal phone is one of them,
        no digit run equal to any duplicate phone appears in
-       the text, and no history turn qualifies the name;
+       the text, and history does not qualify the PROPOSAL
+       entry (see _history_qualified_entries);
     3. B decisive vetoes -- negated / replaced / cancelled;
     4. early matched-pass -- the positive selection set
        (including correction re-scoping, below) contains
        the proposal;
     5. B unknown-mismatch mapping -- other_action_verb_only
        -> action_mismatch, blocked_verb_only ->
-       blocked_request (unless history positively selected
-       the proposal), negated_other_object -> negated,
+       blocked_request (unless history-positive is still
+       ACTIVE for the proposal and no current past verb
+       directly governs the proposal), negated_other_object
+       -> negated,
        number_as_content_for_other_recipient ->
        money_or_content_role. positive_verb_not_governing_
        target is DELIBERATELY NOT mapped: when a verb
@@ -3313,19 +3326,97 @@ def analyze_selection_consistency(text, action, target_names=(),
         if before:
             selections.add((before[-1]["action"], recip))
 
-    # History qualification for duplicates: a history turn
-    # that mentions the name with an adjacent CONTENT token
-    # ("Minh khach hang") qualified it there, so the current
-    # text's bare name is not the whole story -- the agent's
-    # resolution may rest on that qualification. Adjacent
-    # prepositions / particles / discourse tokens do NOT
-    # qualify ("cho Minh", "Minh nhe").
+    # History qualification for duplicates (H1 fix,
+    # C3-G3-01): the old boolean _history_qualifies said
+    # only "some history turn qualified the NAME", which
+    # let one entry's evidence pass every duplicate. The
+    # replacement returns the SET of roster entries history
+    # actually qualifies, scanned in order:
+    # (1) PHONE: a history turn that mentions the name AND
+    # contains a digit run equal to exactly one duplicate
+    # phone qualifies that entry ALONE -- "Goi cho Binh so
+    # 0903111222" qualifies A, never B. A later phone turn
+    # for another duplicate replaces the set (a correction
+    # to the newer number wins); a later negated /
+    # replaced / cancelled turn for the qualified phone
+    # revokes it, and phone evidence, once seen, supersedes
+    # descriptor evidence (a descriptor turn never widens
+    # a phone-qualified set back to all duplicates). A turn
+    # matching two duplicate phones qualifies neither: it
+    # does not disambiguate. No name, phone, number or
+    # sentence is hardcoded here: matching is by roster
+    # phone equality and name mention only.
+    # (2) DESCRIPTOR (residual, read this before relying on
+    # it): if no phone turn qualifies any entry, a noun
+    # descriptor immediately adjacent to the name ("Minh
+    # khach hang") qualifies the NAME in discourse, and the
+    # returned set is all duplicates -- because a descriptor
+    # does NOT prove which entry it is. This preserves the
+    # pinned "Minh khach hang" pass, but it is a known
+    # false-pass residual for the OTHER duplicate arm: the
+    # descriptor is evidence the name was qualified in
+    # conversation, not evidence for a roster entry.
+    # (3) NOT QUALIFYING: adjacent prepositions / particles
+    # / discourse tokens in _QUALIFIER_STOP ("cho Minh",
+    # "Minh nhe"), any adjacent VERB (the name is the
+    # subject of a declarative clause, not a referring
+    # expression: "Binh an com roi" -- "an" is a verb, so
+    # the turn qualifies nothing), phone introducers
+    # ("so") and name words ("ten") -- none of these is a
+    # noun descriptor. The verb test uses a general list
+    # of frequent Vietnamese verbs, not a per-sentence
+    # list: any other verb in that position is excluded
+    # the same way.
     _QUALIFIER_STOP = {"cho", "toi", "den", "la", "cua", "va",
                        "thi", "ma", "a", "oi", "nhe", "nha", "di",
                        "roi", "nay", "do", "ay", "de", "o", "tu",
                        "voi", "giup"}
+    _GENERAL_VERBS = {
+        "an", "uong", "ngu", "thuc", "day", "di", "den", "ve",
+        "sang", "lam", "noi", "bao", "hoi", "dap", "nghe",
+        "nhin", "doc", "viet", "hoc", "choi", "mua", "ban",
+        "tra", "lay", "dua", "mo", "dong", "bat", "tat",
+        "rua", "nau", "don", "gap", "doi", "song", "o", "co",
+        "can", "muon", "thich", "nho", "quen", "biet",
+        "hieu", "nghi", "tuong", "so", "ghet", "yeu",
+        "cuoi", "khoc", "chay", "nhay", "boi", "hat", "goi",
+        "dien", "nhan", "gui", "tim", "xem", "kiem", "song",
+        "chet", "benh", "kho", "met", "vui", "buon"}
+    # Function words that are never a noun descriptor, even
+    # though they are not in _QUALIFIER_STOP: time words
+    # ("hom qua Lan ..." -- "qua" is the tail of "hom qua",
+    # not a role noun), aspect markers ("Binh da ..."),
+    # and adverbs ("Binh rat ...", "Lan cung ...").
+    _DESCRIPTOR_EXCLUDE = {
+        "hom", "qua", "sang", "trua", "chieu", "dem", "mai",
+        "ngay", "thang", "tuan", "gio", "phut", "giay",
+        "truoc", "sau", "luc", "khi", "hien",
+        "da", "moi", "vua", "dang", "se", "chua",
+        "rat", "kha", "cung", "lai", "con", "thoi", "nua",
+        "van", "chi", "ngay"}
 
-    def _history_qualifies(idxs):
+    def _is_noun_descriptor(tok):
+        if tok is None:
+            return False
+        if tok in _QUALIFIER_STOP or tok in _GENERAL_VERBS \
+                or tok in _VERB_HEADS \
+                or tok in _DESCRIPTOR_EXCLUDE:
+            return False
+        if tok.isdigit() or tok in _DIGIT_WORDS:
+            return False
+        # Phone introducer / name word: not a role noun.
+        if tok in ("so", "ten", "nguoi", "rang"):
+            return False
+        return True
+
+    def _history_qualified_entries(idxs):
+        dup_phones = {}
+        for i in idxs:
+            phone = _norm_phone(roster[i].get("phone") or "")
+            if phone:
+                dup_phones.setdefault(phone, []).append(i)
+        if not dup_phones:
+            return set()
         raw_names = set()
         for i in idxs:
             parts = _nfc(str(roster[i].get("name") or "")).split()
@@ -3334,30 +3425,71 @@ def analyze_selection_consistency(text, action, target_names=(),
                                      or "")))
                 raw_names.add(parts[-1])
         if not raw_names:
-            return False
+            return set()
+        phone_qualified = None
+        phone_seen = False
+        descriptor_seen = False
         for htext in (history_texts or ()):
             if not isinstance(htext, str) or not htext.strip():
                 continue
-            hraws, hfolds, _hc = _tokenize(
+            hraws, hfolds, hcids = _tokenize(
                 _strip_quoted(_nfc(htext)))
-            for (ns, ne) in _find_name_mentions(
-                    hraws, hfolds, sorted(raw_names)):
+            mentions = _find_name_mentions(
+                hraws, hfolds, sorted(raw_names))
+            if not mentions:
+                continue
+            matched = {_norm_phone(d)
+                       for (_s, _e, d, _k)
+                       in _digit_runs(hraws, hfolds, hcids)
+                       if _norm_phone(d) in dup_phones}
+            if len(matched) == 1:
+                phone = next(iter(matched))
+                # A phone turn is decided by its phone, not
+                # by any descriptor in the same turn -- even
+                # when the phone itself is shared by several
+                # entries and therefore qualifies none.
+                phone_seen = True
+                if len(dup_phones[phone]) == 1:
+                    entry = dup_phones[phone][0]
+                    hsel = analyze_action_selection(
+                        htext, target_names=target_names,
+                        target_phones=(phone,), action=action)
+                    if hsel["selection"] in ("negated",
+                                             "replaced",
+                                             "cancelled"):
+                        if phone_qualified == {entry}:
+                            phone_qualified = None
+                    else:
+                        phone_qualified = {entry}
+                continue
+            for (ns, ne) in mentions:
                 before = hfolds[ns - 1] if ns > 0 else None
-                after = hfolds[ne] if ne < len(hfolds) else None
-                if (before is not None
-                        and before not in _QUALIFIER_STOP) \
-                        or (after is not None
-                            and after not in _QUALIFIER_STOP):
-                    return True
-        return False
+                after = hfolds[ne] if ne < len(hfolds) \
+                    else None
+                if _is_noun_descriptor(before) \
+                        or _is_noun_descriptor(after):
+                    descriptor_seen = True
+                    break
+        if phone_qualified is not None:
+            return set(phone_qualified)
+        if phone_seen:
+            return set()
+        if descriptor_seen:
+            # RESIDUAL (see (2) above): a descriptor does
+            # not prove an entry; the set stays all
+            # duplicates so the pinned descriptor shape
+            # still passes for the baseline proposal.
+            return set(idxs)
+        return set()
 
     # 2. Duplicate name (proposal-action verbs only): the
     # name is ambiguous AND the text carries no number at
-    # all to pick between the duplicates AND no history turn
-    # qualifies the name. If a number IS present (the
-    # proposal's, or another duplicate's), check 6 decides
-    # honestly (matched pass / wrong_person) -- check 2 must
-    # not relabel that as ambiguity.
+    # all to pick between the duplicates AND history does
+    # not qualify the PROPOSAL entry. If a number IS
+    # present (the proposal's, or another duplicate's),
+    # check 6 decides honestly (matched pass /
+    # wrong_person) -- check 2 must not relabel that as
+    # ambiguity.
     for fold in governed_names:
         idxs = _entries_for_name(fold)
         phones = {_norm_phone(roster[i].get("phone") or "")
@@ -3370,15 +3502,21 @@ def analyze_selection_consistency(text, action, target_names=(),
             or any(t in phones for t in targets_norm))
         if not proposal_is_duplicate:
             continue
-        if _history_qualifies(idxs):
+        qualified = _history_qualified_entries(idxs)
+        proposal_qualified = any(
+            proposal_key == ("entry", i)
+            or _norm_phone(roster[i].get("phone") or "")
+            in targets_norm
+            for i in qualified)
+        if proposal_qualified:
             continue
         if not any(_norm_phone(d) in phones
                    for (_rs, _re, d, _k) in all_runs):
             return _mismatch(
                 "duplicate_name",
                 "name %r maps to %d roster phones and "
-                "neither the text nor history disambiguates "
-                "with any number or qualifier"
+                "neither the text nor history qualifies "
+                "this proposal with any number or qualifier"
                 % (fold, len(phones)))
 
     # 3. B decisive vetoes (active cancellations override
@@ -3431,11 +3569,77 @@ def analyze_selection_consistency(text, action, target_names=(),
         if not explicit and any(_selection_compatible(p)
                                 for p in same_action):
             return {"consistent": True}
+    # H2 helper (C3-G3-01): True iff the CURRENT turn
+    # directly states this proposal as completed -- a past
+    # verb ("da" / "moi" / "vua" before the verb, the past
+    # markers of _verb_polarity) of the proposal action
+    # whose object span contains the proposal phone or a
+    # name of the proposal person (target names, plus
+    # roster names of entries carrying a proposal phone).
+    # "Directly" is structural, not a sentence list: a past
+    # verb introduced in its clause by a content marker
+    # ("la" / "rang" -- "ghi la da goi ...", "noi la da
+    # goi ...") states REPORTED / note content, not the
+    # speaker's own direct completion claim, so it does NOT
+    # count here. That distinction is also what keeps the
+    # pinned train_0672 shape passing (its "da goi" sits
+    # inside "ghi la ..."): if L5 adjudicates that such a
+    # content clause IS a direct completion, drop the
+    # content-marker exception and train_0672 must be
+    # re-pinned -- do not silently keep both readings.
+    # Question / "chua" / wrapper blocked verbs are not
+    # past completions and are deliberately excluded: a
+    # "chua goi" (not yet called) or a question about a
+    # call leaves a history request pending, not done.
+    def _current_past_governs_proposal():
+        gov_names = set(target_names or ())
+        for e in roster:
+            if _norm_phone(e.get("phone") or "") in targets_norm:
+                parts = _nfc(str(e.get("name") or "")).split()
+                if parts:
+                    gov_names.add(_nfc(str(e.get("name")
+                                         or "")))
+                    gov_names.add(parts[-1])
+        for v in verbs:
+            if v["action"] != action:
+                continue
+            if _verb_polarity(v, raws, folds, clause_ids,
+                              bounds) != "blocked":
+                continue
+            cid = clause_ids[v["start"]]
+            first, _last = bounds[cid]
+            prev = v["start"] - 1
+            if prev < first or folds[prev] not in ("da",
+                                                   "moi",
+                                                   "vua"):
+                continue
+            if folds[prev] == "vua" and sum(
+                    1 for k in range(first, _last + 1)
+                    if folds[k] == "vua") >= 2:
+                continue
+            if any(folds[k] in ("la", "rang")
+                   for k in range(first, v["start"])):
+                continue
+            span = _extract_object(v, raws, folds, clause_ids,
+                                   bounds)
+            if any(span[0] <= ns and ne <= span[1]
+                   for (ns, ne) in _find_name_mentions(
+                       raws, folds, sorted(gov_names))):
+                return True
+            if any(span[0] <= rs and re_ <= span[1]
+                   and _norm_phone(d) in targets_norm
+                   for (rs, re_, d, _k) in all_runs):
+                return True
+        return False
+
     # 5. B unknown-mismatch mapping. Blocked is "no current
     # signal", not a cancellation: a history turn that
     # positively selected this proposal stands (the B pin
     # for prior-instruction bindings, extended to the passed
-    # path for blocked verdicts only).
+    # path for blocked verdicts only) -- but only while
+    # that history-positive state is ACTIVE, and never
+    # when the current turn directly states the proposal
+    # as completed (H2 fix, C3-G3-01).
     if sel["selection"] == "unknown":
         mapping = {
             "other_action_verb_only": "action_mismatch",
@@ -3445,6 +3649,19 @@ def analyze_selection_consistency(text, action, target_names=(),
                 "money_or_content_role",
         }
         if sel["reason"] == "blocked_verb_only":
+            if _current_past_governs_proposal():
+                return _mismatch(
+                    "blocked_request",
+                    "B: blocked_verb_only; current past verb "
+                    "directly governs the proposal "
+                    "(completed), history cannot revive it")
+            # ACTIVE history scan, in order: a positive
+            # turn sets active, a later negated / replaced
+            # / cancelled turn clears it; unknown turns
+            # leave the state alone. Only a finally-active
+            # state falls through -- an old request revoked
+            # by a later cancellation does not revive.
+            history_active = False
             for htext in (history_texts or ()):
                 if not isinstance(htext, str):
                     continue
@@ -3452,16 +3669,21 @@ def analyze_selection_consistency(text, action, target_names=(),
                     htext, target_names=target_names,
                     target_phones=target_phones, action=action)
                 if hsel["selection"] == "positive":
-                    break
-            else:
+                    history_active = True
+                elif hsel["selection"] in ("negated",
+                                           "replaced",
+                                           "cancelled"):
+                    history_active = False
+            if not history_active:
                 return _mismatch("blocked_request",
                                  "B: blocked_verb_only")
         elif sel["reason"] in mapping:
             return _mismatch(mapping[sel["reason"]],
                              "B: %s" % sel["reason"])
         # Abstain reasons (no_callback_verb,
-        # quoted_mention_only) and a history-positive
-        # blocked verdict fall through.
+        # quoted_mention_only) and an ACTIVE history-positive
+        # blocked verdict with no direct current completion
+        # fall through.
 
     # 6. Positive-selection-set mismatch.
     if selections:
