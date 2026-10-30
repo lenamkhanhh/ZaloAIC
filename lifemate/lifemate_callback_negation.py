@@ -3628,7 +3628,18 @@ def analyze_selection_consistency(text, action, target_names=(),
                 all_roster_phones.add(ph)
         phone_qualified = None
         phone_seen = False
-        descriptor_phrases = []
+        # R5-FINDING (G1/G3) descriptor events, in history
+        # order: (phrase, superseding) where superseding
+        # means this mention's descriptor was cancelled
+        # or completed, not positively requested. The D1
+        # check at the end runs on the ACTIVE phrases
+        # derived from these events (see below), not on
+        # the raw union: a cancelled/completed descriptor
+        # that a later positive descriptor supersedes no
+        # longer qualifies its entry, while two plain
+        # positive descriptors still qualify nothing
+        # (ambiguity, preserved).
+        descriptor_events = []
         # R4 verb-collision anchor: the structured attribute
         # token sequences of the duplicate entries only
         # (every roster field other than id/name/phone,
@@ -3848,6 +3859,68 @@ def analyze_selection_consistency(text, action, target_names=(),
                         phone_qualified = {entry}
                 continue
             for (ns, ne) in mentions:
+                # R5-FINDING (G1/G3): is this mention's
+                # descriptor superseded rather than
+                # positively requested? A mention is
+                # superseding when its clause is
+                # cancelled (a cancellation marker in
+                # the clause, or a negated callback verb
+                # governing the mention), or when it is
+                # a declarative completion (a past
+                # marker before a callback verb that
+                # governs the mention, in a
+                # non-question clause). A plain
+                # positive mention is never
+                # superseding, and a question clause
+                # never completes: both keep the old
+                # union behaviour for their phrases.
+                # Clause bounds / verbs are computed
+                # here, in the descriptor branch only;
+                # the phone branch above has its own
+                # locals and is untouched.
+                _hbounds = _clause_bounds(hcids)
+                _hverbs = _find_verbs(
+                    hfolds, ("call", "message"))
+                _mcid = hcids[ne - 1] if ne > 0 \
+                    else hcids[ns]
+                _mfirst, _mlast = _hbounds[_mcid]
+                _superseding = _clause_cancelled(
+                    hraws, hfolds, _mfirst, _mlast)
+                if not _superseding:
+                    for _hv in _hverbs:
+                        if hcids[_hv["start"]] != _mcid:
+                            continue
+                        _pol = _verb_polarity(
+                            _hv, hraws, hfolds, hcids,
+                            _hbounds)
+                        _span = _extract_object(
+                            _hv, hraws, hfolds, hcids,
+                            _hbounds)
+                        if not (_span[0] <= ns
+                                and ne <= _span[1]):
+                            continue
+                        if _pol == "negated":
+                            _superseding = True
+                            break
+                        if _pol == "blocked":
+                            _prev = _hv["start"] - 1
+                            if _prev < _mfirst:
+                                continue
+                            _past = hfolds[_prev] in (
+                                "da", "moi") or (
+                                hfolds[_prev] == "vua"
+                                and sum(
+                                    1 for _k in range(
+                                        _mfirst,
+                                        _mlast + 1)
+                                    if hfolds[_k] == "vua")
+                                < 2)
+                            if _past and not \
+                                    _clause_is_question(
+                                        hraws, hfolds,
+                                        _mfirst, _mlast):
+                                _superseding = True
+                                break
                 # Collect the noun-descriptor phrase adjacent
                 # to this name mention (before and after),
                 # for the D1 structured-attribute check at
@@ -3862,7 +3935,8 @@ def analyze_selection_consistency(text, action, target_names=(),
                     after_seq.append(hfolds[j])
                     j += 1
                 if after_seq:
-                    descriptor_phrases.append(after_seq)
+                    descriptor_events.append(
+                        (after_seq, _superseding))
                 elif dup_attr_seqs and ne < len(hfolds):
                     # R4 VERB-COLLISION RESCUE (post-name
                     # only): the ordinary scan above stops
@@ -3908,7 +3982,8 @@ def analyze_selection_consistency(text, action, target_names=(),
                     for _ln in range(2, len(_run) + 1):
                         _cand = _run[:_ln]
                         if _cand in dup_attr_seqs:
-                            descriptor_phrases.append(_cand)
+                            descriptor_events.append(
+                                (_cand, _superseding))
                 before_seq = []
                 j = ns - 1
                 while j >= 0 and len(before_seq) < 4 \
@@ -3916,11 +3991,49 @@ def analyze_selection_consistency(text, action, target_names=(),
                     before_seq.insert(0, hfolds[j])
                     j -= 1
                 if before_seq:
-                    descriptor_phrases.append(before_seq)
+                    descriptor_events.append(
+                        (before_seq, _superseding))
         if phone_qualified is not None:
             return set(phone_qualified)
         if phone_seen:
             return set()
+        # R5-FINDING (G1/G3) active phrases: a positive
+        # phrase is superseded ONLY when a superseding
+        # event for the same phrase comes after it, no
+        # later positive event for that phrase revives
+        # it, AND a positive event for a different
+        # phrase comes after that superseding event
+        # (the new descriptor that replaces it). A
+        # cancellation/completion with no replacement
+        # therefore leaves the old descriptor in force
+        # (pre-existing behaviour, preserved), a
+        # cancelled-then-re-requested descriptor stays
+        # in force, and two plain positives stay
+        # ambiguous. Superseding events for a phrase
+        # that was never positive add nothing.
+        descriptor_phrases = []
+        for _i, (_phrase, _sup) in enumerate(
+                descriptor_events):
+            if _sup:
+                continue
+            _sup_after = [_j for _j, (_p, _s)
+                          in enumerate(descriptor_events)
+                          if _s and _p == _phrase
+                          and _j > _i]
+            if _sup_after:
+                _last_sup = max(_sup_after)
+                _revived = any(
+                    _k > _last_sup and _p == _phrase
+                    and not _s for _k, (_p, _s)
+                    in enumerate(descriptor_events))
+                _replaced = any(
+                    _k > _last_sup and _p != _phrase
+                    and not _s for _k, (_p, _s)
+                    in enumerate(descriptor_events))
+                if not _revived and _replaced:
+                    continue
+            if _phrase not in descriptor_phrases:
+                descriptor_phrases.append(_phrase)
         if descriptor_phrases:
             # D1 (paired-dev regressions train_0063 /
             # train_0225): a descriptor qualifies an entry

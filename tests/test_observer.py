@@ -1442,5 +1442,102 @@ class TestCleanProcessPackageObserver(unittest.TestCase):
                          direct.applicable)
 
 
+class TestObserverDescriptorSupersession(unittest.TestCase):
+    """R5-FINDING (G1/G3), runtime path: RAW contacts.search
+    result -> collector -> adapter -> observer -> real
+    AgentLoop (shadow ON), with multi-turn history. Verdicts
+    are read off observer records, never from decide()
+    directly. The loop still submits the sms in both arms
+    (shadow-only), as in the R5 identity class.
+    """
+
+    SEARCH = {"name": "contacts.search", "arguments": {"query": "Lan"}}
+    STOP = {"stop": True}
+    CONTACTS = [{"id": "c1", "name": "Lan", "phone": "0903111222",
+                 "relation": "đồng nghiệp"},
+                {"id": "c2", "name": "Lan", "phone": "",
+                 "relation": "hàng xóm"}]
+    CURRENT = "Nhắn cho Lan: Chào bạn"
+
+    def _run_sms(self, contact_id, history_texts):
+        contacts = self.CONTACTS
+
+        class RosterEnv:
+            def __init__(self):
+                self.calls = []
+
+            def validate(self, name, args):
+                return {"ok": True}
+
+            def call(self, name, args):
+                self.calls.append({"name": name,
+                                   "arguments": dict(args)})
+                if name == "contacts.search":
+                    return {"ok": True,
+                            "contacts": copy.deepcopy(contacts)}
+                return {"ok": True}
+
+            def submission_line(self):
+                blob = json.dumps(self.calls, sort_keys=True,
+                                  ensure_ascii=False)
+                return {"tool_calls": [dict(c) for c in self.calls],
+                        "state_hash": hashlib.sha256(
+                            blob.encode()).hexdigest()}
+
+        cfg = PipelineConfig(shadow_observer=True)
+        loop = AgentLoop(cfg, TOOLS)
+        history = [FakeTurn("user", audio_text=t)
+                   for t in history_texts]
+        env = RosterEnv()
+        loop.run(FakeSample(history=history), self.CURRENT, env,
+                 FakeGenerator([self.SEARCH,
+                                {"name": "sms.send",
+                                 "arguments": {
+                                     "contact_id": contact_id,
+                                     "content": "hi"}},
+                                self.STOP]))
+        records = [r for r in loop.observer.records
+                   if isinstance(r["proposal_grounded"], dict)
+                   and r["proposal_grounded"].get("name")
+                   == "sms.send"]
+        self.assertEqual(len(records), 1)
+        return records[0], env
+
+    def _assert_passed(self, rec):
+        self.assertIsNone(rec["error"])
+        self.assertFalse(rec["candidate_decision"]["fired"])
+
+    def _assert_blocked_via_selection(self, rec):
+        self.assertIsNone(rec["error"])
+        self.assertTrue(rec["candidate_decision"]["fired"])
+        self.assertTrue(any(
+            a.get("mechanism") == "selection_mismatch"
+            for a in rec["adjustments"]), rec["adjustments"])
+
+    def test_runtime_g1_descriptor_cancelled_then_new(self):
+        history = ["Tìm số của Lan đồng nghiệp giúp tôi",
+                   "Hủy Lan đồng nghiệp, nhắn cho Lan hàng xóm "
+                   "giúp tôi"]
+        rec, _env = self._run_sms("c1", history)
+        self._assert_blocked_via_selection(rec)
+        rec, _env = self._run_sms("c2", history)
+        self._assert_passed(rec)
+
+    def test_runtime_g3_descriptor_completed_then_new(self):
+        history = ["Đã nhắn cho Lan đồng nghiệp xong rồi, giờ "
+                   "nhắn cho Lan hàng xóm giúp tôi"]
+        rec, _env = self._run_sms("c1", history)
+        self._assert_blocked_via_selection(rec)
+        rec, _env = self._run_sms("c2", history)
+        self._assert_passed(rec)
+
+    def test_runtime_both_positive_still_ambiguous(self):
+        history = ["Tìm số của Lan đồng nghiệp giúp tôi",
+                   "Tìm số của Lan hàng xóm giúp tôi"]
+        for cid in ("c1", "c2"):
+            rec, _env = self._run_sms(cid, history)
+            self._assert_blocked_via_selection(rec)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

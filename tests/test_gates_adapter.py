@@ -3171,5 +3171,128 @@ class TestR5IdentityAdapter(unittest.TestCase):
         self.assertEqual(cons["mismatch"], "unknown_identity")
 
 
+class TestR5FindingDescriptorSupersession(unittest.TestCase):
+    """R5-FINDING (G1/G3), adapter level: a descriptor that
+    history cancels or completes, and that a later positive
+    descriptor replaces, no longer qualifies its entry. The
+    rule is deliberately scoped (see the production comment
+    and the report): a cancellation/completion with NO
+    replacement leaves the old descriptor in force, and
+    two plain positive descriptors still qualify nothing.
+    Fixture names/relations are examples only; the rule is
+    structural (clause cancellation / past-governing verb
+    + later positive descriptor), with no name or relation
+    hardcoded in production code.
+    """
+
+    CUR = "Nhắn cho Lan: Chào bạn"
+
+    def _dec(self, proposal, prefix, roster, current):
+        return decide(proposal, prefix, roster, current, KINDS,
+                      proposal_position=len(prefix))
+
+    def _sms(self, cid):
+        return {"name": "sms.send",
+                "arguments": {"contact_id": cid, "content": "hi"}}
+
+    def _assert_pass(self, dec):
+        self.assertFalse(dec.baseline_fired)
+        self.assertFalse(dec.fired, dec.adjustments)
+
+    def _assert_block_via_selection(self, dec):
+        self.assertFalse(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(a["mechanism"] == "selection_mismatch"
+                            for a in dec.adjustments),
+                        dec.adjustments)
+
+    def _roster(self):
+        return [{"id": "c1", "name": "Lan", "phone": "0903111222",
+                 "relation": "đồng nghiệp"},
+                {"id": "c2", "name": "Lan", "phone": "",
+                 "relation": "hàng xóm"}]
+
+    def _check(self, history, roster=None):
+        roster = roster if roster is not None else self._roster()
+        prefix = [user_turn(t, i) for i, t in enumerate(history)]
+        return (self._dec(self._sms("c1"), prefix, roster,
+                          self.CUR),
+                self._dec(self._sms("c2"), prefix, roster,
+                          self.CUR))
+
+    def test_g1_descriptor_cancelled_then_new(self):
+        old, new = self._check([
+            "Tìm số của Lan đồng nghiệp giúp tôi",
+            "Hủy Lan đồng nghiệp, nhắn cho Lan hàng xóm giúp tôi"])
+        self._assert_block_via_selection(old)
+        self._assert_pass(new)
+
+    def test_g3_descriptor_completed_then_new(self):
+        old, new = self._check([
+            "Đã nhắn cho Lan đồng nghiệp xong rồi, giờ nhắn cho "
+            "Lan hàng xóm giúp tôi"])
+        self._assert_block_via_selection(old)
+        self._assert_pass(new)
+
+    def test_descriptor_cross_turn_cancel_and_complete(self):
+        for history in (
+                ["Tìm số của Lan đồng nghiệp giúp tôi",
+                 "Hủy Lan đồng nghiệp, nhắn cho Lan hàng xóm "
+                 "giúp tôi"],
+                ["Tìm số của Lan đồng nghiệp giúp tôi",
+                 "Đã nhắn cho Lan đồng nghiệp xong rồi, giờ "
+                 "nhắn cho Lan hàng xóm giúp tôi"]):
+            with self.subTest(history=history):
+                old, new = self._check(history)
+                self._assert_block_via_selection(old)
+                self._assert_pass(new)
+
+    def test_descriptor_both_positive_still_ambiguous(self):
+        old, new = self._check([
+            "Tìm số của Lan đồng nghiệp giúp tôi",
+            "Tìm số của Lan hàng xóm giúp tôi"])
+        self._assert_block_via_selection(old)
+        self._assert_block_via_selection(new)
+
+    def test_descriptor_cancel_without_replacement_keeps_old(self):
+        # Scoped-rule boundary, pinned deliberately: a
+        # cancellation with no replacement selects nobody
+        # new, so the old descriptor stays the only
+        # qualification (pre-existing behaviour). G1/G3
+        # differ precisely by having a replacement.
+        old, new = self._check([
+            "Tìm số của Lan đồng nghiệp giúp tôi",
+            "Hủy Lan đồng nghiệp"])
+        self._assert_pass(old)
+        self._assert_block_via_selection(new)
+
+    def test_descriptor_unseen_name_cancel_then_new(self):
+        roster = [{"id": "t1", "name": "Thu", "phone": "0903111333",
+                   "relation": "bạn học"},
+                  {"id": "t2", "name": "Thu", "phone": "",
+                   "relation": "đồng nghiệp"}]
+        prefix = [user_turn("Tìm số của Thu bạn học giúp tôi", 0),
+                  user_turn("Hủy Thu bạn học, nhắn cho Thu đồng "
+                            "nghiệp giúp tôi", 1)]
+        current = "Nhắn cho Thu: Chào bạn"
+        self._assert_block_via_selection(
+            self._dec(self._sms("t1"), prefix, roster, current))
+        self._assert_pass(
+            self._dec(self._sms("t2"), prefix, roster, current))
+
+    def test_descriptor_current_text_still_does_not_override(self):
+        # R5 §8 item 2, preserved: a current-text descriptor
+        # for the other duplicate does not qualify it over
+        # history.
+        roster = self._roster()
+        prefix = [user_turn("Tìm số của Lan đồng nghiệp giúp tôi",
+                            0)]
+        self._assert_pass(self._dec(self._sms("c1"), prefix,
+                                    roster, "Nhắn cho Lan hàng xóm"))
+        self._assert_block_via_selection(
+            self._dec(self._sms("c2"), prefix, roster,
+                      "Nhắn cho Lan hàng xóm"))
+
+
 if __name__ == "__main__":
     unittest.main()
