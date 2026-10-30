@@ -1,0 +1,3 @@
+{"sample_id": "test-1", "transcript": "Gọi số 0902345678 giúp tôi", "outputs": [{"name": "contacts.search", "arguments": {"query": "Bình"}}, {"name": "phone.call", "arguments": {"phone_number": "0902345678"}}, {"stop": true}]}
+{"sample_id": "test-2", "transcript": "Gọi cho Bình", "outputs": [{"name": "sys.ask_missing_info", "arguments": {"tool_name": "phone.call", "params": ["contact_id"]}}, {"stop": true}]}
+{"sample_id": "test-3", "transcript": "Gọi số 0902345678 giúp tôi", "outputs": [{"foo": 1}, {"stop": true}]}
