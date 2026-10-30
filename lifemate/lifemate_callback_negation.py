@@ -3132,6 +3132,27 @@ def analyze_selection_consistency(text, action, target_names=(),
     id does. Name/phone-only proposals (no id) keep the
     old derivation unchanged.
 
+    Recipient (R6): the current turn is parsed FIRST
+    (name + descriptor + governed phone, in the recipient
+    clause of a proposal-action verb, D1 structured-attribute
+    match of exactly one duplicate). An explicit current
+    choice overrides history; a bare / non-distinguishing
+    current phrase does not. History fills only a gap the
+    current turn leaves, with linked evidence in order and
+    in context; a cancelled / completed / replaced history
+    choice does not qualify afterwards, even with no
+    replacement (coordinator ruling (b) for M7, superseding
+    the R5 note for R6 recipient scope). A pronoun in the
+    recipient slot resolves only to a unique referent
+    (current antecedent, then history, then a single-entry
+    roster); otherwise it is UNKNOWN (mismatch
+    "unknown_referent", structured decision "mismatch" for
+    export compatibility). Names / numbers in quotes, in
+    message content, or as another action's object never
+    become the recipient; a digit run disables the
+    duplicate guard only when governed / role-bound to
+    the recipient, never by mere presence (D3).
+
     History (history_texts: prior user-turn texts from the
     adapter's prefix) fills exactly two gaps, and no others:
     a duplicate name the conversation previously QUALIFIED
@@ -3629,16 +3650,22 @@ def analyze_selection_consistency(text, action, target_names=(),
         phone_qualified = None
         phone_seen = False
         # R5-FINDING (G1/G3) descriptor events, in history
-        # order: (phrase, superseding) where superseding
-        # means this mention's descriptor was cancelled
-        # or completed, not positively requested. The D1
+        # order: (phrase, superseding, replacing) where
+        # superseding means this mention's descriptor was
+        # cancelled or completed, not positively requested,
+        # and replacing means this positive mention follows
+        # a correction clause ("a khong" / "khong") in the
+        # same turn or an earlier clause of it, so it
+        # replaces earlier descriptors for this group
+        # (R6, cross-turn correction, e.g. M1/PR4). The D1
         # check at the end runs on the ACTIVE phrases
         # derived from these events (see below), not on
         # the raw union: a cancelled/completed descriptor
-        # that a later positive descriptor supersedes no
-        # longer qualifies its entry, while two plain
-        # positive descriptors still qualify nothing
-        # (ambiguity, preserved).
+        # no longer qualifies its entry even with NO
+        # replacement (R6 coordinator ruling (b) for M7,
+        # superseding the R5 note for R6 recipient scope),
+        # while two plain positive descriptors still
+        # qualify nothing (ambiguity, preserved).
         descriptor_events = []
         # R4 verb-collision anchor: the structured attribute
         # token sequences of the duplicate entries only
@@ -3858,6 +3885,45 @@ def analyze_selection_consistency(text, action, target_names=(),
                     else:
                         phone_qualified = {entry}
                 continue
+            # R6 descriptor action-scoping + correction
+            # clauses for this history turn, computed once:
+            # other-action verbs that are NOT lookups
+            # (tim / tra cuu count as identifying the
+            # person for this purpose; luu / xoa / kiem
+            # tra / ghi / chuyen / ... do not) govern an
+            # object span; a descriptor in such a span is
+            # another action's object, not a callback
+            # selection, so it contributes no event.
+            # A correction clause is exactly ["a",
+            # "khong"] or ["khong"] as its own clause.
+            _h_other_spans = []
+            _h_corr_cids = set()
+            _h_other_pats = sorted(_OTHER_VERB_PATTERNS,
+                                   key=lambda p: -len(p[0]))
+            _h_lookup = (["tim"], ["tra", "cuu"])
+            _hi = 0
+            while _hi < len(hfolds):
+                _matched = None
+                for _pat in _h_other_pats:
+                    if hfolds[_hi:_hi + len(_pat)] == _pat:
+                        _matched = _pat
+                        break
+                if _matched is not None:
+                    if _matched not in _h_lookup:
+                        _ospan = _extract_object(
+                            {"start": _hi,
+                             "end": _hi + len(_matched),
+                             "action": "call"},
+                            hraws, hfolds, hcids,
+                            _clause_bounds(hcids))
+                        _h_other_spans.append(_ospan)
+                    _hi += len(_matched)
+                else:
+                    _hi += 1
+            for _cid, (_cf, _cl) in _clause_bounds(hcids).items():
+                if hfolds[_cf:_cl + 1] in (["a", "khong"],
+                                           ["khong"]):
+                    _h_corr_cids.add(_cid)
             for (ns, ne) in mentions:
                 # R5-FINDING (G1/G3): is this mention's
                 # descriptor superseded rather than
@@ -3921,23 +3987,70 @@ def analyze_selection_consistency(text, action, target_names=(),
                                         _mfirst, _mlast):
                                 _superseding = True
                                 break
+                # R6: a positive mention following a
+                # correction clause replaces earlier
+                # descriptors for this group (same-turn
+                # correction, or a correction turn whose
+                # first clause is the correction).
+                _replacing = False
+                if any(_clause_bounds(hcids)[_cid][0] < _mfirst
+                       for _cid in _h_corr_cids
+                       if _cid != _mcid):
+                    _replacing = True
+                else:
+                    # Same-clause "a khong" before the
+                    # mention (no comma split).
+                    for _k in range(_mfirst, ns - 1):
+                        if hfolds[_k:_k + 2] == ["a", "khong"]:
+                            _replacing = True
+                            break
+                # R6 action-scoping: skip a descriptor
+                # whose mention is another action's object.
+                if any(_os[0] <= ns and ne <= _os[1]
+                       for _os in _h_other_spans):
+                    continue
                 # Collect the noun-descriptor phrase adjacent
                 # to this name mention (before and after),
                 # for the D1 structured-attribute check at
                 # the end. Tokens are folded, contiguous,
                 # capped at 4 so a following clause cannot
                 # bleed into the phrase.
-                after_seq = []
-                j = ne
-                while j < len(hfolds) \
-                        and len(after_seq) < 4 \
-                        and _is_noun_descriptor(hfolds[j]):
-                    after_seq.append(hfolds[j])
-                    j += 1
-                if after_seq:
+                # R6: an exact structured-attribute
+                # prefix after the name wins over a
+                # partial noun scan (e.g. "ban hoc":
+                # "hoc" is a general verb, so the
+                # ordinary scan stops at ["ban"], which
+                # is ambiguous between "ban than" and
+                # "ban hoc" -- the full attribute is the
+                # descriptor, not its prefix).
+                _after_run = []
+                _j = ne
+                while _j < len(hfolds) \
+                        and len(_after_run) < 4 \
+                        and hcids[_j] == hcids[ne - 1]:
+                    _after_run.append(hfolds[_j])
+                    _j += 1
+                _after_exact = None
+                for _ln in range(min(4, len(_after_run)), 1, -1):
+                    if _after_run[:_ln] in dup_attr_seqs:
+                        _after_exact = _after_run[:_ln]
+                        break
+                if _after_exact is not None:
                     descriptor_events.append(
-                        (after_seq, _superseding))
-                elif dup_attr_seqs and ne < len(hfolds):
+                        (_after_exact, _superseding, _replacing))
+                    after_seq = []
+                else:
+                    after_seq = []
+                    j = ne
+                    while j < len(hfolds) \
+                            and len(after_seq) < 4 \
+                            and _is_noun_descriptor(hfolds[j]):
+                        after_seq.append(hfolds[j])
+                        j += 1
+                    if after_seq:
+                        descriptor_events.append(
+                            (after_seq, _superseding, _replacing))
+                if _after_exact is None and not after_seq and dup_attr_seqs and ne < len(hfolds):
                     # R4 VERB-COLLISION RESCUE (post-name
                     # only): the ordinary scan above stops
                     # at the FIRST token it rejects, so a
@@ -3983,7 +4096,8 @@ def analyze_selection_consistency(text, action, target_names=(),
                         _cand = _run[:_ln]
                         if _cand in dup_attr_seqs:
                             descriptor_events.append(
-                                (_cand, _superseding))
+                                (_cand, _superseding, _replacing))
+                            break
                 before_seq = []
                 j = ns - 1
                 while j >= 0 and len(before_seq) < 4 \
@@ -3992,31 +4106,63 @@ def analyze_selection_consistency(text, action, target_names=(),
                     j -= 1
                 if before_seq:
                     descriptor_events.append(
-                        (before_seq, _superseding))
+                        (before_seq, _superseding, _replacing))
+                elif dup_attr_seqs and ns > 0:
+                    # R6 pre-name rescue, mirroring the
+                    # post-name rescue: a descriptor
+                    # before the name whose first token
+                    # (reading backwards) collides with a
+                    # general verb ("ban hoc Trang":
+                    # "hoc" stops the ordinary scan)
+                    # is collected only when a suffix of
+                    # the run immediately before the name,
+                    # in the same clause, EXACTLY equals
+                    # a duplicate's structured attribute.
+                    _name_cid2 = hcids[ns]
+                    _brun = []
+                    _j = ns - 1
+                    while _j >= 0 and len(_brun) < 4 \
+                            and hcids[_j] == _name_cid2:
+                        _brun.insert(0, hfolds[_j])
+                        _j -= 1
+                    for _ln in range(2, len(_brun) + 1):
+                        _cand = _brun[-_ln:]
+                        if _cand in dup_attr_seqs:
+                            descriptor_events.append(
+                                (_cand, _superseding, _replacing))
+                            break
         if phone_qualified is not None:
             return set(phone_qualified)
         if phone_seen:
             return set()
-        # R5-FINDING (G1/G3) active phrases: a positive
-        # phrase is superseded ONLY when a superseding
-        # event for the same phrase comes after it, no
-        # later positive event for that phrase revives
-        # it, AND a positive event for a different
-        # phrase comes after that superseding event
-        # (the new descriptor that replaces it). A
+        # R6 active phrases (replacing the R5 rule
+        # for recipient scope, per coordinator ruling
+        # (b) for M7): a correction event truncates
+        # earlier positive phrases for this group (the
+        # correction's own phrase, and any later plain
+        # phrase, remain candidates); a positive phrase
+        # is then removed when a superseding event for
+        # the same phrase comes after it and no later
+        # positive event for that phrase revives it --
+        # with NO replacement requirement, so a
         # cancellation/completion with no replacement
-        # therefore leaves the old descriptor in force
-        # (pre-existing behaviour, preserved), a
-        # cancelled-then-re-requested descriptor stays
+        # REMOVES the qualification (M7: tu1 blocks).
+        # A cancelled-then-re-requested descriptor stays
         # in force, and two plain positives stay
         # ambiguous. Superseding events for a phrase
         # that was never positive add nothing.
+        _last_corr = None
+        for _i, (_p, _s, _r) in enumerate(descriptor_events):
+            if not _s and _r:
+                _last_corr = _i
         descriptor_phrases = []
-        for _i, (_phrase, _sup) in enumerate(
+        for _i, (_phrase, _sup, _rep) in enumerate(
                 descriptor_events):
             if _sup:
                 continue
-            _sup_after = [_j for _j, (_p, _s)
+            if _last_corr is not None and _i < _last_corr:
+                continue
+            _sup_after = [_j for _j, (_p, _s, _r)
                           in enumerate(descriptor_events)
                           if _s and _p == _phrase
                           and _j > _i]
@@ -4024,13 +4170,9 @@ def analyze_selection_consistency(text, action, target_names=(),
                 _last_sup = max(_sup_after)
                 _revived = any(
                     _k > _last_sup and _p == _phrase
-                    and not _s for _k, (_p, _s)
+                    and not _s for _k, (_p, _s, _r)
                     in enumerate(descriptor_events))
-                _replaced = any(
-                    _k > _last_sup and _p != _phrase
-                    and not _s for _k, (_p, _s)
-                    in enumerate(descriptor_events))
-                if not _revived and _replaced:
+                if not _revived:
                     continue
             if _phrase not in descriptor_phrases:
                 descriptor_phrases.append(_phrase)
@@ -4064,8 +4206,9 @@ def analyze_selection_consistency(text, action, target_names=(),
                     for k in range(len(long_) - len(short) + 1))
 
             matched_entries = set()
+            match_keys = {}
             for i in idxs:
-                attr_seqs = []
+                attr_fields = {}
                 for key, val in (roster[i] or {}).items():
                     if key in ("id", "name", "phone"):
                         continue
@@ -4074,19 +4217,624 @@ def analyze_selection_consistency(text, action, target_names=(),
                     seq = [_fold(t) for t in
                            re.findall(r"[^\W_]+", _nfc(val))]
                     if seq:
-                        attr_seqs.append(seq)
+                        attr_fields[key] = seq
                 for phrase in descriptor_phrases:
-                    if any(_is_subseq(phrase, seq)
-                           or _is_subseq(seq, phrase)
-                           for seq in attr_seqs):
+                    _keys = [k for k, seq in attr_fields.items()
+                             if _is_subseq(phrase, seq)
+                             or _is_subseq(seq, phrase)]
+                    if _keys:
                         matched_entries.add(i)
+                        match_keys.setdefault(i, set()).update(
+                            _keys)
                         break
             if len(matched_entries) == 1:
+                # R6 proven uniqueness (F5, as in
+                # _r6_match_entries): every other entry
+                # must carry a matched field, else its
+                # field is UNKNOWN and uniqueness is not
+                # proven.
+                _only = next(iter(matched_entries))
+                _keys = match_keys.get(_only, set())
+                _proven = all(
+                    any(isinstance((roster[i] or {}).get(k),
+                                   str)
+                        and (roster[i] or {}).get(k).strip()
+                        for k in _keys)
+                    for i in idxs if i != _only)
+                if not _proven:
+                    return set()
                 return set(matched_entries)
             # ROUND 4 fallback: descriptor-only with no
             # unique structured match qualifies NOTHING.
             return set()
         return set()
+
+    # ---- R6: current-turn recipient choice (diagnosis §5.2) ----
+    # Parse the CURRENT turn's recipient first, per
+    # proposal-action verb, before consulting history.
+    # A recipient phrase is name + descriptor + governed
+    # phone, in the verb's clause, up to the next callback
+    # verb in that clause (so T1's sms and call recipients
+    # stay separate), excluding quoted spans (already
+    # stripped) and content clauses (separate clause ids).
+    # A descriptor qualifies only by the D1 rule: a phrase
+    # matching a whitelisted structured attribute (every
+    # roster field other than id/name/phone, folded, as a
+    # contiguous subsequence in either direction) of
+    # exactly one entry in the name's duplicate group.
+    # A phone qualifies only when governed / role-bound
+    # (object span, same clause with the name governed,
+    # or an identity clause naming the group) -- never by
+    # mere presence (D3), and never from a later clause:
+    # a later clause may be message content after ":".
+    # A current choice that distinguishes overrides
+    # history; a bare / non-distinguishing current phrase
+    # does not override anything and falls through to
+    # history. A correction clause ("a khong" / "khong")
+    # followed by a name clause or a bare descriptor
+    # clause rebinds the nearest preceding positive
+    # proposal-action verb's recipient (M4).
+    def _r6_is_subseq(short, long_):
+        if not short or len(short) > len(long_):
+            return False
+        return any(long_[k:k + len(short)] == short
+                   for k in range(len(long_) - len(short) + 1))
+
+    def _r6_attr_seqs(idxs):
+        out = []
+        for i in idxs:
+            for key, val in (roster[i] or {}).items():
+                if key in ("id", "name", "phone"):
+                    continue
+                if not isinstance(val, str) or not val.strip():
+                    continue
+                seq = [_fold(t) for t in
+                       re.findall(r"[^\W_]+", _nfc(val))]
+                if seq:
+                    out.append((i, seq))
+        return out
+
+    def _r6_match_entries(phrase, idxs):
+        # Proven uniqueness (F5): a phrase matches an
+        # entry only when it is the ONLY match in the
+        # group AND every other entry carries the matched
+        # field (present, non-empty). An entry missing
+        # that field is UNKNOWN for it -- its field could
+        # also be this descriptor -- so uniqueness is not
+        # proven and the phrase qualifies nobody. This is
+        # the same UNKNOWN semantics as the R4 conflict
+        # rule, applied to missing fields, not only to
+        # conflict-dropped fields (the adapter cannot
+        # tell those two apart from the roster alone).
+        if not phrase:
+            return set()
+        matched = {}
+        for i, seq in _r6_attr_seqs(idxs):
+            if _r6_is_subseq(phrase, seq) \
+                    or _r6_is_subseq(seq, phrase):
+                matched.setdefault(i, set()).add(tuple(seq))
+        if len(matched) != 1:
+            return set()
+        # Field keys that matched, recovered from the
+        # roster (seqs alone do not carry their key).
+        _entry = next(iter(matched))
+        _match_keys = set()
+        for _key, _val in (roster[_entry] or {}).items():
+            if _key in ("id", "name", "phone"):
+                continue
+            if not isinstance(_val, str) or not _val.strip():
+                continue
+            _seq = [_fold(t) for t in
+                    re.findall(r"[^\W_]+", _nfc(_val))]
+            if _seq and (_r6_is_subseq(phrase, _seq)
+                         or _r6_is_subseq(_seq, phrase)):
+                _match_keys.add(_key)
+        for i in idxs:
+            if i == _entry:
+                continue
+            _has_field = any(
+                isinstance((roster[i] or {}).get(_k), str)
+                and (roster[i] or {}).get(_k).strip()
+                for _k in _match_keys)
+            if not _has_field:
+                return set()
+        return {_entry}
+
+    def _r6_mention_phrases(ns, ne, seg_start, seg_end, idxs):
+        attr_seqs = [seq for (_i, seq) in _r6_attr_seqs(idxs)]
+        phrases = []
+        # After the name: exact-attribute prefix first
+        # (handles verb-colliding relations like
+        # "ban hoc" / "doi tac" whose second token is a
+        # general verb and would otherwise truncate the
+        # ordinary scan to a prefix that may be ambiguous).
+        after_run = []
+        j = ne
+        while j < len(folds) and j < seg_end \
+                and len(after_run) < 4 \
+                and clause_ids[j] == clause_ids[ne - 1]:
+            after_run.append(folds[j])
+            j += 1
+        after_exact = None
+        for ln in range(min(4, len(after_run)), 1, -1):
+            if after_run[:ln] in attr_seqs:
+                after_exact = after_run[:ln]
+                break
+        if after_exact is not None:
+            phrases.append(after_exact)
+        else:
+            seq = []
+            j = ne
+            while j < len(folds) and j < seg_end \
+                    and len(seq) < 4 \
+                    and _is_noun_descriptor(folds[j]):
+                seq.append(folds[j])
+                j += 1
+            if seq:
+                phrases.append(seq)
+        # Before the name: ordinary scan, else exact
+        # suffix rescue (mirrors the history pre-name
+        # rescue: "ban hoc Trang" -- "hoc" stops the scan).
+        before_seq = []
+        j = ns - 1
+        while j >= seg_start and len(before_seq) < 4 \
+                and _is_noun_descriptor(folds[j]):
+            before_seq.insert(0, folds[j])
+            j -= 1
+        if before_seq:
+            phrases.append(before_seq)
+        else:
+            before_run = []
+            j = ns - 1
+            while j >= seg_start and len(before_run) < 4 \
+                    and clause_ids[j] == clause_ids[ns]:
+                before_run.insert(0, folds[j])
+                j -= 1
+            for ln in range(2, len(before_run) + 1):
+                if before_run[-ln:] in attr_seqs:
+                    phrases.append(before_run[-ln:])
+                    break
+        return phrases
+
+    def _r6_segment_for_verb(v):
+        cid = clause_ids[v["start"]]
+        _first, last = bounds[cid]
+        seg_end = last + 1
+        for v2 in verbs:
+            if v2["start"] > v["start"] \
+                    and clause_ids[v2["start"]] == cid:
+                seg_end = min(seg_end, v2["start"])
+        return v["end"], seg_end
+
+    _r6_all_mentions = _find_name_mentions(
+        raws, folds, sorted(roster_names_raw))
+
+    def _r6_evidence_for_segment(seg_start, seg_end):
+        found = []
+        for (ns, ne) in _r6_all_mentions:
+            if seg_start <= ns and ne <= seg_end:
+                found.append((ns, ne))
+        found.sort(key=lambda t: (t[0], -(t[1] - t[0])))
+        deduped = []
+        seen_starts = set()
+        for span in found:
+            if span[0] in seen_starts:
+                continue
+            seen_starts.add(span[0])
+            deduped.append(span)
+        out = []
+        for (ns, ne) in deduped:
+            fold = folds[ns] if ne - ns == 1 \
+                else " ".join(folds[ns:ne])
+            idxs = _entries_for_name(fold)
+            if not idxs:
+                continue
+            phrases = _r6_mention_phrases(
+                ns, ne, seg_start, seg_end, idxs)
+            phones = [_norm_phone(d)
+                      for (rs, re_, d, _k) in all_runs
+                      if seg_start <= rs and re_ <= seg_end
+                      and _norm_phone(d)]
+            out.append({"ns": ns, "ne": ne, "fold": fold,
+                        "group": idxs, "phrases": phrases,
+                        "phones": phones})
+        return out
+
+    def _r6_choice_for_evidence(ev):
+        group = ev["group"]
+        if len(group) == 1:
+            return ("single", group[0])
+        votes = set()
+        for phrase in ev["phrases"]:
+            m = _r6_match_entries(phrase, group)
+            if len(m) == 1:
+                votes.update(m)
+        pvotes = set()
+        for norm in ev["phones"]:
+            ents = [i for i in group
+                    if _norm_phone(roster[i].get("phone") or "")
+                    == norm and norm]
+            if len(ents) == 1:
+                pvotes.update(ents)
+        if votes and pvotes:
+            if votes != pvotes:
+                return ("conflict", None)
+            return ("single", next(iter(votes)))
+        if votes:
+            if len(votes) == 1:
+                return ("single", next(iter(votes)))
+            return ("conflict", None)
+        if pvotes:
+            if len(pvotes) == 1:
+                return ("single", next(iter(pvotes)))
+            return ("conflict", None)
+        return ("bare", None)
+
+    _r6_verb_evidences = []
+    for v in positive_verbs:
+        if v["action"] != action:
+            continue
+        _ss, _se = _r6_segment_for_verb(v)
+        _evs = _r6_evidence_for_segment(_ss, _se)
+        if _evs:
+            for _ev in _evs:
+                _r6_verb_evidences.append((v, _ev))
+        else:
+            _r6_verb_evidences.append((v, None))
+    _r6_correction_rebound = False
+    # Correction re-binding for the current turn (M4):
+    # a correction clause followed by a name clause, or by
+    # a bare descriptor clause, rebinds the nearest
+    # preceding positive proposal-action verb.
+    for _ci in ordered_clauses:
+        _cf, _cl = bounds[_ci]
+        if folds[_cf:_cl + 1] not in (["a", "khong"],
+                                      ["khong"]):
+            continue
+        _pos = ordered_clauses.index(_ci)
+        if _pos + 1 >= len(ordered_clauses):
+            continue
+        _ncid = ordered_clauses[_pos + 1]
+        _nf, _nl = bounds[_ncid]
+        if any(clause_ids[_v["start"]] == _ncid
+               for _v in verbs):
+            continue
+        _before = [ _v for _v in positive_verbs
+                    if _v["action"] == action
+                    and _v["start"] < _nf]
+        if not _before:
+            continue
+        _pv = _before[-1]
+        _next_evs = _r6_evidence_for_segment(_nf, _nl + 1)
+        if _next_evs:
+            _r6_correction_rebound = True
+            _new_list = []
+            _replaced = False
+            for (_v, _ev) in _r6_verb_evidences:
+                if _v is _pv and not _replaced:
+                    for _ev2 in _next_evs:
+                        _new_list.append((_v, _ev2))
+                    _replaced = True
+                elif _v is _pv:
+                    continue
+                else:
+                    _new_list.append((_v, _ev))
+            _r6_verb_evidences = _new_list
+        else:
+            _pv_evs = [_ev for (_v, _ev) in _r6_verb_evidences
+                       if _v is _pv and _ev is not None]
+            if not _pv_evs:
+                continue
+            _grp = _pv_evs[0]["group"]
+            _clause_folds = folds[_nf:_nl + 1]
+            _found = None
+            for (_ei, _seq) in _r6_attr_seqs(_grp):
+                for _k in range(
+                        len(_clause_folds) - len(_seq) + 1):
+                    if _clause_folds[_k:_k + len(_seq)] == _seq:
+                        _found = _seq
+                        break
+                if _found is not None:
+                    break
+            if _found is not None:
+                _r6_correction_rebound = True
+                for (_v, _ev) in _r6_verb_evidences:
+                    if _v is _pv and _ev is not None:
+                        _ev["phrases"] = [_found]
+                        _ev["phones"] = []
+    _r6_choices = []
+    for (_v, _ev) in _r6_verb_evidences:
+        if _ev is None:
+            continue
+        _kind, _entry = _r6_choice_for_evidence(_ev)
+        _r6_choices.append({"verb": _v, "group": _ev["group"],
+                            "kind": _kind, "entry": _entry,
+                            "fold": _ev["fold"],
+                            "phrases": _ev["phrases"],
+                            "phones": _ev["phones"]})
+    _r6_singleton_by_group = {}
+    for _ch in _r6_choices:
+        if _ch["kind"] == "single":
+            _r6_singleton_by_group.setdefault(
+                tuple(sorted(_ch["group"])), set()).add(
+                    _ch["entry"])
+    _r6_proposal_entry = None
+    if proposal_id_entry is not None:
+        _r6_proposal_entry = proposal_id_entry
+    elif proposal_key[0] == "entry":
+        _r6_proposal_entry = proposal_key[1]
+    elif proposal_key[0] == "phone":
+        _ents = _entries_for_phone(proposal_key[1])
+        if len(_ents) == 1:
+            _r6_proposal_entry = _ents[0]
+    elif proposal_key[0] == "name":
+        _ents = _entries_for_name(proposal_key[1])
+        if len(_ents) == 1:
+            _r6_proposal_entry = _ents[0]
+    _r6_proposal_group = None
+    if _r6_proposal_entry is not None:
+        _r6_proposal_group = tuple(sorted(_entries_for_name(
+            _fold(str(roster[_r6_proposal_entry].get("name")
+                      or "")))))
+    elif proposal_key[0] == "name":
+        _r6_proposal_group = tuple(sorted(
+            _entries_for_name(proposal_key[1])))
+    elif proposal_key[0] == "phone":
+        _r6_proposal_group = tuple(sorted(
+            _entries_for_phone(proposal_key[1])))
+    _r6_current_qualifies = False
+    if _r6_proposal_entry is not None \
+            and _r6_proposal_group is not None:
+        for _ch in _r6_choices:
+            if _ch["kind"] == "conflict" \
+                    and tuple(sorted(_ch["group"])) \
+                    == _r6_proposal_group:
+                return _mismatch(
+                    "selection_mismatch",
+                    "current recipient %r is contradictory: "
+                    "descriptor/phone evidence in the same "
+                    "recipient phrase selects different "
+                    "entries, so no id in this group passes"
+                    % (_ch["fold"],))
+        _singles = _r6_singleton_by_group.get(
+            _r6_proposal_group, set())
+        if _singles:
+            if _r6_proposal_entry in _singles:
+                _r6_current_qualifies = True
+            else:
+                _ch = next(
+                    _c for _c in _r6_choices
+                    if _c["kind"] == "single"
+                    and tuple(sorted(_c["group"]))
+                    == _r6_proposal_group)
+                return _mismatch(
+                    "selection_mismatch",
+                    "current recipient %r with descriptor/"
+                    "phrase %r selects entry %s, not "
+                    "proposal entry %s"
+                    % (_ch["fold"], _ch["phrases"],
+                       roster[_ch["entry"]].get("id"),
+                       roster[_r6_proposal_entry].get("id")))
+    # ---- R6: pronoun referent (diagnosis §5.4) ----
+    # A pronoun in the recipient slot of a positive
+    # proposal-action verb is a referent query, not a
+    # pass. Speaker pronouns (toi / em / minh) and bare
+    # name-colliding tokens are excluded; only generic
+    # person forms count. Resolution priority: a unique
+    # current-turn antecedent, then a unique history
+    # candidate (history-qualified duplicate, or a unique
+    # name mentioned in history), then a single-entry
+    # roster. Otherwise UNKNOWN: every arm blocks with a
+    # structured mismatch (decision "mismatch",
+    # mismatch "unknown_referent") -- the export
+    # validator accepts "mismatch" without unknown_kind,
+    # so no new validator decision value is claimed here;
+    # the adapter copies this decision into
+    # notes["selection_decision"] and the observer record
+    # under the same key, with mechanism
+    # selection_mismatch (see adapter check-5 handling).
+    _r6_pronoun_forms = [
+        ("nguoi", "do"), ("nguoi", "nay"),
+        ("anh", "ay"), ("co", "ay"), ("chi", "ay"),
+        ("ong", "ay"), ("ba", "ay"), ("em", "ay"),
+        ("cau", "ay"), ("anh", "ta"), ("co", "ta"),
+        ("chi", "ta"), ("ong", "ta"), ("ba", "ta"),
+        ("han",), ("no",)]
+    _r6_pronoun_segments = []
+    for _v in positive_verbs:
+        if _v["action"] != action:
+            continue
+        _ss, _se = _r6_segment_for_verb(_v)
+        _has_name = any(_ss <= _ns and _ne <= _se
+                        for (_ns, _ne) in _r6_all_mentions)
+        if _has_name:
+            continue
+        _seg = folds[_ss:_se]
+        _found = False
+        for _form in _r6_pronoun_forms:
+            for _k in range(len(_seg) - len(_form) + 1):
+                if _seg[_k:_k + len(_form)] == list(_form):
+                    _found = True
+                    break
+            if _found:
+                break
+        if _found:
+            _r6_pronoun_segments.append((_v, _ss, _se))
+    if _r6_pronoun_segments and _r6_proposal_entry is not None:
+        _r6_cur_cands = set()
+        for (_ns, _ne) in _r6_all_mentions:
+            if any(_ss <= _ns and _ne <= _se
+                   for (_v, _ss, _se) in _r6_pronoun_segments):
+                continue
+            _r6_fold = folds[_ns] if _ne - _ns == 1 \
+                else " ".join(folds[_ns:_ne])
+            _idxs = _entries_for_name(_r6_fold)
+            if not _idxs:
+                continue
+            if len(_idxs) == 1:
+                _r6_cur_cands.add(_idxs[0])
+                continue
+            _cid = clause_ids[_ns]
+            _cfirst, _clast = bounds[_cid]
+            _seg_end2 = _clast + 1
+            for _v2 in verbs:
+                if _v2["start"] > _ns \
+                        and clause_ids[_v2["start"]] == _cid:
+                    _seg_end2 = min(_seg_end2, _v2["start"])
+            _phrases = _r6_mention_phrases(
+                _ns, _ne, _cfirst, _seg_end2, _idxs)
+            _seg_phones = [_norm_phone(_d)
+                           for (_rs, _re, _d, _k) in all_runs
+                           if _cfirst <= _rs and _re <= _seg_end2]
+            _votes = set()
+            for _phrase in _phrases:
+                _m = _r6_match_entries(_phrase, _idxs)
+                if len(_m) == 1:
+                    _votes.update(_m)
+            for _norm in _seg_phones:
+                _ents = [i for i in _idxs
+                         if _norm_phone(
+                             roster[i].get("phone") or "")
+                         == _norm and _norm]
+                if len(_ents) == 1:
+                    _votes.update(_ents)
+            if len(_votes) == 1:
+                _r6_cur_cands.update(_votes)
+        _r6_referent = None
+        _r6_referent_ambig = False
+        if len(_r6_cur_cands) == 1:
+            _r6_referent = next(iter(_r6_cur_cands))
+        elif len(_r6_cur_cands) > 1:
+            _r6_referent_ambig = True
+        else:
+            _r6_hist_cands = set()
+            _seen_groups = set()
+            for _e in roster:
+                _parts = _fold(str(_e.get("name") or ""))
+                if not _parts:
+                    continue
+                _idxs = _entries_for_name(_parts)
+                if len(_idxs) < 2:
+                    continue
+                _key = tuple(sorted(_idxs))
+                if _key in _seen_groups:
+                    continue
+                _seen_groups.add(_key)
+                _q = _history_qualified_entries(_idxs)
+                if len(_q) == 1:
+                    _r6_hist_cands.update(_q)
+            for _htext in (history_texts or ()):
+                if not isinstance(_htext, str):
+                    continue
+                _hraws, _hfolds, _hcids = _tokenize(
+                    _strip_quoted(_nfc(_htext)))
+                for (_ns, _ne) in _find_name_mentions(
+                        _hraws, _hfolds,
+                        sorted(roster_names_raw)):
+                    _r6_fold = _hfolds[_ns] if _ne - _ns == 1 \
+                        else " ".join(_hfolds[_ns:_ne])
+                    _idxs = _entries_for_name(_r6_fold)
+                    if len(_idxs) == 1:
+                        _r6_hist_cands.add(_idxs[0])
+            if len(_r6_hist_cands) == 1:
+                _r6_referent = next(iter(_r6_hist_cands))
+            elif len(_r6_hist_cands) > 1:
+                _r6_referent_ambig = True
+            elif len(roster) == 1:
+                _r6_referent = 0
+            else:
+                _r6_referent_ambig = True
+        if _r6_referent is not None:
+            if _r6_proposal_entry != _r6_referent:
+                return _mismatch(
+                    "selection_mismatch",
+                    "pronoun recipient refers to entry %s, "
+                    "not proposal entry %s"
+                    % (roster[_r6_referent].get("id"),
+                       roster[_r6_proposal_entry].get("id")))
+        else:
+            return {"consistent": False, "decision": "mismatch",
+                    "active_status": "unknown_referent",
+                    "blocked_subtype":
+                        "pronoun_referent_unknown",
+                    "mismatch": "unknown_referent",
+                    "detail": "pronoun recipient has no "
+                    "unique referent in the current turn "
+                    "or history, so no id passes"}
+    # ---- R6: governed-phone norms for check 2 (D3) ----
+    # A digit run disables the duplicate guard only when
+    # governed / role-bound to the recipient (see the
+    # block header). Standalone identity clauses (no
+    # callback verb, naming the group) also count.
+    _r6_all_roster_phones = set()
+    for _e in roster:
+        _ph = _norm_phone(_e.get("phone") or "")
+        if _ph:
+            _r6_all_roster_phones.add(_ph)
+
+    def _r6_governed_phone_norms(idxs):
+        _group_phones = {_norm_phone(
+            roster[i].get("phone") or "") for i in idxs}
+        _group_phones.discard("")
+        if not _group_phones:
+            return set()
+        _norms = set()
+        for _v in positive_verbs:
+            if _v["action"] != action:
+                continue
+            _cid = clause_ids[_v["start"]]
+            _span = _extract_object(_v, raws, folds,
+                                    clause_ids, bounds)
+            for (_rs, _re, _d, _k) in all_runs:
+                if _span[0] <= _rs and _re <= _span[1] \
+                        and _norm_phone(_d) in _group_phones:
+                    _norms.add(_norm_phone(_d))
+            _span_has_group = False
+            for (_ns, _ne) in _r6_all_mentions:
+                if not (_span[0] <= _ns and _ne <= _span[1]):
+                    continue
+                _r6_fold = folds[_ns] if _ne - _ns == 1 \
+                    else " ".join(folds[_ns:_ne])
+                if set(_entries_for_name(_r6_fold)) & set(idxs):
+                    _span_has_group = True
+                    break
+            if _span_has_group:
+                for (_rs, _re, _d, _k) in all_runs:
+                    if clause_ids[_rs] == _cid \
+                            and _rs > _v["start"] \
+                            and _norm_phone(_d) in _group_phones:
+                        _norms.add(_norm_phone(_d))
+            # NOTE (R6): no bare-fragment rule here, unlike
+            # the history phone rule. Tokenisation loses
+            # which punctuation split a clause, so a later
+            # clause cannot be told apart from a content
+            # clause after ":" -- and a phone in message
+            # content must never govern the recipient
+            # (unclosed-quote / content phone probe).
+            # A recipient phone stated in the verb's own
+            # clause, or in an identity clause naming the
+            # group, still governs (rules (a), (b), (d)).
+        # Identity clauses: no callback verb, naming the group.
+        for _cid in set(clause_ids):
+            if any(clause_ids[_v["start"]] == _cid
+                   for _v in verbs):
+                continue
+            _cf, _cl = bounds[_cid]
+            _has_name = False
+            for (_ns, _ne) in _r6_all_mentions:
+                if not (_cf <= _ns and _ne <= _cl):
+                    continue
+                _r6_fold = folds[_ns] if _ne - _ns == 1 \
+                    else " ".join(folds[_ns:_ne])
+                if set(_entries_for_name(_r6_fold)) & set(idxs):
+                    _has_name = True
+                    break
+            if _has_name:
+                for (_rs, _re, _d, _k) in all_runs:
+                    if clause_ids[_rs] == _cid \
+                            and _norm_phone(_d) in _group_phones:
+                        _norms.add(_norm_phone(_d))
+        return _norms
 
     # 2. Duplicate name (proposal-action verbs only): the
     # name is ambiguous AND the text carries no number at
@@ -4118,6 +4866,8 @@ def analyze_selection_consistency(text, action, target_names=(),
         if len(idxs) < 2:
             continue
         qualified = _history_qualified_entries(idxs)
+        _cur_qualified = _r6_singleton_by_group.get(
+            tuple(sorted(idxs)), set())
         # Name-key proposals: a proposal with NO id whose
         # key is the bare name is a duplicate proposal
         # when its name key maps to exactly this duplicate
@@ -4138,6 +4888,7 @@ def analyze_selection_consistency(text, action, target_names=(),
         proposal_is_name_dup = (
             proposal_id_entry is None
             and proposal_key[0] == "name" and not qualified
+            and not _cur_qualified
             and set(_entries_for_name(proposal_key[1]))
             == set(idxs))
         proposal_is_duplicate = (
@@ -4153,17 +4904,27 @@ def analyze_selection_consistency(text, action, target_names=(),
         # wrong id proposal, so it is not used here.
         # Name/phone-only proposals keep the old rule.
         if proposal_id_entry is not None:
-            proposal_qualified = proposal_id_entry in qualified
+            proposal_qualified = proposal_id_entry in qualified \
+                or proposal_id_entry in _cur_qualified
         else:
             proposal_qualified = any(
                 proposal_key == ("entry", i)
                 or _norm_phone(roster[i].get("phone") or "")
                 in targets_norm
-                for i in qualified)
+                for i in qualified) \
+                or (proposal_key[0] == "entry"
+                    and proposal_key[1] in _cur_qualified) \
+                or (proposal_key[0] == "phone"
+                    and any(_norm_phone(
+                        roster[i].get("phone") or "")
+                        == proposal_key[1]
+                        for i in _cur_qualified)) \
+                or (proposal_key[0] == "name"
+                    and bool(_cur_qualified))
         if proposal_qualified:
             continue
-        if not any(_norm_phone(d) in phones
-                   for (_rs, _re, d, _k) in all_runs):
+        if not any(_norm in phones
+                   for _norm in _r6_governed_phone_norms(idxs)):
             return _mismatch(
                 "duplicate_name",
                 "name %r maps to %d roster entries "
@@ -4178,12 +4939,24 @@ def analyze_selection_consistency(text, action, target_names=(),
                                    target_names=target_names,
                                    target_phones=target_phones,
                                    action=action)
+    # R6 M4: a correction that re-bound the current
+    # recipient to THIS entry is not a cancellation of
+    # this entry -- B's replaced/cancelled verdict is
+    # about the OLD recipient, and the current check
+    # above already established the new one. Skip the
+    # veto only in that exact shape (rebound + current
+    # qualifies this proposal); a plain cancellation,
+    # or a correction to a different entry, still vetoes.
     if sel["selection"] == "negated":
-        return _mismatch("negated",
-                         "B: action selection negated")
+        if not (_r6_correction_rebound
+                and _r6_current_qualifies):
+            return _mismatch("negated",
+                             "B: action selection negated")
     if sel["selection"] in ("replaced", "cancelled"):
-        return _mismatch("target_replaced_or_cancelled",
-                         "B: selection %s" % sel["selection"])
+        if not (_r6_correction_rebound
+                and _r6_current_qualifies):
+            return _mismatch("target_replaced_or_cancelled",
+                             "B: selection %s" % sel["selection"])
     # Person-key compatibility: an ambiguous name key
     # ("name", fold) mapping to several roster entries is
     # COMPATIBLE with a proposal to any one of them -- the
@@ -4554,6 +5327,10 @@ def analyze_selection_consistency(text, action, target_names=(),
                 if len(idxs) < 2:
                     continue
                 if _history_qualified_entries(idxs) \
+                        == {proposal_key[1]}:
+                    return True
+                if _r6_singleton_by_group.get(
+                        tuple(sorted(idxs)), set()) \
                         == {proposal_key[1]}:
                     return True
             return False

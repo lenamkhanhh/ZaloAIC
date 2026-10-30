@@ -3254,16 +3254,23 @@ class TestR5FindingDescriptorSupersession(unittest.TestCase):
         self._assert_block_via_selection(old)
         self._assert_block_via_selection(new)
 
-    def test_descriptor_cancel_without_replacement_keeps_old(self):
-        # Scoped-rule boundary, pinned deliberately: a
-        # cancellation with no replacement selects nobody
-        # new, so the old descriptor stays the only
-        # qualification (pre-existing behaviour). G1/G3
-        # differ precisely by having a replacement.
+    def test_descriptor_cancel_without_replacement_removes(self):
+        # R6 EXPECTED CHANGE, for reviewer adjudication:
+        # this supersedes the R5 pin
+        # test_descriptor_cancel_without_replacement_keeps_old
+        # (which asserted the cancelled entry still passes).
+        # Coordinator ruling (b) for R6 M7: a cancellation
+        # WITHOUT replacement REMOVES the qualification, so
+        # a bare current name cannot re-pick either
+        # duplicate. The Run 6 order explicitly forbids
+        # resurrecting cancelled requests, and that newer
+        # explicit order supersedes the R5 note ("cancel /
+        # completion with no replacement leaves the old
+        # descriptor in force") for R6 recipient scope.
         old, new = self._check([
             "Tìm số của Lan đồng nghiệp giúp tôi",
             "Hủy Lan đồng nghiệp"])
-        self._assert_pass(old)
+        self._assert_block_via_selection(old)
         self._assert_block_via_selection(new)
 
     def test_descriptor_unseen_name_cancel_then_new(self):
@@ -3280,18 +3287,284 @@ class TestR5FindingDescriptorSupersession(unittest.TestCase):
         self._assert_pass(
             self._dec(self._sms("t2"), prefix, roster, current))
 
-    def test_descriptor_current_text_still_does_not_override(self):
-        # R5 §8 item 2, preserved: a current-text descriptor
-        # for the other duplicate does not qualify it over
-        # history.
+    def test_descriptor_current_text_overrides_history(self):
+        # R6 EXPECTED CHANGE, for reviewer adjudication:
+        # this supersedes the R5 pin
+        # test_descriptor_current_text_still_does_not_override
+        # (which asserted the history entry still passes).
+        # Run 6 is a contract change, not a pure bugfix
+        # against that pin (Phase 1 report §4): diagnosis
+        # §5.2 requires an explicit current choice to
+        # override history, always, regardless of how
+        # strongly history qualified the old entry.
         roster = self._roster()
         prefix = [user_turn("Tìm số của Lan đồng nghiệp giúp tôi",
                             0)]
-        self._assert_pass(self._dec(self._sms("c1"), prefix,
-                                    roster, "Nhắn cho Lan hàng xóm"))
         self._assert_block_via_selection(
-            self._dec(self._sms("c2"), prefix, roster,
-                      "Nhắn cho Lan hàng xóm"))
+            self._dec(self._sms("c1"), prefix,
+                      roster, "Nhắn cho Lan hàng xóm"))
+        self._assert_pass(self._dec(self._sms("c2"), prefix,
+                                    roster, "Nhắn cho Lan hàng xóm"))
+
+
+class TestR6RecipientAdapter(unittest.TestCase):
+    """Run 6 recipient identity, adapter level (diagnosis §5).
+
+    Current first, history only as a linked supplement, pronoun
+    only to a unique referent. Fixture names/relations are
+    examples only; matching is by roster structured attributes
+    and governed phones, with no name, number, id or relation
+    hardcoded in production code.
+    """
+
+    def _dec(self, proposal, prefix, roster, current):
+        return decide(proposal, prefix, roster, current, KINDS,
+                      proposal_position=len(prefix))
+
+    def _sms(self, cid):
+        return {"name": "sms.send",
+                "arguments": {"contact_id": cid, "content": "hi"}}
+
+    def _call(self, phone):
+        return {"name": "phone.call",
+                "arguments": {"phone_number": phone}}
+
+    def _assert_pass(self, dec):
+        self.assertFalse(dec.baseline_fired)
+        self.assertFalse(dec.fired, dec.adjustments)
+
+    def _assert_block_via_selection(self, dec):
+        self.assertFalse(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(a["mechanism"] == "selection_mismatch"
+                            for a in dec.adjustments),
+                        dec.adjustments)
+
+    def _check(self, history, roster, current):
+        prefix = [user_turn(t, i) for i, t in enumerate(history)]
+        return prefix, roster, current
+
+    def _lan(self):
+        return [{"id": "c1", "name": "Lan", "phone": "0903111222",
+                 "relation": "đồng nghiệp"},
+                {"id": "c2", "name": "Lan", "phone": "0903333444",
+                 "relation": "hàng xóm"}]
+
+    def test_current_switch_and_current_only(self):
+        roster = self._lan()
+        for history in (["Tìm số của Lan đồng nghiệp giúp tôi"],
+                        []):
+            prefix = [user_turn(t, i)
+                      for i, t in enumerate(history)]
+            current = "Nhắn cho Lan hàng xóm: Chào bạn"
+            with self.subTest(history=history):
+                self._assert_pass(self._dec(
+                    self._sms("c2"), prefix, roster, current))
+                self._assert_block_via_selection(self._dec(
+                    self._sms("c1"), prefix, roster, current))
+
+    def test_current_pre_name_and_unseen_relation(self):
+        roster = [{"id": "q1", "name": "Quỳnh",
+                   "phone": "0903112201", "relation": "chị dâu"},
+                  {"id": "q2", "name": "Quỳnh",
+                   "phone": "0903112202", "relation": "thầy giáo"}]
+        prefix = []
+        self._assert_pass(self._dec(
+            self._sms("q2"), prefix, roster,
+            "Nhắn cho Quỳnh thầy giáo: Chào bạn"))
+        self._assert_block_via_selection(self._dec(
+            self._sms("q1"), prefix, roster,
+            "Nhắn cho Quỳnh thầy giáo: Chào bạn"))
+        roster2 = [{"id": "t1", "name": "Trang",
+                    "phone": "0903112007", "relation": "chị gái"},
+                   {"id": "t2", "name": "Trang",
+                    "phone": "0903112008", "relation": "bạn học"}]
+        self._assert_pass(self._dec(
+            self._sms("t2"), prefix, roster2,
+            "Nhắn cho bạn học Trang: Chào bạn"))
+        self._assert_block_via_selection(self._dec(
+            self._sms("t1"), prefix, roster2,
+            "Nhắn cho bạn học Trang: Chào bạn"))
+
+    def test_pronoun_unique_ambiguous_and_no_history(self):
+        roster = self._lan()
+        prefix = [user_turn(
+            "Tìm số của Lan đồng nghiệp giúp tôi", 0)]
+        current = "Nhắn cho người đó: Chào bạn"
+        self._assert_pass(self._dec(
+            self._sms("c1"), prefix, roster, current))
+        self._assert_block_via_selection(self._dec(
+            self._sms("c2"), prefix, roster, current))
+        for history in ([], ["Tìm số của Lan giúp tôi"]):
+            prefix = [user_turn(t, i)
+                      for i, t in enumerate(history)]
+            with self.subTest(history=history):
+                for cid in ("c1", "c2"):
+                    self._assert_block_via_selection(self._dec(
+                        self._sms(cid), prefix, roster, current))
+
+    def test_pronoun_after_switch_and_anh_ay(self):
+        roster = [{"id": "li1", "name": "Linh",
+                   "phone": "0903112075", "relation": "đồng nghiệp"},
+                  {"id": "li2", "name": "Linh",
+                   "phone": "0903112076", "relation": "hàng xóm"}]
+        prefix = [user_turn(
+            "Tìm số của Linh đồng nghiệp giúp tôi", 0),
+            user_turn("À không, tìm số của Linh hàng xóm "
+                      "giúp tôi", 1)]
+        current = "Nhắn cho người đó: Chào bạn"
+        self._assert_pass(self._dec(
+            self._sms("li2"), prefix, roster, current))
+        self._assert_block_via_selection(self._dec(
+            self._sms("li1"), prefix, roster, current))
+        lan = self._lan()
+        prefix = [user_turn(
+            "Tìm số của Lan đồng nghiệp giúp tôi", 0)]
+        self._assert_pass(self._dec(
+            self._sms("c1"), prefix, lan,
+            "Nhắn cho anh ấy: Chào bạn"))
+        self._assert_block_via_selection(self._dec(
+            self._sms("c2"), prefix, lan,
+            "Nhắn cho anh ấy: Chào bạn"))
+
+    def test_m7_cancel_no_replacement_and_m1_correction(self):
+        roster = self._lan()
+        prefix = [user_turn(
+            "Nhắn cho Lan đồng nghiệp giúp tôi", 0),
+            user_turn("Hủy nhắn cho Lan đồng nghiệp đi", 1)]
+        for cid in ("c1", "c2"):
+            self._assert_block_via_selection(self._dec(
+                self._sms(cid), prefix, roster,
+                "Nhắn cho Lan: Chào bạn"))
+        hai = [{"id": "ha1", "name": "Hải",
+                "phone": "0903112030", "relation": "đồng nghiệp"},
+               {"id": "ha2", "name": "Hải",
+                "phone": "0903112031", "relation": "hàng xóm"}]
+        prefix = [user_turn("Nhắn cho Hải đồng nghiệp giúp tôi",
+                            0),
+                  user_turn("À không, nhắn cho Hải hàng xóm "
+                            "giúp tôi", 1)]
+        self._assert_pass(self._dec(
+            self._sms("ha2"), prefix, hai, "Nhắn cho Hải: Chào bạn"))
+        self._assert_block_via_selection(self._dec(
+            self._sms("ha1"), prefix, hai, "Nhắn cho Hải: Chào bạn"))
+
+    def test_m3_current_negation_and_m4_current_correction(self):
+        binh = [{"id": "b1", "name": "Bình",
+                 "phone": "0903112034", "relation": "bạn thân"},
+                {"id": "b2", "name": "Bình",
+                 "phone": "0903112035", "relation": "sếp"}]
+        prefix = [user_turn("Tìm số của Bình bạn thân giúp tôi",
+                            0)]
+        current = ("Đừng nhắn cho Bình bạn thân, nhắn cho Bình "
+                   "sếp: Chào bạn")
+        self._assert_pass(self._dec(
+            self._sms("b2"), prefix, binh, current))
+        self._assert_block_via_selection(self._dec(
+            self._sms("b1"), prefix, binh, current))
+        duc = [{"id": "du1", "name": "Đức",
+                "phone": "0903112036", "relation": "khách hàng"},
+               {"id": "du2", "name": "Đức",
+                "phone": "0903112037", "relation": "đối tác"}]
+        current = "Nhắn cho Đức khách hàng, à không, đối tác: Chào bạn"
+        self._assert_pass(self._dec(
+            self._sms("du2"), [], duc, current))
+        self._assert_block_via_selection(self._dec(
+            self._sms("du1"), [], duc, current))
+
+    def test_two_actions_two_recipients(self):
+        roster = [{"id": "tn1", "name": "Tuấn",
+                   "phone": "0903112050", "relation": "đồng nghiệp"},
+                  {"id": "tn2", "name": "Tuấn",
+                   "phone": "0903112051", "relation": "hàng xóm"}]
+        current = "Nhắn cho Tuấn đồng nghiệp và gọi cho Tuấn hàng xóm"
+        self._assert_pass(self._dec(
+            self._sms("tn1"), [], roster, current))
+        self._assert_block_via_selection(self._dec(
+            self._sms("tn2"), [], roster, current))
+        self._assert_pass(self._dec(
+            self._call("0903112051"), [], roster, current))
+        self._assert_block_via_selection(self._dec(
+            self._call("0903112050"), [], roster, current))
+
+    def test_d3_contradiction_and_phone_agree(self):
+        roster = self._lan()
+        current = "Nhắn tin cho Lan hàng xóm số 0903111222"
+        for cid in ("c1", "c2"):
+            self._assert_block_via_selection(self._dec(
+                self._sms(cid), [], roster, current))
+        current = "Nhắn cho Lan hàng xóm số 0903333444"
+        self._assert_pass(self._dec(
+            self._sms("c2"), [], roster, current))
+        self._assert_block_via_selection(self._dec(
+            self._sms("c1"), [], roster, current))
+
+    def test_shared_and_both_missing_phones(self):
+        roster = [{"id": "s1", "name": "Sơn",
+                   "phone": "0903112011", "relation": "khách hàng"},
+                  {"id": "s2", "name": "Sơn",
+                   "phone": "0903112011", "relation": "đối tác"}]
+        self._assert_pass(self._dec(
+            self._sms("s2"), [], roster,
+            "Nhắn cho Sơn đối tác: Chào bạn"))
+        self._assert_block_via_selection(self._dec(
+            self._sms("s1"), [], roster,
+            "Nhắn cho Sơn đối tác: Chào bạn"))
+        roster = [{"id": "p1", "name": "Phúc", "phone": "",
+                   "relation": "mẹ"},
+                  {"id": "p2", "name": "Phúc", "phone": "",
+                   "relation": "cô giáo"}]
+        self._assert_pass(self._dec(
+            self._sms("p2"), [], roster,
+            "Nhắn cho Phúc cô giáo: Chào bạn"))
+        self._assert_block_via_selection(self._dec(
+            self._sms("p1"), [], roster,
+            "Nhắn cho Phúc cô giáo: Chào bạn"))
+
+    def test_proven_uniqueness_missing_relation_blocks(self):
+        # F5 shape: x1's relation is missing (UNKNOWN for
+        # it), so "hàng xóm" is not proven unique to x2,
+        # even though x2 is the only entry carrying it.
+        roster = [{"id": "x1", "name": "Quân",
+                   "phone": "0903112092"},
+                  {"id": "x2", "name": "Quân",
+                   "phone": "0903112093", "relation": "hàng xóm"}]
+        for cid in ("x1", "x2"):
+            self._assert_block_via_selection(self._dec(
+                self._sms(cid), [], roster,
+                "Nhắn cho Quân hàng xóm: Chào bạn"))
+
+    def test_quote_content_other_action_and_save_history(self):
+        roster = self._lan()
+        cases = [
+            ('Nhắn cho Lan: "Lan hàng xóm ơi"',
+             [], ["c1", "c2"]),
+            ("Nhắn cho Lan: Lan hàng xóm là người nhận tiền",
+             [], ["c1", "c2"]),
+            ("Tìm số của Lan đồng nghiệp, nhắn cho Lan",
+             [], ["c1", "c2"]),
+        ]
+        for current, history, cids in cases:
+            prefix = [user_turn(t, i)
+                      for i, t in enumerate(history)]
+            with self.subTest(current=current):
+                for cid in cids:
+                    self._assert_block_via_selection(self._dec(
+                        self._sms(cid), prefix, roster, current))
+        # Save-history does not qualify; lookup-history does.
+        prefix = [user_turn("Lưu Lan đồng nghiệp giúp tôi", 0)]
+        for cid in ("c1", "c2"):
+            self._assert_block_via_selection(self._dec(
+                self._sms(cid), prefix, roster,
+                "Nhắn cho Lan: Chào bạn"))
+        prefix = [user_turn(
+            "Tìm số của Lan đồng nghiệp giúp tôi", 0)]
+        self._assert_pass(self._dec(
+            self._sms("c1"), prefix, roster,
+            "Nhắn cho Lan: Chào bạn"))
+        self._assert_block_via_selection(self._dec(
+            self._sms("c2"), prefix, roster,
+            "Nhắn cho Lan: Chào bạn"))
 
 
 if __name__ == "__main__":
