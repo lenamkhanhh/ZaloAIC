@@ -150,11 +150,20 @@ def _unit_value(tok: str, variant: bool = False) -> int | None:
 def _parse_small(toks: list[str]) -> Decimal | None:
     """Parse a <10000 group without big units (trăm/mươi/mười/linh/lẻ).
 
+    A single digit token is a valid group coefficient ("3" in
+    "3 triệu", "500" in "500 nghìn"); it also feeds the existing
+    trăm/mươi/rưỡi recursion, so "3 trăm" parses as 300. Any other
+    digit-containing sequence returns None (fail-closed, never fused
+    into a guessed value -- in particular a decimal split such as
+    ["1", "5"] from "1,5" is not a small group).
+
     Returns None for unstructured token sequences (caller treats that as
     "not a number expression", never as zero).
     """
     if not toks:
         return Decimal(0)
+    if len(toks) == 1 and toks[0].isdigit():
+        return Decimal(int(toks[0]))
     if toks[0] in ("linh", "lẻ"):
         return _parse_small(toks[1:])
     if toks == ["rưỡi"] or toks == ["nửa"] or toks == ["một", "nửa"]:
@@ -211,8 +220,9 @@ class MoneyResult:
 class NumberMoneyParser:
     """Group-based Vietnamese number/money parsing (stdlib + Decimal).
 
-    ``parse_number_words`` handles word-only spans ("mot tram nam muoi
-    nghin" -> 150000). ``parse_money`` additionally handles digit amounts
+    ``parse_number_words`` handles word and digit+word spans ("mot tram
+    nam muoi nghin" -> 150000; "3 trieu 500 nghin" -> 3500000).
+    ``parse_money`` additionally handles digit amounts
     ("50 nghin", "1.234.567,89", "1,5 trieu") with the round-4 separator
     rules. Both return None / ambiguous instead of guessing on unstructured
     input.
@@ -221,10 +231,15 @@ class NumberMoneyParser:
     def extract_number_span(self, text: str) -> list[str] | None:
         """Longest contiguous span of number-related tokens, or None.
 
-        Guards (same exclusions as the E-asr-1 audit): a number token right
-        after "thang" is a month name ("thang mot" = January); right after
-        "thu" it is a weekday ("thu hai" = Monday); "nam" before
-        "nay"/"sau"/"truoc" is the word "year", not five.
+        A span token is a number word or a digit token: digit
+        coefficients must stay inside the span, otherwise
+        "3 triệu 500 nghìn" collapses to the bare ["triệu"] span and
+        parses as 1,000,000. Digit tokens get the same guards as words
+        (same exclusions as the E-asr-1 audit): a number token right
+        after "thang" is a month name ("thang mot" = January, and
+        likewise "thang 1"); right after "thu" it is a weekday
+        ("thu hai" = Monday); "nam" before "nay"/"sau"/"truoc" is the
+        word "year", not five.
         """
         toks = _tokens(text)
         best: list[str] = []
@@ -236,7 +251,7 @@ class NumberMoneyParser:
                 tok = ""  # year reading, not the number five
             if prev in ("tháng", "thứ"):
                 tok = ""
-            if tok and tok in _NUMBER_TOKENS:
+            if tok and (tok in _NUMBER_TOKENS or tok.isdigit()):
                 cur.append(tok)
             else:
                 if len(cur) > len(best):

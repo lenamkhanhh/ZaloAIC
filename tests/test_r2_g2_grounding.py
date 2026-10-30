@@ -100,5 +100,51 @@ class TestMoneyUnchanged(unittest.TestCase):
             p.parse_money("ba trăm rưỡi nghìn").value.__int__(), 350000)
 
 
+class TestDigitWordMultiUnitMoney(unittest.TestCase):
+    """P2: digit coefficients in a multi-unit money amount (Check-A G-M1/G-M5).
+
+    Before this fix the digit tokens broke the number span, so the span
+    collapsed to a bare big unit and both cases parsed as 1,000,000 --
+    a wrong value, not a fail-closed block. A digit coefficient is now
+    part of the span and of its group; all-word cases above are unchanged.
+    """
+
+    def test_check_a_digit_word_cases(self):
+        p = NumberMoneyParser()
+        self.assertEqual(
+            p.parse_money("3 triệu 500 nghìn").value.__int__(), 3500000)
+        self.assertEqual(
+            p.parse_money("1 triệu 250 nghìn").value.__int__(), 1250000)
+
+    def test_digit_word_generalises(self):
+        p = NumberMoneyParser()
+        self.assertEqual(
+            p.parse_money("2 tỷ 3 triệu 500 nghìn").value.__int__(), 2003500000)
+        r = p.parse_money("3 triệu 500 nghìn đồng")
+        self.assertEqual(r.value.__int__(), 3500000)
+        self.assertEqual(r.unit, "VND")
+        self.assertEqual(
+            p.parse_money("50 nghìn rưỡi").value.__int__(), 50500)
+        self.assertEqual(
+            p.parse_money("3 trăm nghìn").value.__int__(), 300000)
+        # Single-unit digit cases still go through their old paths.
+        self.assertEqual(
+            p.parse_money("3 triệu").value.__int__(), 3000000)
+        self.assertEqual(
+            p.parse_money("500 nghìn").value.__int__(), 500000)
+
+    def test_digit_guards_stay_fail_closed(self):
+        p = NumberMoneyParser()
+        # Month/weekday guard applies to digit tokens as to word tokens.
+        r = p.parse_money("tháng 1")
+        self.assertIsNone(r.value)
+        self.assertTrue(r.ambiguous)
+        # A decimal coefficient spread over two digit tokens is not
+        # fused into a guessed multi-unit value.
+        r = p.parse_money("1,5 triệu 500 nghìn")
+        self.assertIsNone(r.value)
+        self.assertTrue(r.ambiguous)
+
+
 if __name__ == "__main__":
     unittest.main()
