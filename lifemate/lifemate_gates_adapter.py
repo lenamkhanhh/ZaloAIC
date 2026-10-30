@@ -2462,7 +2462,21 @@ def decide(call, prefix, roster, current_text, kinds,
                 kind, value, phone_prefix, roster)
             sel_names.update(names)
             sel_phones.update(phones)
-        if sel_names or sel_phones:
+        # R5 identity: the proposal's contact_id, if any,
+        # is passed through to the selection check as the
+        # proposal's identity, so it is resolved against
+        # the observed roster there instead of collapsing
+        # to a name/phone target. The check runs for an
+        # id proposal even when no name/phone target was
+        # derived: with an id, the check no longer needs
+        # a name/phone target to have a proposal key.
+        proposal_contact_id = None
+        for kind, value in refs:
+            if kind == "id":
+                proposal_contact_id = value
+                break
+        if sel_names or sel_phones \
+                or proposal_contact_id is not None:
             # Prior user-turn texts: the check consults
             # them ONLY for duplicate-name qualification
             # and for blocked-verb history-positive
@@ -2478,7 +2492,8 @@ def decide(call, prefix, roster, current_text, kinds,
                     current_text, proposal_action,
                     target_names=sorted(sel_names),
                     target_phones=sorted(sel_phones),
-                    roster=roster, history_texts=history_texts)
+                    roster=roster, history_texts=history_texts,
+                    proposal_contact_id=proposal_contact_id)
             except Exception as exc:  # never break deciding
                 notes["adapter_gaps"].append(
                     "selection_consistency_error:%r" % (exc,))

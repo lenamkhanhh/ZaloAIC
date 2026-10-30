@@ -2998,5 +2998,178 @@ class TestR4VerbCollisionAdapter(unittest.TestCase):
             self._assert_fired_via(d, "selection_mismatch")
 
 
+class TestR5IdentityAdapter(unittest.TestCase):
+    """Run 5 identity fix, adapter level.
+
+    A proposal's contact_id is its identity: it is resolved
+    against the observed roster in the selection check, not
+    collapsed to the bare name / phone the entry carries.
+    A phone-less id to the wrong duplicate therefore blocks
+    even when history qualifies the other duplicate, and a
+    shared phone does not qualify the wrong id either.
+    Fixture names/relations are examples only; the rule is
+    structural (entry index from the id, D1 attribute match
+    for qualification), with no name or relation hardcoded
+    in production code.
+    """
+
+    HIST = "Tìm số của Lan đồng nghiệp giúp tôi"
+    CUR = "Nhắn cho Lan: Chào bạn"
+
+    def _dec(self, proposal, prefix, roster, current):
+        return decide(proposal, prefix, roster, current, KINDS,
+                      proposal_position=len(prefix))
+
+    def _sms(self, cid):
+        return {"name": "sms.send",
+                "arguments": {"contact_id": cid, "content": "hi"}}
+
+    def _assert_pass(self, dec):
+        self.assertFalse(dec.baseline_fired)
+        self.assertFalse(dec.fired, dec.adjustments)
+
+    def _assert_block_via_selection(self, dec):
+        self.assertFalse(dec.baseline_fired)
+        self.assertTrue(dec.fired)
+        self.assertTrue(any(a["mechanism"] == "selection_mismatch"
+                            for a in dec.adjustments),
+                        dec.adjustments)
+
+    def _roster(self, phone1, phone2, rel1="đồng nghiệp",
+                rel2="hàng xóm"):
+        return [{"id": "c1", "name": "Lan", "phone": phone1,
+                 "relation": rel1},
+                {"id": "c2", "name": "Lan", "phone": phone2,
+                 "relation": rel2}]
+
+    def test_r5_core_missing_phone_correct_passes_wrong_blocks(self):
+        roster = self._roster("0903111222", "")
+        prefix = [user_turn(self.HIST, 0)]
+        self._assert_pass(self._dec(self._sms("c1"), prefix,
+                                    roster, self.CUR))
+        self._assert_block_via_selection(
+            self._dec(self._sms("c2"), prefix, roster, self.CUR))
+
+    def test_r5_missing_phone_inverted_and_order_swapped(self):
+        for roster in (self._roster("", "0903777888"),
+                       list(reversed(self._roster("0903111222",
+                                                  "")))):
+            prefix = [user_turn(self.HIST, 0)]
+            with self.subTest(roster=roster):
+                self._assert_pass(self._dec(self._sms("c1"),
+                                            prefix, roster,
+                                            self.CUR))
+                self._assert_block_via_selection(
+                    self._dec(self._sms("c2"), prefix, roster,
+                              self.CUR))
+
+    def test_r5_both_missing_relation_distinguishes(self):
+        # R5 change to _history_qualified_entries: a
+        # descriptor no longer needs a known duplicate
+        # phone to qualify. The R4 fail-closed behaviour
+        # for this shape (both block) was a documented
+        # residual, not a pin: with an id proposal, the
+        # descriptor-matched entry must pass and the
+        # other must block.
+        roster = self._roster("", "")
+        prefix = [user_turn(self.HIST, 0)]
+        self._assert_pass(self._dec(self._sms("c1"), prefix,
+                                    roster, self.CUR))
+        self._assert_block_via_selection(
+            self._dec(self._sms("c2"), prefix, roster, self.CUR))
+
+    def test_r5_shared_phone_id_still_distinguishes(self):
+        roster = self._roster("0903111222", "0903111222")
+        prefix = [user_turn(self.HIST, 0)]
+        for current in (self.CUR, "Nhắn cho Lan số 0903111222"):
+            with self.subTest(current=current):
+                self._assert_pass(self._dec(self._sms("c1"),
+                                            prefix, roster,
+                                            current))
+                self._assert_block_via_selection(
+                    self._dec(self._sms("c2"), prefix, roster,
+                              current))
+
+    def test_r5_relation_missing_duplicate_mismatched_block_both(self):
+        cases = [
+            ("missing", [{"id": "c1", "name": "Lan",
+                          "phone": "0903111222"},
+                         {"id": "c2", "name": "Lan",
+                          "phone": ""}]),
+            ("duplicate", self._roster("0903111222", "",
+                                       "đồng nghiệp",
+                                       "đồng nghiệp")),
+        ]
+        for label, roster in cases:
+            with self.subTest(case=label):
+                prefix = [user_turn(self.HIST, 0)]
+                for cid in ("c1", "c2"):
+                    self._assert_block_via_selection(
+                        self._dec(self._sms(cid), prefix, roster,
+                                  self.CUR))
+        prefix = [user_turn("Tìm số của Lan bạn học giúp tôi", 0)]
+        for cid in ("c1", "c2"):
+            with self.subTest(case="mismatched", cid=cid):
+                self._assert_block_via_selection(
+                    self._dec(self._sms(cid), prefix,
+                              self._roster("0903111222", ""),
+                              self.CUR))
+
+    def test_r5_fake_and_stale_ids_block(self):
+        roster = self._roster("0903111222", "")
+        prefix = [user_turn(self.HIST, 0)]
+        d = self._dec(self._sms("c99"), prefix, roster, self.CUR)
+        self.assertTrue(d.baseline_fired)
+        self.assertTrue(d.fired)
+        # Stale: established by an old search, absent from
+        # the current roster. Baseline passes on the old
+        # read, but selection reports unknown_identity.
+        stale_prefix = [user_turn(self.HIST, 0),
+                        call_entry("contacts.search",
+                                   {"query": "Lan"},
+                                   {"ok": True,
+                                    "contacts": roster}, 1)]
+        stale_roster = [{"id": "c2", "name": "Lan", "phone": "",
+                         "relation": "hàng xóm"}]
+        d = self._dec(self._sms("c1"), stale_prefix, stale_roster,
+                      self.CUR)
+        self.assertFalse(d.baseline_fired)
+        self.assertTrue(d.fired)
+        self.assertTrue(any(
+            a["mechanism"] == "selection_mismatch"
+            and "unknown_identity" in (a["question_b_reason"] or "")
+            for a in d.adjustments), d.adjustments)
+
+    def test_r5_phone_only_and_unique_name_no_regression(self):
+        roster = self._roster("0903111222", "0903777888")
+        prefix = [user_turn(self.HIST, 0)]
+        self._assert_pass(self._dec(
+            {"name": "phone.call",
+             "arguments": {"phone_number": "0903111222"}},
+            prefix, roster, "Gọi cho Lan"))
+        self._assert_block_via_selection(self._dec(
+            {"name": "phone.call",
+             "arguments": {"phone_number": "0903777888"}},
+            prefix, roster, "Gọi cho Lan"))
+        unique = [{"id": "u1", "name": "Hoa", "phone": ""}]
+        self._assert_pass(self._dec(self._sms("u1"), [], unique,
+                                    "Nhắn cho Hoa"))
+
+    def test_r5_direct_consistency_unknown_identity(self):
+        from lifemate.lifemate_callback_negation import (  # noqa
+            analyze_selection_consistency)
+        roster = self._roster("0903111222", "")
+        cons = analyze_selection_consistency(
+            self.CUR, "message", target_names=("Lan",),
+            target_phones=(), roster=roster,
+            history_texts=[self.HIST], proposal_contact_id="c99")
+        self.assertEqual(cons["mismatch"], "unknown_identity")
+        cons = analyze_selection_consistency(
+            self.CUR, "message", target_names=("Lan",),
+            target_phones=(), roster=roster + [dict(roster[0])],
+            history_texts=[self.HIST], proposal_contact_id="c1")
+        self.assertEqual(cons["mismatch"], "unknown_identity")
+
+
 if __name__ == "__main__":
     unittest.main()

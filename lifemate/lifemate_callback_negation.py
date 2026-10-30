@@ -3075,7 +3075,8 @@ def analyze_action_selection(text, target_names=(), target_phones=(),
 
 def analyze_selection_consistency(text, action, target_names=(),
                                   target_phones=(), roster=(),
-                                  history_texts=()):
+                                  history_texts=(),
+                                  proposal_contact_id=None):
     """Selection-consistency check for KNOWN references
     (selection round).
 
@@ -3112,6 +3113,24 @@ def analyze_selection_consistency(text, action, target_names=(),
     "permitted" verdict here: the caller turns a mismatch
     into a shadow fire, and a consistent result leaves the
     baseline pass alone.
+
+    Identity (R5): when the proposal carries a contact_id
+    (``proposal_contact_id``), that id IS the proposal's
+    identity -- it is resolved against the roster entries
+    the caller observed, and the resulting entry key
+    replaces any name/phone derivation. A proposal id must
+    never be silently collapsed to the bare name it shares
+    with other entries: a phone-less id proposal to a
+    duplicate is an entry proposal, not a name proposal.
+    An id that matches no roster entry, or several entries
+    with the same id, is not resolved to the first match:
+    it returns mismatch "unknown_identity" -- uncertainty
+    stated explicitly, never a guessed person. When an id
+    IS resolved, history qualification is entry-only: a
+    shared phone must not qualify the wrong entry, because
+    the phone no longer distinguishes the two people the
+    id does. Name/phone-only proposals (no id) keep the
+    old derivation unchanged.
 
     History (history_texts: prior user-turn texts from the
     adapter's prefix) fills exactly two gaps, and no others:
@@ -3212,7 +3231,32 @@ def analyze_selection_consistency(text, action, target_names=(),
         return {"consistent": True}
     targets_norm = [_norm_phone(p) for p in (target_phones or ())]
     targets_norm = [t for t in targets_norm if t]
-    if not targets_norm and not target_names:
+    # R5 identity resolution, before any name/phone fallback:
+    # an id proposal is identified by its roster entry, not
+    # by the name or phone that entry happens to carry. An
+    # empty id is absent, not an identity. An id matching
+    # no entry, or several entries, is unknown_identity --
+    # never the first match, never the bare name.
+    roster_entries = [e for e in (roster or ())
+                      if isinstance(e, dict)]
+    proposal_id_entry = None
+    proposal_id_unknown = False
+    if proposal_contact_id is not None \
+            and proposal_contact_id != "":
+        id_matches = [idx for idx, e in enumerate(roster_entries)
+                      if e.get("id") == proposal_contact_id]
+        if len(id_matches) == 1:
+            proposal_id_entry = id_matches[0]
+        else:
+            proposal_id_unknown = True
+    if proposal_id_unknown:
+        return {"consistent": False, "mismatch": "unknown_identity",
+                "detail": "proposal contact_id %r matches %s "
+                "roster entries, so it identifies no person"
+                % (proposal_contact_id,
+                   "no" if len(id_matches) == 0 else "several")}
+    if proposal_id_entry is None \
+            and not targets_norm and not target_names:
         return {"consistent": True}
     clean = _strip_quoted(_nfc(text))
     raws, folds, clause_ids = _tokenize(clean)
@@ -3246,14 +3290,21 @@ def analyze_selection_consistency(text, action, target_names=(),
             return ("entry", idxs[0])
         return ("phone", norm)
 
-    proposal_key = None
-    for t in targets_norm:
-        proposal_key = _phone_key(t)
-        break
-    if proposal_key is None:
-        for nm in (target_names or ()):
-            proposal_key = _name_key(_fold(str(nm)))
+    # R5: an id-resolved proposal keeps its entry key even
+    # when that entry has no phone (the old code fell back
+    # to the bare name here, which is exactly what lost
+    # the identity of a phone-less duplicate).
+    if proposal_id_entry is not None:
+        proposal_key = ("entry", proposal_id_entry)
+    else:
+        proposal_key = None
+        for t in targets_norm:
+            proposal_key = _phone_key(t)
             break
+        if proposal_key is None:
+            for nm in (target_names or ()):
+                proposal_key = _name_key(_fold(str(nm)))
+                break
     if proposal_key is None:
         return {"consistent": True}
 
@@ -3536,8 +3587,20 @@ def analyze_selection_consistency(text, action, target_names=(),
             phone = _norm_phone(roster[i].get("phone") or "")
             if phone:
                 dup_phones.setdefault(phone, []).append(i)
-        if not dup_phones:
-            return set()
+        # R5: no early return when no duplicate phone is
+        # known. A descriptor is structured-attribute
+        # evidence in its own right, not a phone
+        # accessory: a group where every phone is missing
+        # can still be qualified by a relation match
+        # (the old return made both-missing duplicates
+        # unqualifiable, so an id proposal to the
+        # descriptor-matched entry blocked with the
+        # other arm -- a must-pass miss, not a safe
+        # block, once the proposal itself carries an id).
+        # Phone qualification below still needs a phone;
+        # with none known, only the descriptor path can
+        # qualify, and it still requires exactly one
+        # structured-attribute match (D1).
         raw_names = set()
         for i in idxs:
             parts = _nfc(str(roster[i].get("name") or "")).split()
@@ -3942,25 +4005,26 @@ def analyze_selection_consistency(text, action, target_names=(),
         if len(idxs) < 2:
             continue
         qualified = _history_qualified_entries(idxs)
-        # Name-key proposals: an id proposal to an entry
-        # whose phone is "" reaches this function with no
-        # phone target, so its key is the bare name, not
-        # the entry -- the entry test above would miss it
-        # entirely (R3-h1). Such a proposal is a duplicate
-        # proposal when its name key maps to exactly this
-        # duplicate set AND history qualifies nobody: with
-        # no qualified entry there is no referent the bare
+        # Name-key proposals: a proposal with NO id whose
+        # key is the bare name is a duplicate proposal
+        # when its name key maps to exactly this duplicate
+        # set AND history qualifies nobody: with no
+        # qualified entry there is no referent the bare
         # name could be presumed to mean. When history
         # qualifies exactly one entry, the name-key
         # proposal still passes (the R1 correct arm is
         # itself a name-key proposal to the qualified
-        # entry, and at this layer a phone-less id cannot
-        # be distinguished from that entry) -- the
-        # asymmetry is inherent to the name/phone-only
-        # signature here, and the entry-key arms still
-        # block the wrong person in that case.
+        # entry) -- that asymmetry is inherent to a
+        # name/phone-only proposal. R5: it no longer
+        # applies to id proposals at all, because an id
+        # proposal now carries its entry key (see above),
+        # so the entry test, not the name test, decides
+        # it -- a phone-less id to the wrong duplicate
+        # blocks even when history qualifies the other
+        # one (the old R3-h1 / R4 residual, closed here).
         proposal_is_name_dup = (
-            proposal_key[0] == "name" and not qualified
+            proposal_id_entry is None
+            and proposal_key[0] == "name" and not qualified
             and set(_entries_for_name(proposal_key[1]))
             == set(idxs))
         proposal_is_duplicate = (
@@ -3969,11 +4033,20 @@ def analyze_selection_consistency(text, action, target_names=(),
             or proposal_is_name_dup)
         if not proposal_is_duplicate:
             continue
-        proposal_qualified = any(
-            proposal_key == ("entry", i)
-            or _norm_phone(roster[i].get("phone") or "")
-            in targets_norm
-            for i in qualified)
+        # R5: an id-resolved proposal is qualified ONLY
+        # by its own entry being the qualified one. The
+        # old phone clause (qualified entry's phone in
+        # targets) would let a shared phone qualify the
+        # wrong id proposal, so it is not used here.
+        # Name/phone-only proposals keep the old rule.
+        if proposal_id_entry is not None:
+            proposal_qualified = proposal_id_entry in qualified
+        else:
+            proposal_qualified = any(
+                proposal_key == ("entry", i)
+                or _norm_phone(roster[i].get("phone") or "")
+                in targets_norm
+                for i in qualified)
         if proposal_qualified:
             continue
         if not any(_norm_phone(d) in phones
@@ -4327,13 +4400,63 @@ def analyze_selection_consistency(text, action, target_names=(),
 
     # 6. Positive-selection-set mismatch.
     if selections:
+        # R5 shared-identity helpers: a selection key is
+        # ambiguous, not wrong, when it maps to several
+        # entries including the proposal entry -- a bare
+        # name key, or a phone key for a phone shared by
+        # several entries. A key that uniquely identifies
+        # a different entry is still explicit and wrong.
+        # History qualification (below) is what turns an
+        # ambiguous selection into a match: when history
+        # qualifies exactly the proposal entry for the
+        # governed duplicate group, the ambiguous value
+        # is also that person's value, so it does not
+        # contradict the id. Without that qualification
+        # the old wrong_person behaviour is kept
+        # (fail-closed for unqualified duplicates).
+        def _ambiguous_compatible(p):
+            if p == proposal_key:
+                return True
+            if p[0] == "name":
+                return proposal_key in [
+                    ("entry", i) for i in _entries_for_name(p[1])]
+            if p[0] == "phone":
+                idxs_p = _entries_for_phone(p[1])
+                return len(idxs_p) > 1 and proposal_key in [
+                    ("entry", i) for i in idxs_p]
+            return False
+
+        def _history_qualifies_proposal():
+            if proposal_key[0] != "entry":
+                return False
+            groups = []
+            for fold in governed_names:
+                groups.append(_entries_for_name(fold))
+            for nm in (target_names or ()):
+                groups.append(_entries_for_name(
+                    _fold(str(nm))))
+            for norm in targets_norm:
+                groups.append(_entries_for_phone(norm))
+            for idxs in groups:
+                if len(idxs) < 2:
+                    continue
+                if _history_qualified_entries(idxs) \
+                        == {proposal_key[1]}:
+                    return True
+            return False
+
         if any(a == action for (a, _p) in selections):
-            return _mismatch(
-                "wrong_person",
-                "positive %s selections %r do not include "
-                "the proposal person" % (action,
-                                         sorted(selections)))
+            same = [p for (a, p) in selections if a == action]
+            if not (all(_ambiguous_compatible(p) for p in same)
+                    and _history_qualifies_proposal()):
+                return _mismatch(
+                    "wrong_person",
+                    "positive %s selections %r do not include "
+                    "the proposal person" % (action,
+                                             sorted(selections)))
         if any(_selection_compatible(p)
+               or (_history_qualifies_proposal()
+                   and _ambiguous_compatible(p))
                for (_a, p) in selections):
             # Abstain: a verb of the proposal action exists
             # AND the proposal person is mentioned -- a bare

@@ -902,6 +902,143 @@ class TestObserverRosterRelationD1(unittest.TestCase):
 _SENTINEL = object()
 
 
+class TestObserverIdentityContactId(unittest.TestCase):
+    """Run 5 identity fix, runtime path: RAW contacts.search
+    result -> collector -> adapter -> observer -> real
+    AgentLoop (shadow ON). Verdicts are read off observer
+    records, never from decide() directly. The loop still
+    submits the sms in both arms (shadow-only), asserted
+    for the core case.
+    """
+
+    SEARCH = {"name": "contacts.search", "arguments": {"query": "Lan"}}
+    STOP = {"stop": True}
+
+    def _sms(self, contact_id):
+        return {"name": "sms.send",
+                "arguments": {"contact_id": contact_id,
+                              "content": "hi"}}
+
+    def _run_sms(self, contacts, contact_id, history_text, current):
+        searches = [(contacts, True)]
+
+        class RosterEnv:
+            def __init__(self):
+                self.calls = []
+                self.search_index = 0
+
+            def validate(self, name, args):
+                return {"ok": True}
+
+            def call(self, name, args):
+                self.calls.append({"name": name,
+                                   "arguments": dict(args)})
+                if name == "contacts.search":
+                    contacts_, ok = searches[self.search_index]
+                    self.search_index += 1
+                    return {"ok": ok,
+                            "contacts": copy.deepcopy(contacts_)}
+                return {"ok": True}
+
+            def submission_line(self):
+                blob = json.dumps(self.calls, sort_keys=True,
+                                  ensure_ascii=False)
+                return {"tool_calls": [dict(c) for c in self.calls],
+                        "state_hash": hashlib.sha256(
+                            blob.encode()).hexdigest()}
+
+        cfg = PipelineConfig(shadow_observer=True)
+        loop = AgentLoop(cfg, TOOLS)
+        history = [FakeTurn("user", audio_text=history_text)]
+        env = RosterEnv()
+        loop.run(FakeSample(history=history), current, env,
+                 FakeGenerator([self.SEARCH,
+                                self._sms(contact_id), self.STOP]))
+        records = [r for r in loop.observer.records
+                   if isinstance(r["proposal_grounded"], dict)
+                   and r["proposal_grounded"].get("name")
+                   == "sms.send"]
+        self.assertEqual(len(records), 1)
+        return records[0], env
+
+    def _assert_passed(self, rec):
+        self.assertIsNone(rec["error"])
+        self.assertFalse(rec["candidate_decision"]["fired"])
+        self.assertEqual(rec["adjustments"], [])
+
+    def _assert_blocked_via_selection(self, rec):
+        self.assertIsNone(rec["error"])
+        self.assertTrue(rec["candidate_decision"]["fired"])
+        self.assertTrue(any(
+            a.get("mechanism") == "selection_mismatch"
+            for a in rec["adjustments"]), rec["adjustments"])
+
+    def test_runtime_identity_core_missing_phone(self):
+        contacts = [{"id": "c1", "name": "Lan",
+                     "phone": "0903111222",
+                     "relation": "đồng nghiệp"},
+                    {"id": "c2", "name": "Lan", "phone": "",
+                     "relation": "hàng xóm"}]
+        history = "Tìm số của Lan đồng nghiệp giúp tôi"
+        current = "Nhắn cho Lan: Chào bạn"
+        rec, _env = self._run_sms(contacts, "c1", history, current)
+        self._assert_passed(rec)
+        rec, _env = self._run_sms(contacts, "c2", history, current)
+        self._assert_blocked_via_selection(rec)
+        for cid in ("c1", "c2"):
+            _rec, env = self._run_sms(contacts, cid, history,
+                                      current)
+            self.assertIn({"name": "sms.send",
+                           "arguments": {"contact_id": cid,
+                                         "content": "hi"}},
+                          [dict(c) for c in env.calls])
+
+    def test_runtime_identity_both_missing(self):
+        contacts = [{"id": "c1", "name": "Lan", "phone": "",
+                     "relation": "đồng nghiệp"},
+                    {"id": "c2", "name": "Lan", "phone": "",
+                     "relation": "hàng xóm"}]
+        history = "Tìm số của Lan đồng nghiệp giúp tôi"
+        current = "Nhắn cho Lan: Chào bạn"
+        rec, _env = self._run_sms(contacts, "c1", history, current)
+        self._assert_passed(rec)
+        rec, _env = self._run_sms(contacts, "c2", history, current)
+        self._assert_blocked_via_selection(rec)
+
+    def test_runtime_identity_shared_phone(self):
+        contacts = [{"id": "c1", "name": "Lan",
+                     "phone": "0903111222",
+                     "relation": "đồng nghiệp"},
+                    {"id": "c2", "name": "Lan",
+                     "phone": "0903111222",
+                     "relation": "hàng xóm"}]
+        history = "Tìm số của Lan đồng nghiệp giúp tôi"
+        for current in ("Nhắn cho Lan: Chào bạn",
+                        "Nhắn cho Lan số 0903111222"):
+            with self.subTest(current=current):
+                rec, _env = self._run_sms(contacts, "c1", history,
+                                          current)
+                self._assert_passed(rec)
+                rec, _env = self._run_sms(contacts, "c2", history,
+                                          current)
+                self._assert_blocked_via_selection(rec)
+
+    def test_runtime_identity_unseen_name_order_swapped(self):
+        # Same structural rule, unseen name, search order
+        # swapped: the correct id is second in the roster.
+        contacts = [{"id": "c2", "name": "Thu", "phone": "",
+                     "relation": "hàng xóm"},
+                    {"id": "c1", "name": "Thu",
+                     "phone": "0903111222",
+                     "relation": "đồng nghiệp"}]
+        history = "Tìm số của Thu đồng nghiệp giúp tôi"
+        current = "Nhắn cho Thu"
+        rec, _env = self._run_sms(contacts, "c1", history, current)
+        self._assert_passed(rec)
+        rec, _env = self._run_sms(contacts, "c2", history, current)
+        self._assert_blocked_via_selection(rec)
+
+
 class TestObserverSelectionDecisionR4(unittest.TestCase):
     """R4: whole notes.selection_decision dict copied into the
     observer record, additively, shadow-only.
