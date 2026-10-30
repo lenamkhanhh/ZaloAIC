@@ -3088,7 +3088,22 @@ def analyze_selection_consistency(text, action, target_names=(),
     role for that number.
 
     Returns {"consistent": True} or {"consistent": False,
-    "mismatch": kind, "detail": str}. Abstention is
+    "mismatch": kind, "detail": str}. Structured decision
+    fields (H2-S11 only, check 5 blocked_verb_only with a
+    direct past-governing verb): a question-clause past
+    govern over a still-pending history positive returns
+    decision "unknown_pending", unknown_kind
+    "question_after_positive", active_status
+    "pending_unproven", blocked_subtype "question" and
+    mismatch "unknown_pending" -- still consistent False,
+    so a binary caller still fires. A declarative past
+    govern, or a question over a discharged / cancelled /
+    absent history positive, returns decision "mismatch"
+    with active_status "discharged" / "cancelled" /
+    "replaced" / "none" and blocked_subtype "completion" /
+    "question". Other mismatch kinds keep the old shape in
+    this round; their statuses are not invented here.
+    Abstention is
     "consistent": an unresolvable text is NOT a contradiction
     -- but an explicit contradiction (a different person, a
     different action, a delegated action, an undistinguished
@@ -3242,6 +3257,45 @@ def analyze_selection_consistency(text, action, target_names=(),
     def _mismatch(kind, detail):
         return {"consistent": False, "mismatch": kind,
                 "detail": detail}
+
+    def _s11_result(decision, active_status, blocked_subtype,
+                    mismatch, detail, last_kind=None,
+                    last_index=None):
+        # H2-S11 structured result. consistent stays False
+        # in every case: the execution tier never passes on
+        # a question/status turn. last_event.turn_position
+        # is the index inside history_texts (the order the
+        # adapter passes user turns), not a global prefix
+        # position -- the adapter can enrich it later.
+        out = {"consistent": False, "decision": decision,
+               "active_status": active_status,
+               "blocked_subtype": blocked_subtype,
+               "mismatch": mismatch, "detail": detail}
+        if decision == "unknown_pending":
+            out["unknown_kind"] = "question_after_positive"
+            out["reason"] = \
+                "history_positive_pending_but_no_current_positive"
+        if last_kind is not None:
+            out["last_event"] = {
+                "kind": last_kind, "turn_position": last_index,
+                "evidence": "history_text"}
+        return out
+
+    def _clause_is_s11_question(q_raws, q_folds, q_first,
+                                q_last):
+        # Question mood for a past-govern clause. The
+        # shared _clause_is_question covers co/khong, verb
+        # + khong/ha/chu and nhi frames, but NOT the
+        # "... da <verb> ... chua?" frame: the tokenizer
+        # drops "?", leaving a final "chua" (not-yet)
+        # token. A clause ending in "chua" is a question
+        # about completion, not a completion statement;
+        # "roi" (or no particle) is declarative completion.
+        # This is a mood test on any clause, not a match
+        # on any particular sentence.
+        return _clause_is_question(q_raws, q_folds, q_first,
+                                   q_last) \
+            or q_folds[q_last] == "chua"
 
     # 1. Delegation.
     if turn_fully_delegated(text, action):
@@ -3857,7 +3911,15 @@ def analyze_selection_consistency(text, action, target_names=(),
                     i += 1
         return False
 
-    def _current_past_governs_proposal():
+    def _current_past_govern_kind():
+        # Returns None (no direct past govern), "question"
+        # (the governing past verb sits in a question
+        # clause -- an S11 question about completion, NOT
+        # proof of completion) or "declarative" (a direct
+        # completion statement). Internal only; the old
+        # boolean conflated the two, which is exactly the
+        # H2-S11 epistemic error: a question was labelled
+        # "(completed)".
         gov_names = set(target_names or ())
         for e in roster:
             if _norm_phone(e.get("phone") or "") in targets_norm:
@@ -3887,15 +3949,116 @@ def analyze_selection_consistency(text, action, target_names=(),
                 continue
             span = _extract_object(v, raws, folds, clause_ids,
                                    bounds)
+            governed = any(span[0] <= ns and ne <= span[1]
+                           for (ns, ne) in _find_name_mentions(
+                               raws, folds, sorted(gov_names))) \
+                or any(span[0] <= rs and re_ <= span[1]
+                       and _norm_phone(d) in targets_norm
+                       for (rs, re_, d, _k) in all_runs)
+            if governed:
+                if _clause_is_s11_question(raws, folds, first,
+                                           _last):
+                    return "question"
+                return "declarative"
+        return None
+
+    def _history_turn_is_declarative_completion(htext):
+        # A single history turn that, as a standalone
+        # statement, directly states the proposal as
+        # completed: a blocked past verb of the proposal
+        # action governing the proposal name/phone in a
+        # NON-question clause. A question turn ("... chua?")
+        # is not a completion, and a note-content clause
+        # is not either (same exclusions as the current
+        # turn). Mirrors _current_past_govern_kind over
+        # the history turn's own tokenisation.
+        if not isinstance(htext, str) or not htext.strip():
+            return False
+        h_clean = _strip_quoted(_nfc(htext))
+        h_raws, h_folds, h_cids = _tokenize(h_clean)
+        if not h_raws:
+            return False
+        h_bounds = _clause_bounds(h_cids)
+        h_verbs = _find_verbs(h_folds, ("call", "message"))
+        h_runs = _digit_runs(h_raws, h_folds, h_cids)
+        h_gov = set(target_names or ())
+        for e in roster:
+            if _norm_phone(e.get("phone") or "") in targets_norm:
+                parts = _nfc(str(e.get("name") or "")).split()
+                if parts:
+                    h_gov.add(_nfc(str(e.get("name") or "")))
+                    h_gov.add(parts[-1])
+        for v in h_verbs:
+            if v["action"] != action:
+                continue
+            if _verb_polarity(v, h_raws, h_folds, h_cids,
+                              h_bounds) != "blocked":
+                continue
+            h_cid = h_cids[v["start"]]
+            h_first, h_last = h_bounds[h_cid]
+            prev = v["start"] - 1
+            if prev < h_first or h_folds[prev] not in (
+                    "da", "moi", "vua"):
+                continue
+            if h_folds[prev] == "vua" and sum(
+                    1 for k in range(h_first, h_last + 1)
+                    if h_folds[k] == "vua") >= 2:
+                continue
+            if _in_note_content_clause(h_first, v["start"]):
+                continue
+            if _clause_is_s11_question(h_raws, h_folds,
+                                       h_first, h_last):
+                continue
+            span = _extract_object(v, h_raws, h_folds, h_cids,
+                                   h_bounds)
             if any(span[0] <= ns and ne <= span[1]
                    for (ns, ne) in _find_name_mentions(
-                       raws, folds, sorted(gov_names))):
+                       h_raws, h_folds, sorted(h_gov))):
                 return True
             if any(span[0] <= rs and re_ <= span[1]
                    and _norm_phone(d) in targets_norm
-                   for (rs, re_, d, _k) in all_runs):
+                   for (rs, re_, d, _k) in h_runs):
                 return True
         return False
+
+    def _history_last_event(count_completion=True):
+        # Last decisive event for (action, target) over
+        # history_texts in order. Positive sets a pending
+        # request; negated / replaced / cancelled are
+        # terminals; a declarative completion turn is a
+        # discharged terminal (it returns blocked_verb_only
+        # from analyze_action_selection, so it would
+        # otherwise leave a pending state untouched -- the
+        # Q-AFTER-COMPLETION trap). Unknown turns leave
+        # the state alone. Returns (kind, index) with kind
+        # in {"positive_request", "cancelled", "replaced",
+        # "discharged"} or (None, None). count_completion
+        # is False ONLY for the no-direct-past-govern
+        # fallthrough path, where round-5 binary behaviour
+        # must be preserved exactly: there, a completion
+        # turn in history is an unknown turn that leaves
+        # the state alone, as in round 5.
+        last_kind, last_index = None, None
+        for idx, htext in enumerate(history_texts or ()):
+            if not isinstance(htext, str):
+                continue
+            if count_completion \
+                    and _history_turn_is_declarative_completion(
+                        htext):
+                last_kind, last_index = "discharged", idx
+                continue
+            hsel = analyze_action_selection(
+                htext, target_names=target_names,
+                target_phones=target_phones, action=action)
+            if hsel["selection"] == "positive":
+                last_kind, last_index = "positive_request", idx
+            elif hsel["selection"] == "negated":
+                last_kind, last_index = "cancelled", idx
+            elif hsel["selection"] == "replaced":
+                last_kind, last_index = "replaced", idx
+            elif hsel["selection"] == "cancelled":
+                last_kind, last_index = "cancelled", idx
+        return last_kind, last_index
 
     # 5. B unknown-mismatch mapping. Blocked is "no current
     # signal", not a cancellation: a history turn that
@@ -3914,32 +4077,67 @@ def analyze_selection_consistency(text, action, target_names=(),
                 "money_or_content_role",
         }
         if sel["reason"] == "blocked_verb_only":
-            if _current_past_governs_proposal():
-                return _mismatch(
-                    "blocked_request",
-                    "B: blocked_verb_only; current past verb "
-                    "directly governs the proposal "
-                    "(completed), history cannot revive it")
-            # ACTIVE history scan, in order: a positive
-            # turn sets active, a later negated / replaced
-            # / cancelled turn clears it; unknown turns
-            # leave the state alone. Only a finally-active
-            # state falls through -- an old request revoked
-            # by a later cancellation does not revive.
-            history_active = False
-            for htext in (history_texts or ()):
-                if not isinstance(htext, str):
-                    continue
-                hsel = analyze_action_selection(
-                    htext, target_names=target_names,
-                    target_phones=target_phones, action=action)
-                if hsel["selection"] == "positive":
-                    history_active = True
-                elif hsel["selection"] in ("negated",
-                                           "replaced",
-                                           "cancelled"):
-                    history_active = False
-            if not history_active:
+            # H2-S11 structured split (round H2S11, additive
+            # on the execution tier: every branch below is
+            # still consistent False). The old code returned
+            # blocked_request here for BOTH a declarative
+            # completion and a question about completion,
+            # and ignored history entirely on this branch.
+            past_kind = _current_past_govern_kind()
+            if past_kind is not None:
+                last_kind, last_index = _history_last_event()
+                if past_kind == "declarative":
+                    # Direct completion statement: the
+                    # instruction is discharged, whatever
+                    # history said (H2 fix, C3-G3-01).
+                    return _s11_result(
+                        "mismatch", "discharged", "completion",
+                        "blocked_request",
+                        "B: blocked_verb_only; current past "
+                        "verb directly governs the proposal "
+                        "(completed), history cannot revive "
+                        "it", last_kind, last_index)
+                # past_kind == "question": a question about
+                # completion proves nothing about whether
+                # the call happened.
+                if last_kind == "positive_request":
+                    # S11 proper: pending positive, no
+                    # terminal after it, current gives no
+                    # new positive. Active is UNPROVEN --
+                    # neither active nor discharged.
+                    return _s11_result(
+                        "unknown_pending", "pending_unproven",
+                        "question", "unknown_pending",
+                        "B: blocked_verb_only; current "
+                        "question past-governs the proposal, "
+                        "history positive still pending, no "
+                        "current positive -- active "
+                        "unproven", "positive_request",
+                        last_index)
+                # Question over a discharged / cancelled /
+                # replaced / absent positive: still a block,
+                # but NOT unknown_pending -- there is no
+                # pending instruction to be unknown about.
+                return _s11_result(
+                    "mismatch", last_kind or "none",
+                    "question", "blocked_request",
+                    "B: blocked_verb_only; current question "
+                    "past-governs the proposal, last event "
+                    "is %s, not a pending positive"
+                    % (last_kind or "none"),
+                    last_kind, last_index)
+            # No direct past govern: ACTIVE history scan, in
+            # order: a positive turn sets active, a later
+            # negated / replaced / cancelled turn clears
+            # it; unknown turns leave the state alone.
+            # Only a finally-active state falls through --
+            # an old request revoked by a later cancellation
+            # does not revive. (This path keeps the old
+            # plain shape; the S11 taxonomy above covers
+            # only the direct-past-govern branch.)
+            last_kind, _ = _history_last_event(
+                count_completion=False)
+            if last_kind != "positive_request":
                 return _mismatch("blocked_request",
                                  "B: blocked_verb_only")
         elif sel["reason"] in mapping:
