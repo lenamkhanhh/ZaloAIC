@@ -13,6 +13,16 @@ connection point, and it is why no agent/config edit was needed
 for this first version. A future ``lifemate/run.py`` subcommand
 that reuses this module still needs an L4 file lock for run.py.
 
+L4 mandatory conditions (see analysis/chat3/r2-g4/
+SHADOW_EXPORT_SCHEMA.md): (a) in-process only, export right
+after each loop.run(); (b) shadow_observer must be True at
+runtime for an observer run — False is reported explicitly as
+observer OFF (manifest observer_status="OFF"), never as "no
+decision"; (c) per-sample export via the public API
+loop.observer (.records / .to_json()), no filtering of error
+records, no rewriting of decisions, no env calls, no gold
+labels, no agent-behaviour change.
+
 Usage (run from the repo root, or any cwd — paths are explicit):
 
   # CPU, synthetic, no dataset needed (real AgentLoop + real
@@ -341,11 +351,20 @@ def main(argv=None) -> int:
     with open(out_path, "w", encoding="utf-8") as fout:
         for envelope in envelopes:
             fout.write(json.dumps(envelope, ensure_ascii=False) + "\n")
+    if not envelopes:
+        observer_status = "UNKNOWN"
+    elif all(e["observer_enabled"] for e in envelopes):
+        observer_status = "ON"
+    elif not any(e["observer_enabled"] for e in envelopes):
+        observer_status = "OFF"
+    else:
+        observer_status = "MIXED"
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_id": args.run_id,
         "source_commit": BASE_SOURCE_COMMIT,
         "code_commit": _code_commit(),
+        "observer_status": observer_status,
         "mode": args.mode,
         "split": args.split if args.mode == "data" else "synthetic",
         "config_path": args.config,
