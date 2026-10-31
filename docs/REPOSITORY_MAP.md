@@ -6,6 +6,8 @@
 
 | Đường dẫn | Vai trò |
 |---|---|
+| [INTEGRATION.md](INTEGRATION.md), [ví dụ](../examples/integrate_checkpoint.py) | Điểm bắt đầu ghép checkpoint của nhóm; không tải model |
+| [pyproject.toml](../pyproject.toml), [manifest](../harness_manifest.json) | Gói cài chỉ runtime; hash 23 file, không model dependencies |
 | [lifemate/agent.py](../lifemate/agent.py) | Vòng agent, grounding/observer hooks, pending ask |
 | [lifemate/config.py](../lifemate/config.py), [configs](../lifemate/configs/) | Flags và cấu hình; tên recommended không thay thế evidence |
 | [lifemate/adapter.py](../lifemate/adapter.py) | Cầu nối simulator chính thức |

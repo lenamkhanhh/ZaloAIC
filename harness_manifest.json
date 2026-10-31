@@ -1,0 +1,117 @@
+{
+  "package": "zaic-lifemate-harness",
+  "version": "0.1.0",
+  "runtime_source_commit": "ddbe0a0b18a6fb9f6e7d261628a51e7a2c6c10c6",
+  "runtime_unchanged_from_pin": true,
+  "scope": "CPU runtime; bring your own ASR/LLM; G&G shadow-only",
+  "python_requires": ">=3.10",
+  "mandatory_pip_runtime_dependencies": [],
+  "external_requirement": "Official release zaic_tools + data, provided separately",
+  "not_in_distribution": [
+    "analysis",
+    "research",
+    "plans",
+    "deep-dives",
+    "competition",
+    "kaggle",
+    "tests",
+    "lifemate/tests",
+    "data",
+    "audio",
+    "weights"
+  ],
+  "files": [
+    {
+      "path": "lifemate/__init__.py",
+      "sha256": "67067c9cc1ffb655049d44bf0b5a59abfc0d3c1e5aa21e8c8d05f8f3f996bfd3"
+    },
+    {
+      "path": "lifemate/adapter.py",
+      "sha256": "3a9a3f510306f17c4bf82b611c4fda9e1ed58efa94d72bdb25fd4a2e8568ee9a"
+    },
+    {
+      "path": "lifemate/agent.py",
+      "sha256": "a5d36b498b70e4c6deb23ed10857434c0e3e43888e72b9ceaadc705f802c5f21"
+    },
+    {
+      "path": "lifemate/asr.py",
+      "sha256": "866b7c920e50ca9f39d054dd877af6987fc6ed0f846c677d255ab307e0a1eadb"
+    },
+    {
+      "path": "lifemate/config.py",
+      "sha256": "1b130dd73987b5d1700c38b5d34c9fb284b9a0df37ed608f8cdf68cd9375ff9e"
+    },
+    {
+      "path": "lifemate/configs/baseline.json",
+      "sha256": "84e2789e9b35a63648e0bf48ff55b27c9e418a04e06001d83251f11ea7ea9d00"
+    },
+    {
+      "path": "lifemate/configs/recommended.json",
+      "sha256": "71d5f38f23d126427b08c09925cbbd9da933fc3750cbec55942809737e980076"
+    },
+    {
+      "path": "lifemate/grounding.py",
+      "sha256": "0d469ff8673f2d6aca2dd006ca505357500545ab4f17a3c873d28c499f21f287"
+    },
+    {
+      "path": "lifemate/lifemate_callback_negation.py",
+      "sha256": "ad27cd65227110f0de5c0fd72e4cd30d3daa1b4538b0541eaee8bc1c09252e7a"
+    },
+    {
+      "path": "lifemate/lifemate_evidence_lifecycle.py",
+      "sha256": "12c231206d3d1e6b4b65cd30eb168b5ee20caff1f675d673691bb459476d01ad"
+    },
+    {
+      "path": "lifemate/lifemate_gates.py",
+      "sha256": "7a9fc216146824f9bb62d4f704c6996b4972654e44eec11e1b911960aed08100"
+    },
+    {
+      "path": "lifemate/lifemate_gates_adapter.py",
+      "sha256": "d01104ffcbb2b313abae6e765d03747c2b5cbc6bd70e514c393363b2102c5bfb"
+    },
+    {
+      "path": "lifemate/lifemate_grounding.py",
+      "sha256": "890811da499fe8107485e57b79a15fa6276608f8f3b892d306fbaf75f3abdefa"
+    },
+    {
+      "path": "lifemate/lifemate_observer.py",
+      "sha256": "2f5e8ae60fed08f908aeb7c12d679ce2696b74fdb350a6ee54547dcb50e84f16"
+    },
+    {
+      "path": "lifemate/lifemate_phone_callback_evidence.py",
+      "sha256": "ea214ee55f3229cbcb3dfabd8981d6b00529c1fc52b40b96fcca1f9311260c33"
+    },
+    {
+      "path": "lifemate/lifemate_provenance.py",
+      "sha256": "c36da2645e196acfb1e94abea2396be0041e9526f8f5cc3946ea9343fd7be107"
+    },
+    {
+      "path": "lifemate/llm.py",
+      "sha256": "c6671c4d5ccb93b2f54b57e50a1da460a5b69719bb40a636684bb7a8695073ed"
+    },
+    {
+      "path": "lifemate/loader.py",
+      "sha256": "ff023db279757b9b0cd0bcf57d0240da93900fd0f1f68688c6b54f1c3fb4f99e"
+    },
+    {
+      "path": "lifemate/run.py",
+      "sha256": "1b71923926a5745f36072bfc34289aa9e1345404d9bbc88beef47fdbb51595d4"
+    },
+    {
+      "path": "lifemate/scoring.py",
+      "sha256": "e2786717c3f3b3992f008e75b01f85645a1da1de0588a6bf33be186a3593d737"
+    },
+    {
+      "path": "lifemate/shadow_export.py",
+      "sha256": "08e57032a67ce3a24f94406cf35e069bf8d331a65982a1fa5ed50aa72488f4cf"
+    },
+    {
+      "path": "lifemate/split.py",
+      "sha256": "36452f041f30778a15eb25d9c8076d047454373a7993f0376c061ccaf3b7911b"
+    },
+    {
+      "path": "lifemate/splits/train_dev_heldout.json",
+      "sha256": "eefd0faa163285b23d2634bc4cc04f515b58367a2344599e46e85d48818280aa"
+    }
+  ]
+}

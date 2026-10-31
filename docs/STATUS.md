@@ -2,6 +2,10 @@
 
 Đầu mối trạng thái của lần tổ chức repo này. Đây là snapshot có ngày, không phải bảng tự cập nhật.
 
+**Bổ sung 31/10/2026:** đường ghép checkpoint hiện tại ở [INTEGRATION.md](INTEGRATION.md). Main có gói cài CPU không dependency model và ví dụ callback; [kiểm tra cài đặt](verification/HARNESS_HANDOFF_2026-10-31.md). Không đổi code/config/split Run 7.
+
+GPU smoke 20 mẫu trên nhánh thí nghiệm riêng đã COMPLETE, serial/batch khớp 20/20, tốc độ 12,68 → 11,60 giây/mẫu hiệu dụng, proxy 0,05. Đây là **model gốc**, không phải checkpoint fine-tune của bạn và không phải đánh giá đầy đủ dev. [Báo cáo riêng](verification/SMOKE20_2026-10-31.md).
+
 ## Source
 
 | Mục | Giá trị |

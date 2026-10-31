@@ -1,43 +1,38 @@
-# ZaloAIC — LifeMate
+# LifeMate harness — ghép ASR/LLM của nhóm
 
-Pipeline trợ lý tiếng Việt: audio → ASR → LLM → gọi tool qua `zaic_tools`.
-Phạm vi phát triển hiện tại: **LifeMate**. DataMate chỉ giữ làm tài liệu lịch sử.
+Repo cung cấp vòng gọi tool, adapter `zaic_tools`, grounding và G&G ghi log.
+**Model ASR/LLM fine-tune do bên tích hợp tự nạp.** Không cần môi trường Kaggle hay backend model cũ của repo này để dùng harness.
 
-## Bắt đầu ở đây
+## Bắt đầu
 
-| Cần làm gì? | Đọc ở đâu? |
-|---|---|
-| Biết bản đang dùng, kết quả và lỗi còn mở | [Trạng thái hiện tại](docs/STATUS.md) |
-| Tìm runtime, tests, audit và tài liệu cũ | [Bản đồ repo](docs/REPOSITORY_MAP.md) |
-| Chọn đúng nhánh thay vì nhầm main/integration cũ | [Danh mục nhánh](docs/BRANCHES.md) |
-| Chạy lại CPU tests và paired dev | [Kiểm chứng CPU](docs/verification/CPU_2026-10-30.md) |
-| Tải data, tham khảo CLI baseline | [RUN_LIFEMATE.md](RUN_LIFEMATE.md), đọc cùng trang trạng thái |
-
-## Mốc code đã kiểm chứng
-
-- Nhánh: [`muse/chat3/r7-antecedent`](https://github.com/lenamkhanhh/ZaloAIC/tree/muse/chat3/r7-antecedent).
-- Source: [`ddbe0a0`](https://github.com/lenamkhanhh/ZaloAIC/commit/ddbe0a0b18a6fb9f6e7d261628a51e7a2c6c10c6).
-- CPU: **849 tests qua**, không fail/error/skip trên máy audit có đủ data/reference.
-- Paired dev: **976 tool calls trong phạm vi audit, 2 lượt bị đánh dấu chặn, 0 lỗi**.
-- G&G chỉ quan sát/ghi log. `pending_ask_stop` mặc định OFF. Không suy kết quả này thành điểm chính thức hay model score.
-
-`main` chưa chứa toàn bộ các vòng sửa này. Nhánh có tên `integration` cũng chưa chắc là mới nhất.
-Nhánh `codex/repo-organization` tổ chức lại tài liệu trên cùng runtime với source pin ở trên; không đổi hành vi pipeline.
-
-## Thư mục chính
-
-```text
-lifemate/       runtime, config, split và tests pipeline
-tests/          tests grounding, G&G, observer, export
-analysis/       audit scripts và artifact phân tích có phiên bản
-docs/           trạng thái, bản đồ, nhánh, cách kiểm chứng
-research/       nghiên cứu và báo cáo các vòng trước
-competition/    ghi chép luật/đề bài theo thời điểm đọc
-plans/          kế hoạch lịch sử, cần đối chiếu trạng thái hiện tại
-deep-dives/     prototype/nghiên cứu trước đây
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/lenamkhanhh/ZaloAIC.git
+cd ZaloAIC
+git sparse-checkout set lifemate examples docs
+python -m pip install --no-deps .
+python examples/integrate_checkpoint.py --self-check
 ```
 
-Đường dẫn code/script cũ giữ nguyên để không phá import, lệnh chạy hoặc link lịch sử.
-Raw data/audio/weights không được thêm vào repo.
+Lệnh cài chỉ đóng gói `lifemate/` cùng config/split JSON. Không cài Torch, Transformers, vLLM, CUDA hay weights; không cài nghiên cứu, notebook hoặc tests. Dùng môi trường model hiện có của bạn.
 
-[README nghiên cứu trước khi tổ chức lại](docs/history/README_before_organization.md) được giữ nguyên nội dung, có nhãn lịch sử.
+1. **[Hướng dẫn tích hợp](docs/INTEGRATION.md)**: cài gì, callback model, dữ liệu và kiểm tra.
+2. **[Ví dụ chạy một mẫu](examples/integrate_checkpoint.py)**, hoặc gọi thẳng `AgentLoop.run`.
+3. **[Manifest source](harness_manifest.json)**: hash từng file runtime; lưu SHA checkpoint/config của bạn riêng.
+
+## Trạng thái trước khi ghép
+
+- `main` **đã chứa source Run 7** (`ddbe0a0b18a6fb9f6e7d261628a51e7a2c6c10c6`); không cần tìm các nhánh sửa cũ.
+- G&G **shadow-only**: ghi quyết định, chưa chặn tool. Grounding là cơ chế khác, có thể sửa proposal nếu bật.
+- `grounding`, `shadow_observer`, `history_presentation_v2`, `pending_ask_stop` mặc định False. Không tự bật khi đổi checkpoint.
+- Harness nhận **một dict tool call mỗi bước**. Checkpoint sinh native tool tags/nhiều call/messages khác cần bridge ở backend của bạn; parser JSON cũ không tự tương thích SFT.
+- CPU đã có kiểm tra; GPU smoke 20 mẫu với **model gốc** đã COMPLETE, nối tiếp/gom nhóm khớp. Điểm chẩn đoán chỉ **0,05**; chưa chứng minh chất lượng với checkpoint fine-tune của bạn.
+
+[Kết quả gói cài](docs/verification/HARNESS_HANDOFF_2026-10-31.md) · [Smoke GPU 20 mẫu](docs/verification/SMOKE20_2026-10-31.md).
+
+## Không cần mang sang repo model
+
+`analysis/`, `research/`, `plans/`, `deep-dives/`, `competition/`, notebook Kaggle và lịch sử nhánh không phải dependency. Chúng giữ để đối chiếu và **không nằm trong wheel**.
+
+Không muốn dùng pip: copy nguyên `lifemate/` (trừ `__pycache__` và `lifemate/tests`). Không copy từng module G&G rời vì chúng phụ thuộc nhau.
+
+Lịch sử: [trạng thái/lỗi mở](docs/STATUS.md), [bản đồ repo](docs/REPOSITORY_MAP.md), [nhánh](docs/BRANCHES.md), [CLI model gốc cũ](RUN_LIFEMATE.md). Đường tích hợp hiện tại là `docs/INTEGRATION.md`.
